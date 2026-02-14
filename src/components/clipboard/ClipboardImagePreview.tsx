@@ -76,7 +76,18 @@ export default function ClipboardImagePreview(props: ClipboardImagePreviewProps)
             alt={item.plainText}
             className="max-h-[66vh] max-w-full rounded-[calc(var(--radius-md)+2px)] border border-border-muted bg-surface object-contain"
             onError={() => {
-              setImageUrlIndex((index) => Math.min(index + 1, imageUrlCandidates.length));
+              setImageUrlIndex((index) => {
+                const nextIndex = index + 1;
+                const exhausted = nextIndex >= imageUrlCandidates.length;
+                if (exhausted) {
+                  console.warn("[clipboard] image preview unavailable", {
+                    itemId,
+                    candidateCount: imageUrlCandidates.length,
+                  });
+                  return imageUrlCandidates.length;
+                }
+                return nextIndex;
+              });
             }}
           />
         </div>

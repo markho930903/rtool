@@ -201,7 +201,18 @@ export default function ClipboardItemCard(props: ClipboardItemCardProps) {
               loading="lazy"
               onClick={props.onPreview}
               onError={() => {
-                setImageUrlIndex((index) => Math.min(index + 1, imageUrlCandidates.length));
+                setImageUrlIndex((index) => {
+                  const nextIndex = index + 1;
+                  const exhausted = nextIndex >= imageUrlCandidates.length;
+                  if (exhausted) {
+                    console.warn("[clipboard] image preview unavailable", {
+                      itemId: props.item.id,
+                      candidateCount: imageUrlCandidates.length,
+                    });
+                    return imageUrlCandidates.length;
+                  }
+                  return nextIndex;
+                });
               }}
             />
           ) : (

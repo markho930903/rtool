@@ -28,6 +28,7 @@ interface ClipboardPanelViewProps {
   onSelectItemId: (id: string) => void;
   onPinToggleItem: (item: ClipboardItem) => void;
   onCopyBackItem: (item: ClipboardItem) => void;
+  onCopyPathsItem: (item: ClipboardItem) => void;
   onDeleteItem: (id: string) => void;
   onPreviewItem: (item: ClipboardItem) => void;
   onQueryChange: (query: string) => void;
@@ -62,6 +63,7 @@ export default function ClipboardPanelView(props: ClipboardPanelViewProps) {
         item={selectedItem}
         onPinToggle={() => props.onPinToggleItem(selectedItem)}
         onCopyBack={() => props.onCopyBackItem(selectedItem)}
+        onCopyPaths={() => props.onCopyPathsItem(selectedItem)}
         onDelete={() => props.onDeleteItem(selectedItem.id)}
         onPreview={() => props.onPreviewItem(selectedItem)}
       />
@@ -199,6 +201,7 @@ export default function ClipboardPanelView(props: ClipboardPanelViewProps) {
                   onSelect={() => props.onSelectItemId(item.id)}
                   onPinToggle={() => props.onPinToggleItem(item)}
                   onCopyBack={() => props.onCopyBackItem(item)}
+                  onCopyPaths={() => props.onCopyPathsItem(item)}
                   onDelete={() => props.onDeleteItem(item.id)}
                   onPreview={() => props.onPreviewItem(item)}
                 />

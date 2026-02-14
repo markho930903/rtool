@@ -83,6 +83,8 @@ pub struct ClipboardItemDto {
 #[serde(rename_all = "camelCase")]
 pub struct ClipboardSettingsDto {
     pub max_items: u32,
+    pub size_cleanup_enabled: bool,
+    pub max_total_size_mb: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

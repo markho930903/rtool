@@ -41,6 +41,7 @@ export default function ClipboardPanelContainer(props: ClipboardPanelProps) {
   const deleteItem = useClipboardStore((state) => state.deleteItem);
   const clearAllItems = useClipboardStore((state) => state.clearAllItems);
   const copyBack = useClipboardStore((state) => state.copyBack);
+  const copyFilePathsBack = useClipboardStore((state) => state.copyFilePathsBack);
   const copyImageBack = useClipboardStore((state) => state.copyImageBack);
 
   const [previewItem, setPreviewItem] = useState<ClipboardItem | null>(null);
@@ -55,11 +56,13 @@ export default function ClipboardPanelContainer(props: ClipboardPanelProps) {
     setClearAllError,
     isClearingAll,
     handleCopyBack,
+    handleCopyFilePaths,
     handleCopyPreviewImage,
     handleClearAll,
   } = useClipboardActionFeedback({
     t,
     copyBack,
+    copyFilePathsBack,
     copyImageBack,
     clearAllItems,
   });
@@ -170,6 +173,13 @@ export default function ClipboardPanelContainer(props: ClipboardPanelProps) {
     [handleCopyBack],
   );
 
+  const handleCopyPaths = useCallback(
+    (item: ClipboardItem) => {
+      void handleCopyFilePaths(item);
+    },
+    [handleCopyFilePaths],
+  );
+
   const handlePreviewItem = useCallback((item: ClipboardItem) => {
     setPreviewMessage(null);
     setPreviewItem(item);
@@ -234,6 +244,7 @@ export default function ClipboardPanelContainer(props: ClipboardPanelProps) {
       onSelectItemId={setSelectedItemId}
       onPinToggleItem={handlePinToggle}
       onCopyBackItem={handleCopyItem}
+      onCopyPathsItem={handleCopyPaths}
       onDeleteItem={handleDelete}
       onPreviewItem={handlePreviewItem}
       onQueryChange={setQuery}

@@ -14,6 +14,7 @@ interface ClipboardItemCardProps {
   onSelect?: () => void;
   onPinToggle: () => void;
   onCopyBack: () => void;
+  onCopyPaths: () => void;
   onDelete: () => void;
   onPreview: () => void;
 }
@@ -268,8 +269,22 @@ export default function ClipboardItemCard(props: ClipboardItemCardProps) {
             }}
           >
             <span className="btn-icon i-noto:clipboard" aria-hidden="true" />
-            <span>{isImage ? t("action.copyImage") : isFile ? t("action.copyPath") : t("action.copyBack")}</span>
+            <span>{isImage ? t("action.copyImage") : isFile ? t("action.copyFile") : t("action.copyBack")}</span>
           </Button>
+
+          {isFile ? (
+            <Button
+              variant="secondary"
+              size="xs"
+              onClick={(event) => {
+                event.stopPropagation();
+                props.onCopyPaths();
+              }}
+            >
+              <span className="btn-icon i-noto:link" aria-hidden="true" />
+              <span>{t("action.copyPath")}</span>
+            </Button>
+          ) : null}
 
           {isImage ? (
             <Button

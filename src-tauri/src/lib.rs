@@ -620,6 +620,48 @@ impl<R: Runtime> ClipboardProcessor<R> {
         true
     }
 
+    fn handle_files(&mut self, files_uris: Vec<String>, source_app: Option<String>) -> bool {
+        let normalized_files: Vec<String> = files_uris
+            .into_iter()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+            .collect();
+        if normalized_files.is_empty() {
+            return false;
+        }
+
+        let serialized = normalized_files.join("\n");
+        if serialized == self.last_seen {
+            return true;
+        }
+
+        self.last_seen = serialized.clone();
+        self.last_image_signature.clear();
+
+        match self.service.save_text(serialized, source_app) {
+            Ok(result) => {
+                self.emit_sync(ClipboardSyncPayload {
+                    upsert: vec![result.item],
+                    removed_ids: result.removed_ids,
+                    clear_all: false,
+                    reason: Some("watcher_save_files".to_string()),
+                });
+            }
+            Err(error) => {
+                tracing::warn!(
+                    event = "clipboard_files_save_failed",
+                    error_code = error.code.as_str(),
+                    error_detail = error
+                        .detail
+                        .as_deref()
+                        .map(infrastructure::logging::sanitize_for_log)
+                        .unwrap_or_default()
+                );
+            }
+        }
+        true
+    }
+
     fn handle_image(&mut self, png_bytes: &[u8], source_app: Option<String>) {
         let (width_u32, height_u32) = if let Some(dimensions) = read_image_dimensions_from_header(png_bytes) {
             dimensions
@@ -639,6 +681,19 @@ impl<R: Runtime> ClipboardProcessor<R> {
         let height = height_u32 as usize;
         let signature = build_image_signature(width, height, png_bytes);
         if signature == self.last_image_signature {
+            return;
+        }
+
+        if let Err(error) = self.service.ensure_disk_space_for_new_item() {
+            tracing::warn!(
+                event = "clipboard_image_skip_low_disk",
+                error_code = error.code.as_str(),
+                error_detail = error
+                    .detail
+                    .as_deref()
+                    .map(infrastructure::logging::sanitize_for_log)
+                    .unwrap_or_default()
+            );
             return;
         }
 
@@ -693,12 +748,12 @@ impl<R: Runtime> ClipboardProcessor<R> {
 
     fn handle_update_event(&mut self) {
         let source_app = current_source_app();
-        let text_result = {
+        let files_uris_result = {
             let clipboard = self.app_handle.state::<tauri_plugin_clipboard::Clipboard>();
-            clipboard.read_text()
+            clipboard.read_files_uris()
         };
-        if let Ok(text) = text_result {
-            if self.handle_text(text, source_app.clone()) {
+        if let Ok(files_uris) = files_uris_result {
+            if self.handle_files(files_uris, source_app.clone()) {
                 return;
             }
         }
@@ -708,7 +763,16 @@ impl<R: Runtime> ClipboardProcessor<R> {
             clipboard.read_image_binary()
         };
         if let Ok(image_binary) = image_binary_result {
-            self.handle_image(&image_binary, source_app);
+            self.handle_image(&image_binary, source_app.clone());
+            return;
+        }
+
+        let text_result = {
+            let clipboard = self.app_handle.state::<tauri_plugin_clipboard::Clipboard>();
+            clipboard.read_text()
+        };
+        if let Ok(text) = text_result {
+            self.handle_text(text, source_app);
         }
     }
 }
@@ -864,7 +928,7 @@ pub fn run() {
                 high_freq_window_ms = logging_config.high_freq_window_ms,
                 high_freq_max_per_key = logging_config.high_freq_max_per_key
             );
-            let clipboard_service = ClipboardService::new(db_pool.clone())?;
+            let clipboard_service = ClipboardService::new(db_pool.clone(), db_path.clone())?;
             start_clipboard_watcher(app_handle.clone(), clipboard_service.clone());
             let initial_resolved_locale = initial_locale_state.resolved.clone();
             let locale_state = Arc::new(Mutex::new(initial_locale_state));
@@ -913,6 +977,7 @@ pub fn run() {
             commands::clipboard::clipboard_clear_all,
             commands::clipboard::clipboard_save_text,
             commands::clipboard::clipboard_copy_back,
+            commands::clipboard::clipboard_copy_file_paths,
             commands::clipboard::clipboard_copy_image_back,
             commands::clipboard::clipboard_get_settings,
             commands::clipboard::clipboard_update_settings,

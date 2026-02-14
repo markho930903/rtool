@@ -4,6 +4,14 @@ import { invokeWithLog } from "@/services/invoke";
 
 interface ClipboardSettings {
   maxItems: number;
+  sizeCleanupEnabled: boolean;
+  maxTotalSizeMb: number;
+}
+
+interface ClipboardSettingsUpdateInput {
+  maxItems: number;
+  sizeCleanupEnabled?: boolean;
+  maxTotalSizeMb?: number;
 }
 
 interface SettingsState {
@@ -15,7 +23,7 @@ interface SettingsState {
 
 interface SettingsActions {
   fetchClipboardSettings: () => Promise<void>;
-  updateClipboardMaxItems: (maxItems: number) => Promise<void>;
+  updateClipboardSettings: (input: ClipboardSettingsUpdateInput) => Promise<void>;
 }
 
 type SettingsStore = SettingsState & SettingsActions;
@@ -37,11 +45,13 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
     }
   },
 
-  async updateClipboardMaxItems(maxItems) {
+  async updateClipboardSettings(input) {
     set({ saving: true, error: null });
     try {
       const settings = await invokeWithLog<ClipboardSettings>("clipboard_update_settings", {
-        maxItems,
+        maxItems: input.maxItems,
+        sizeCleanupEnabled: input.sizeCleanupEnabled,
+        maxTotalSizeMb: input.maxTotalSizeMb,
       });
       set({ clipboardSettings: settings, saving: false });
     } catch (error) {

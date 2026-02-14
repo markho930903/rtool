@@ -26,6 +26,7 @@ interface ClipboardActions {
   deleteItem: (id: string) => Promise<void>;
   clearAllItems: () => Promise<void>;
   copyBack: (id: string) => Promise<void>;
+  copyFilePathsBack: (id: string) => Promise<void>;
   copyImageBack: (id: string) => Promise<void>;
   upsertItem: (item: ClipboardItem) => void;
 }
@@ -34,6 +35,8 @@ type ClipboardStore = ClipboardState & ClipboardActions;
 
 interface ClipboardSettings {
   maxItems: number;
+  sizeCleanupEnabled: boolean;
+  maxTotalSizeMb: number;
 }
 
 function compareClipboardItems(left: ClipboardItem, right: ClipboardItem): number {
@@ -172,6 +175,9 @@ export const useClipboardStore = create<ClipboardStore>((set, get) => ({
   },
   async copyBack(id) {
     await invokeWithLog("clipboard_copy_back", { id });
+  },
+  async copyFilePathsBack(id) {
+    await invokeWithLog("clipboard_copy_file_paths", { id });
   },
   async copyImageBack(id) {
     await invokeWithLog("clipboard_copy_image_back", { id });

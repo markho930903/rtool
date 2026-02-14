@@ -5,9 +5,12 @@ use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{Connection, Error as SqliteError, OptionalExtension, Row, params};
 use std::collections::HashMap;
+use std::io::ErrorKind;
 use std::path::Path;
 
 pub const CLIPBOARD_MAX_ITEMS_KEY: &str = "clipboard.maxItems";
+pub const CLIPBOARD_SIZE_CLEANUP_ENABLED_KEY: &str = "clipboard.sizeCleanupEnabled";
+pub const CLIPBOARD_MAX_TOTAL_SIZE_MB_KEY: &str = "clipboard.maxTotalSizeMb";
 const CLIPBOARD_LIST_LIMIT_MAX: u32 = 10_000;
 
 #[derive(Debug, Clone)]
@@ -279,7 +282,10 @@ pub fn list_clipboard_items(
     filter: &ClipboardFilterDto,
 ) -> AppResult<Vec<ClipboardItemDto>> {
     let conn = pool.get()?;
-    let limit = filter.limit.unwrap_or(100).clamp(1, CLIPBOARD_LIST_LIMIT_MAX) as i64;
+    let limit = filter
+        .limit
+        .unwrap_or(100)
+        .clamp(1, CLIPBOARD_LIST_LIMIT_MAX) as i64;
     let query = filter.query.clone().unwrap_or_default();
 
     let mut statement = conn.prepare(
@@ -396,38 +402,145 @@ pub fn clear_all_clipboard_items(pool: &DbPool) -> AppResult<Vec<String>> {
     Ok(preview_paths)
 }
 
-pub fn prune_clipboard_items(pool: &DbPool, max_items: u32) -> AppResult<Vec<PrunedClipboardItem>> {
+fn preview_file_size_bytes(preview_path: Option<&str>) -> u64 {
+    let Some(path) = preview_path else {
+        return 0;
+    };
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return 0;
+    }
+
+    match std::fs::metadata(trimmed) {
+        Ok(metadata) => metadata.len(),
+        Err(error) => {
+            if error.kind() == ErrorKind::NotFound {
+                tracing::warn!(
+                    event = "clipboard_preview_size_missing",
+                    preview_path = trimmed
+                );
+            } else {
+                tracing::warn!(
+                    event = "clipboard_preview_size_failed",
+                    preview_path = trimmed,
+                    error = error.to_string()
+                );
+            }
+            0
+        }
+    }
+}
+
+fn clipboard_row_size_bytes(
+    plain_text: &str,
+    preview_data_url: Option<&str>,
+    preview_path: Option<&str>,
+) -> u64 {
+    plain_text.len() as u64
+        + preview_data_url
+            .map(|value| value.len() as u64)
+            .unwrap_or(0)
+        + preview_file_size_bytes(preview_path)
+}
+
+pub fn prune_clipboard_items(
+    pool: &DbPool,
+    max_items: u32,
+    max_total_size_bytes: Option<u64>,
+) -> AppResult<Vec<PrunedClipboardItem>> {
     let mut conn = pool.get()?;
     let transaction = conn.transaction()?;
 
-    let total: i64 =
-        transaction.query_row("SELECT COUNT(*) FROM clipboard_items", [], |row| row.get(0))?;
-    let overflow = total - i64::from(max_items);
-    if overflow <= 0 {
+    if max_total_size_bytes.is_none() {
+        let total: i64 =
+            transaction.query_row("SELECT COUNT(*) FROM clipboard_items", [], |row| row.get(0))?;
+        let overflow = total - i64::from(max_items);
+        if overflow <= 0 {
+            transaction.commit()?;
+            return Ok(Vec::new());
+        }
+
+        let mut to_remove = Vec::new();
+        {
+            let mut statement = transaction.prepare(
+                "SELECT id, preview_path
+                 FROM clipboard_items
+                 ORDER BY pinned ASC, created_at ASC, id ASC
+                 LIMIT ?1",
+            )?;
+            let rows = statement.query_map(params![overflow], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+            })?;
+
+            for row in rows {
+                let (id, preview_path) = row?;
+                to_remove.push(PrunedClipboardItem { id, preview_path });
+            }
+        }
+
+        for item in &to_remove {
+            transaction.execute(
+                "DELETE FROM clipboard_items WHERE id = ?1",
+                params![item.id],
+            )?;
+        }
+
+        transaction.commit()?;
+        return Ok(to_remove);
+    }
+
+    let size_limit = max_total_size_bytes.unwrap_or(u64::MAX);
+    let mut total_count: u64 = 0;
+    let mut total_size: u64 = 0;
+    let mut candidates = Vec::new();
+    {
+        let mut statement = transaction.prepare(
+            "SELECT id, preview_path, plain_text, preview_data_url
+             FROM clipboard_items
+             ORDER BY pinned ASC, created_at ASC, id ASC",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+            ))
+        })?;
+
+        for row in rows {
+            let (id, preview_path, plain_text, preview_data_url) = row?;
+            let size_bytes = clipboard_row_size_bytes(
+                plain_text.as_str(),
+                preview_data_url.as_deref(),
+                preview_path.as_deref(),
+            );
+            total_count += 1;
+            total_size = total_size.saturating_add(size_bytes);
+            candidates.push((id, preview_path, size_bytes));
+        }
+    }
+
+    if total_count <= u64::from(max_items) && total_size <= size_limit {
         transaction.commit()?;
         return Ok(Vec::new());
     }
 
     let mut to_remove = Vec::new();
-    {
-        let mut statement = transaction.prepare(
-            "SELECT id, preview_path
-             FROM clipboard_items
-             ORDER BY pinned ASC, created_at ASC, id ASC
-             LIMIT ?1",
-        )?;
-        let rows = statement.query_map(params![overflow], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
-        })?;
-
-        for row in rows {
-            let (id, preview_path) = row?;
-            to_remove.push(PrunedClipboardItem { id, preview_path });
+    for (id, preview_path, size_bytes) in candidates {
+        if total_count <= u64::from(max_items) && total_size <= size_limit {
+            break;
         }
+        total_count = total_count.saturating_sub(1);
+        total_size = total_size.saturating_sub(size_bytes);
+        to_remove.push(PrunedClipboardItem { id, preview_path });
     }
 
     for item in &to_remove {
-        transaction.execute("DELETE FROM clipboard_items WHERE id = ?1", params![item.id])?;
+        transaction.execute(
+            "DELETE FROM clipboard_items WHERE id = ?1",
+            params![item.id],
+        )?;
     }
 
     transaction.commit()?;
@@ -457,6 +570,32 @@ pub fn set_clipboard_max_items(pool: &DbPool, max_items: u32) -> AppResult<()> {
     Ok(())
 }
 
+pub fn get_clipboard_size_cleanup_enabled(pool: &DbPool) -> AppResult<Option<bool>> {
+    let value = get_app_setting(pool, CLIPBOARD_SIZE_CLEANUP_ENABLED_KEY)?;
+    Ok(value.and_then(|raw| raw.parse::<bool>().ok()))
+}
+
+pub fn set_clipboard_size_cleanup_enabled(pool: &DbPool, enabled: bool) -> AppResult<()> {
+    set_app_setting(
+        pool,
+        CLIPBOARD_SIZE_CLEANUP_ENABLED_KEY,
+        if enabled { "true" } else { "false" },
+    )
+}
+
+pub fn get_clipboard_max_total_size_mb(pool: &DbPool) -> AppResult<Option<u32>> {
+    let value = get_app_setting(pool, CLIPBOARD_MAX_TOTAL_SIZE_MB_KEY)?;
+    Ok(value.and_then(|raw| raw.parse::<u32>().ok()))
+}
+
+pub fn set_clipboard_max_total_size_mb(pool: &DbPool, max_total_size_mb: u32) -> AppResult<()> {
+    set_app_setting(
+        pool,
+        CLIPBOARD_MAX_TOTAL_SIZE_MB_KEY,
+        &max_total_size_mb.to_string(),
+    )
+}
+
 pub fn get_app_setting(pool: &DbPool, key: &str) -> AppResult<Option<String>> {
     let conn = pool.get()?;
     let value = conn
@@ -478,4 +617,111 @@ pub fn set_app_setting(pool: &DbPool, key: &str, value: &str) -> AppResult<()> {
         params![key, value],
     )?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_temp_db_path(prefix: &str) -> std::path::PathBuf {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time before UNIX_EPOCH")
+            .as_millis();
+        std::env::temp_dir().join(format!("rtool-{prefix}-{}-{now}.db", std::process::id()))
+    }
+
+    fn setup_temp_db(prefix: &str) -> (DbPool, std::path::PathBuf) {
+        let path = unique_temp_db_path(prefix);
+        init_db(path.as_path()).expect("init db");
+        let pool = new_db_pool(path.as_path()).expect("new db pool");
+        (pool, path)
+    }
+
+    fn insert_raw_item(pool: &DbPool, id: &str, plain_text: &str, created_at: i64, pinned: bool) {
+        let conn = pool.get().expect("db conn");
+        conn.execute(
+            "INSERT INTO clipboard_items (id, content_key, item_type, plain_text, source_app, preview_path, preview_data_url, created_at, pinned)
+             VALUES (?1, ?2, 'text', ?3, NULL, NULL, NULL, ?4, ?5)",
+            params![
+                id,
+                format!("key-{id}"),
+                plain_text,
+                created_at,
+                if pinned { 1 } else { 0 },
+            ],
+        )
+        .expect("insert clipboard item");
+    }
+
+    #[test]
+    fn prune_by_size_should_remove_oldest_items() {
+        let (pool, db_path) = setup_temp_db("prune-size");
+        let item_1 = "a".repeat(100);
+        let item_2 = "b".repeat(100);
+        let item_3 = "c".repeat(100);
+        insert_raw_item(&pool, "item-1", item_1.as_str(), 1, false);
+        insert_raw_item(&pool, "item-2", item_2.as_str(), 2, false);
+        insert_raw_item(&pool, "item-3", item_3.as_str(), 3, false);
+
+        let removed = prune_clipboard_items(&pool, 10, Some(150)).expect("prune by size");
+        let removed_ids: Vec<String> = removed.into_iter().map(|item| item.id).collect();
+        assert_eq!(
+            removed_ids,
+            vec!["item-1".to_string(), "item-2".to_string()]
+        );
+
+        let conn = pool.get().expect("db conn");
+        let remaining: i64 = conn
+            .query_row("SELECT COUNT(*) FROM clipboard_items", [], |row| row.get(0))
+            .expect("count remaining");
+        assert_eq!(remaining, 1);
+
+        let _ = std::fs::remove_file(db_path);
+    }
+
+    #[test]
+    fn prune_should_apply_count_limit_when_size_cleanup_disabled() {
+        let (pool, db_path) = setup_temp_db("prune-count");
+        insert_raw_item(&pool, "item-1", "a", 1, false);
+        insert_raw_item(&pool, "item-2", "b", 2, false);
+        insert_raw_item(&pool, "item-3", "c", 3, false);
+
+        let removed = prune_clipboard_items(&pool, 2, None).expect("prune by count");
+        let removed_ids: Vec<String> = removed.into_iter().map(|item| item.id).collect();
+        assert_eq!(removed_ids, vec!["item-1".to_string()]);
+
+        let _ = std::fs::remove_file(db_path);
+    }
+
+    #[test]
+    fn prune_should_apply_count_and_size_constraints_together() {
+        let (pool, db_path) = setup_temp_db("prune-combined");
+        let item_1 = "x".repeat(120);
+        let item_2 = "y".repeat(120);
+        let item_3 = "z".repeat(120);
+        insert_raw_item(&pool, "item-1", item_1.as_str(), 1, false);
+        insert_raw_item(&pool, "item-2", item_2.as_str(), 2, false);
+        insert_raw_item(&pool, "item-3", item_3.as_str(), 3, false);
+
+        let removed = prune_clipboard_items(&pool, 2, Some(220)).expect("prune by count and size");
+        let removed_ids: Vec<String> = removed.into_iter().map(|item| item.id).collect();
+        assert_eq!(
+            removed_ids,
+            vec!["item-1".to_string(), "item-2".to_string()]
+        );
+
+        let conn = pool.get().expect("db conn");
+        let remaining_ids: Vec<String> = conn
+            .prepare("SELECT id FROM clipboard_items ORDER BY created_at ASC")
+            .expect("prepare query")
+            .query_map([], |row| row.get::<_, String>(0))
+            .expect("query map")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect ids");
+        assert_eq!(remaining_ids, vec!["item-3".to_string()]);
+
+        let _ = std::fs::remove_file(db_path);
+    }
 }

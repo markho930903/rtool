@@ -6,7 +6,7 @@ use crate::core::models::{
 };
 use crate::core::{AppError, AppResult};
 use crate::infrastructure::db;
-use arboard::{Clipboard, ImageData};
+use arboard::{Clipboard as ArboardClipboard, ImageData};
 use base64::Engine as _;
 use image::ImageReader;
 use std::borrow::Cow;
@@ -36,6 +36,28 @@ fn decode_data_url_image_bytes(data_url: &str) -> AppResult<Vec<u8>> {
             AppError::new("image_data_url_decode_failed", "解析图片数据失败")
                 .with_detail(error.to_string())
         })
+}
+
+fn parse_file_paths_from_plain_text(plain_text: &str) -> AppResult<Vec<String>> {
+    crate::infrastructure::clipboard::parse_file_paths_from_text(plain_text).ok_or_else(|| {
+        AppError::new(
+            "clipboard_file_payload_invalid",
+            "文件条目路径数据无效或目标文件不存在",
+        )
+    })
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn to_clipboard_files_uris(file_paths: &[String]) -> Vec<String> {
+    file_paths
+        .iter()
+        .map(|path| format!("file://{path}"))
+        .collect()
+}
+
+#[cfg(target_os = "windows")]
+fn to_clipboard_files_uris(file_paths: &[String]) -> Vec<String> {
+    file_paths.to_vec()
 }
 
 fn emit_clipboard_sync(app: &AppHandle, payload: ClipboardSyncPayload) {
@@ -209,6 +231,8 @@ pub fn clipboard_update_settings(
     app: AppHandle,
     state: State<'_, AppState>,
     max_items: u32,
+    size_cleanup_enabled: Option<bool>,
+    max_total_size_mb: Option<u32>,
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<ClipboardSettingsDto, AppError> {
@@ -219,7 +243,11 @@ pub fn clipboard_update_settings(
         window_label.as_deref(),
     );
     let result = (|| -> Result<ClipboardSettingsDto, AppError> {
-        let updated = state.clipboard_service.update_settings(max_items)?;
+        let updated = state.clipboard_service.update_settings(
+            max_items,
+            size_cleanup_enabled,
+            max_total_size_mb,
+        )?;
         if !updated.removed_ids.is_empty() {
             emit_clipboard_sync(
                 &app,
@@ -304,6 +332,7 @@ pub fn clipboard_window_apply_mode(
 pub fn clipboard_copy_back(
     app: AppHandle,
     state: State<'_, AppState>,
+    clipboard_plugin: State<'_, tauri_plugin_clipboard::Clipboard>,
     id: String,
     request_id: Option<String>,
     window_label: Option<String>,
@@ -315,8 +344,19 @@ pub fn clipboard_copy_back(
         let item = db::get_clipboard_item(&state.db_pool, &id)?
             .ok_or_else(|| AppError::new("clipboard_not_found", "未找到对应剪贴板记录"))?;
 
-        let mut clipboard = Clipboard::new()?;
-        clipboard.set_text(item.plain_text)?;
+        if item.item_type == "file" {
+            let file_paths = parse_file_paths_from_plain_text(&item.plain_text)?;
+            let files_uris = to_clipboard_files_uris(&file_paths);
+            clipboard_plugin
+                .write_files_uris(files_uris)
+                .map_err(|error| {
+                    AppError::new("clipboard_set_files_failed", "写入文件到剪贴板失败")
+                        .with_detail(error)
+                })?;
+        } else {
+            let mut clipboard = ArboardClipboard::new()?;
+            clipboard.set_text(item.plain_text)?;
+        }
 
         let touched = state.clipboard_service.touch_item(id)?;
         emit_clipboard_sync(
@@ -334,6 +374,51 @@ pub fn clipboard_copy_back(
     match &result {
         Ok(_) => command_end_ok("clipboard_copy_back", &request_id, started_at),
         Err(error) => command_end_error("clipboard_copy_back", &request_id, started_at, error),
+    }
+    result
+}
+
+#[tauri::command]
+pub fn clipboard_copy_file_paths(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: String,
+    request_id: Option<String>,
+    window_label: Option<String>,
+) -> AppResult<()> {
+    let request_id = normalize_request_id(request_id);
+    let started_at = command_start(
+        "clipboard_copy_file_paths",
+        &request_id,
+        window_label.as_deref(),
+    );
+
+    let result = (|| -> AppResult<()> {
+        let item = db::get_clipboard_item(&state.db_pool, &id)?
+            .ok_or_else(|| AppError::new("clipboard_not_found", "未找到对应剪贴板记录"))?;
+        if item.item_type != "file" {
+            return Err(AppError::new("clipboard_not_file", "当前条目不是文件类型"));
+        }
+
+        let mut clipboard = ArboardClipboard::new()?;
+        clipboard.set_text(item.plain_text)?;
+
+        let touched = state.clipboard_service.touch_item(id)?;
+        emit_clipboard_sync(
+            &app,
+            ClipboardSyncPayload {
+                upsert: vec![touched],
+                removed_ids: Vec::new(),
+                clear_all: false,
+                reason: Some("copy_file_paths".to_string()),
+            },
+        );
+        Ok(())
+    })();
+
+    match &result {
+        Ok(_) => command_end_ok("clipboard_copy_file_paths", &request_id, started_at),
+        Err(error) => command_end_error("clipboard_copy_file_paths", &request_id, started_at, error),
     }
     result
 }
@@ -386,7 +471,7 @@ pub fn clipboard_copy_image_back(
             bytes: Cow::Owned(rgba.into_raw()),
         };
 
-        let mut clipboard = Clipboard::new()?;
+        let mut clipboard = ArboardClipboard::new()?;
         clipboard.set_image(image_data).map_err(|error| {
             AppError::new("clipboard_set_image_failed", "写入图片到剪贴板失败")
                 .with_detail(error.to_string())

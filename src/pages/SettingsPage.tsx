@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { SUPPORTED_LOCALES } from "@/i18n/constants";
@@ -19,6 +19,10 @@ import { useSettingsStore } from "@/stores/settings.store";
 
 const MIN_MAX_ITEMS = 100;
 const MAX_MAX_ITEMS = 10_000;
+const MIN_MAX_TOTAL_SIZE_MB = 100;
+const MAX_MAX_TOTAL_SIZE_MB = 10_240;
+const CLIPBOARD_SIZE_MB_PRESETS = ["500", "1024", "5120"];
+const DEFAULT_CLIPBOARD_SIZE_PRESET_MB = "500";
 const MIN_KEEP_DAYS = 1;
 const MAX_KEEP_DAYS = 90;
 const MIN_HIGH_FREQ_WINDOW_MS = 100;
@@ -30,6 +34,7 @@ const LOG_WINDOW_MS_PRESETS = ["100", "250", "500", "1000", "2000", "5000", "100
 const LOG_MAX_PER_KEY_PRESETS = ["1", "5", "10", "20", "50", "100", "200"];
 
 type SettingsSection = "general" | "clipboard" | "launcher" | "logging";
+type SizeThresholdMode = "preset" | "custom";
 
 interface SettingsNavItem {
   key: SettingsSection;
@@ -108,7 +113,7 @@ export default function SettingsPage() {
   const clipboardSaving = useSettingsStore((state) => state.saving);
   const clipboardError = useSettingsStore((state) => state.error);
   const fetchClipboardSettings = useSettingsStore((state) => state.fetchClipboardSettings);
-  const updateClipboardMaxItems = useSettingsStore((state) => state.updateClipboardMaxItems);
+  const updateClipboardSettings = useSettingsStore((state) => state.updateClipboardSettings);
 
   const loggingConfig = useLoggingStore((state) => state.config);
   const loggingError = useLoggingStore((state) => state.error);
@@ -116,6 +121,19 @@ export default function SettingsPage() {
   const updateLoggingConfig = useLoggingStore((state) => state.saveConfig);
 
   const [maxItemsInput, setMaxItemsInput] = useState(String(clipboardSettings?.maxItems ?? 1000));
+  const [sizeCleanupEnabled, setSizeCleanupEnabled] = useState(clipboardSettings?.sizeCleanupEnabled ?? true);
+  const [selectedPresetMb, setSelectedPresetMb] = useState(() => {
+    const initialValue = String(clipboardSettings?.maxTotalSizeMb ?? DEFAULT_CLIPBOARD_SIZE_PRESET_MB);
+    return CLIPBOARD_SIZE_MB_PRESETS.includes(initialValue) ? initialValue : DEFAULT_CLIPBOARD_SIZE_PRESET_MB;
+  });
+  const [sizeThresholdMode, setSizeThresholdMode] = useState<SizeThresholdMode>(() => {
+    const initialValue = String(clipboardSettings?.maxTotalSizeMb ?? DEFAULT_CLIPBOARD_SIZE_PRESET_MB);
+    return CLIPBOARD_SIZE_MB_PRESETS.includes(initialValue) ? "preset" : "custom";
+  });
+  const [customSizeMbInput, setCustomSizeMbInput] = useState(
+    String(clipboardSettings?.maxTotalSizeMb ?? DEFAULT_CLIPBOARD_SIZE_PRESET_MB),
+  );
+  const customSizeInputRef = useRef<HTMLInputElement>(null);
   const [saveMessage, setSaveMessage] = useState<MessageState | null>(null);
   const [activeSection, setActiveSection] = useState<SettingsSection>("general");
 
@@ -192,8 +210,31 @@ export default function SettingsPage() {
   useEffect(() => {
     if (clipboardSettings) {
       setMaxItemsInput(String(clipboardSettings.maxItems));
+      setSizeCleanupEnabled(clipboardSettings.sizeCleanupEnabled);
+      const thresholdValue = String(clipboardSettings.maxTotalSizeMb);
+      setCustomSizeMbInput(thresholdValue);
+      if (CLIPBOARD_SIZE_MB_PRESETS.includes(thresholdValue)) {
+        setSizeThresholdMode("preset");
+        setSelectedPresetMb(thresholdValue);
+      } else {
+        setSizeThresholdMode("custom");
+        setSelectedPresetMb(DEFAULT_CLIPBOARD_SIZE_PRESET_MB);
+      }
     }
   }, [clipboardSettings]);
+
+  useEffect(() => {
+    if (!sizeCleanupEnabled || sizeThresholdMode !== "custom") {
+      return;
+    }
+
+    const frame = requestAnimationFrame(() => {
+      customSizeInputRef.current?.focus();
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+    };
+  }, [sizeCleanupEnabled, sizeThresholdMode]);
 
   useEffect(() => {
     if (!loggingConfig) {
@@ -209,8 +250,27 @@ export default function SettingsPage() {
   }, [loggingConfig]);
 
   const parsedMaxItems = useMemo(() => parsePositiveInt(maxItemsInput), [maxItemsInput]);
-  const clipboardInvalid = parsedMaxItems === null || parsedMaxItems < MIN_MAX_ITEMS || parsedMaxItems > MAX_MAX_ITEMS;
-  const clipboardUnchanged = parsedMaxItems !== null && parsedMaxItems === (clipboardSettings?.maxItems ?? null);
+  const parsedCustomSizeMb = useMemo(() => parsePositiveInt(customSizeMbInput), [customSizeMbInput]);
+  const effectiveMaxTotalSizeMb = useMemo(() => {
+    if (sizeThresholdMode === "preset") {
+      return Number.parseInt(selectedPresetMb, 10);
+    }
+    return parsedCustomSizeMb;
+  }, [parsedCustomSizeMb, selectedPresetMb, sizeThresholdMode]);
+  const maxItemsInvalid = parsedMaxItems === null || parsedMaxItems < MIN_MAX_ITEMS || parsedMaxItems > MAX_MAX_ITEMS;
+  const maxTotalSizeInvalid =
+    sizeThresholdMode === "custom" &&
+    (parsedCustomSizeMb === null ||
+      parsedCustomSizeMb < MIN_MAX_TOTAL_SIZE_MB ||
+      parsedCustomSizeMb > MAX_MAX_TOTAL_SIZE_MB);
+  const clipboardInvalid = maxItemsInvalid || maxTotalSizeInvalid;
+  const clipboardUnchanged =
+    parsedMaxItems !== null &&
+    effectiveMaxTotalSizeMb !== null &&
+    clipboardSettings !== null &&
+    parsedMaxItems === clipboardSettings.maxItems &&
+    effectiveMaxTotalSizeMb === clipboardSettings.maxTotalSizeMb &&
+    sizeCleanupEnabled === clipboardSettings.sizeCleanupEnabled;
 
   const parsedKeepDays = useMemo(() => parsePositiveInt(logKeepDaysInput), [logKeepDaysInput]);
   const parsedHighFreqWindowMs = useMemo(() => parsePositiveInt(logHighFreqWindowMsInput), [logHighFreqWindowMsInput]);
@@ -319,25 +379,52 @@ export default function SettingsPage() {
     return { builtin, overlay, effective };
   }, [localeCatalog]);
 
-  const clipboardHelperText = clipboardInvalid
+  const clipboardMaxItemsHelperText = maxItemsInvalid
     ? t("clipboard.invalid", { min: MIN_MAX_ITEMS, max: MAX_MAX_ITEMS })
     : t("clipboard.helper");
+  const clipboardSizeHelperText = !sizeCleanupEnabled
+    ? t("clipboard.sizeHelperDisabled")
+    : sizeThresholdMode === "custom"
+      ? maxTotalSizeInvalid
+        ? t("clipboard.sizeInvalid", { min: MIN_MAX_TOTAL_SIZE_MB, max: MAX_MAX_TOTAL_SIZE_MB })
+        : t("clipboard.sizeCustomInputHint")
+      : t("clipboard.sizePresetHint", { value: selectedPresetMb });
 
   const handleSaveClipboard = async () => {
-    if (parsedMaxItems === null || clipboardInvalid) {
+    if (parsedMaxItems === null || maxItemsInvalid) {
       setSaveMessage({
         text: t("clipboard.saveFailedInvalid", { min: MIN_MAX_ITEMS, max: MAX_MAX_ITEMS }),
         isError: true,
       });
       return;
     }
+    if (effectiveMaxTotalSizeMb === null || maxTotalSizeInvalid) {
+      setSaveMessage({
+        text: t("clipboard.saveFailedInvalidSize", {
+          min: MIN_MAX_TOTAL_SIZE_MB,
+          max: MAX_MAX_TOTAL_SIZE_MB,
+        }),
+        isError: true,
+      });
+      return;
+    }
 
     try {
-      await updateClipboardMaxItems(parsedMaxItems);
+      await updateClipboardSettings({
+        maxItems: parsedMaxItems,
+        sizeCleanupEnabled,
+        maxTotalSizeMb: effectiveMaxTotalSizeMb,
+      });
       setSaveMessage({ text: t("clipboard.saved"), isError: false });
     } catch (saveError) {
       const message = saveError instanceof Error ? saveError.message : String(saveError);
-      setSaveMessage({ text: t("clipboard.saveFailed", { message }), isError: true });
+      const isDiskLowError = message.includes("clipboard_disk_space_low");
+      setSaveMessage({
+        text: isDiskLowError
+          ? t("clipboard.saveFailedDiskLow", { minMb: 512 })
+          : t("clipboard.saveFailed", { message }),
+        isError: true,
+      });
     }
   };
 
@@ -645,14 +732,91 @@ export default function SettingsPage() {
                     min={MIN_MAX_ITEMS}
                     max={MAX_MAX_ITEMS}
                     value={maxItemsInput}
-                    invalid={clipboardInvalid}
+                    invalid={maxItemsInvalid}
                     onChange={(event) => {
                       setMaxItemsInput(event.currentTarget.value);
                       setSaveMessage(null);
                     }}
                   />
-                  <p className={`m-0 text-xs ${clipboardInvalid ? "text-danger" : "text-text-muted"}`}>
-                    {clipboardHelperText}
+                  <p className={`m-0 text-xs ${maxItemsInvalid ? "text-danger" : "text-text-muted"}`}>
+                    {clipboardMaxItemsHelperText}
+                  </p>
+                </div>
+
+                <div className="max-w-[560px] space-y-3 rounded-lg border border-border-muted bg-surface-soft px-3 py-3">
+                  <Checkbox
+                    checked={sizeCleanupEnabled}
+                    label={t("clipboard.sizeCleanupEnabled")}
+                    description={t("clipboard.sizeCleanupEnabledDesc")}
+                    onChange={(event) => {
+                      setSizeCleanupEnabled(event.currentTarget.checked);
+                      setSaveMessage(null);
+                    }}
+                  />
+
+                  <div className="space-y-2">
+                    <label className="text-xs text-text-secondary">{t("clipboard.sizePreset")}</label>
+                    <div role="radiogroup" aria-label={t("clipboard.sizePreset")} className="grid gap-2 sm:grid-cols-2">
+                      {CLIPBOARD_SIZE_MB_PRESETS.map((presetValue) => {
+                        const active = sizeThresholdMode === "preset" && selectedPresetMb === presetValue;
+                        return (
+                          <Button
+                            key={presetValue}
+                            size="sm"
+                            variant={active ? "primary" : "secondary"}
+                            disabled={!sizeCleanupEnabled}
+                            aria-pressed={active}
+                            className="justify-start"
+                            onClick={() => {
+                              setSizeThresholdMode("preset");
+                              setSelectedPresetMb(presetValue);
+                              setSaveMessage(null);
+                            }}
+                          >
+                            {t("clipboard.sizePresetLabel", { value: presetValue })}
+                          </Button>
+                        );
+                      })}
+                      <Button
+                        size="sm"
+                        variant={sizeThresholdMode === "custom" ? "primary" : "secondary"}
+                        disabled={!sizeCleanupEnabled}
+                        aria-pressed={sizeThresholdMode === "custom"}
+                        className="justify-start"
+                        onClick={() => {
+                          setSizeThresholdMode("custom");
+                          setSaveMessage(null);
+                        }}
+                      >
+                        {t("clipboard.sizePresetCustom")}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {sizeThresholdMode === "custom" ? (
+                    <div className="space-y-1">
+                      <label htmlFor="clipboard-size-custom" className="text-xs text-text-secondary">
+                        {t("clipboard.maxTotalSizeMb")}
+                      </label>
+                      <Input
+                        ref={customSizeInputRef}
+                        id="clipboard-size-custom"
+                        type="number"
+                        min={MIN_MAX_TOTAL_SIZE_MB}
+                        max={MAX_MAX_TOTAL_SIZE_MB}
+                        disabled={!sizeCleanupEnabled}
+                        value={customSizeMbInput}
+                        invalid={maxTotalSizeInvalid}
+                        onChange={(event) => {
+                          setCustomSizeMbInput(event.currentTarget.value);
+                          setSaveMessage(null);
+                        }}
+                      />
+                    </div>
+                  ) : null}
+
+                  <p className={`m-0 text-xs ${maxTotalSizeInvalid ? "text-danger" : "text-text-muted"}`}>
+                    {clipboardSizeHelperText}
                   </p>
                 </div>
 

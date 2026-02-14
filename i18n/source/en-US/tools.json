@@ -1,0 +1,18 @@
+{
+  "page.title": "Quick Toolbox",
+  "page.subtitle": "Built-in data processing and encoding tools with instant feedback.",
+  "base64.encode": "Encode",
+  "base64.decode": "Decode",
+  "base64.waitResult": "Waiting for result",
+  "regex.title": "Regex tester",
+  "regex.replacementPlaceholder": "Replacement text",
+  "regex.matchCount": "Match count: {count}",
+  "regex.defaultSource": "rtool is a desktop assistant, and rtool supports launcher",
+  "timestamp.title": "Timestamp converter",
+  "timestamp.now": "Current timestamp: {value}",
+  "timestamp.invalid": "Please enter a valid timestamp",
+  "timestamp.local": "Local time: {value}",
+  "timestamp.iso": "ISO time: {value}",
+  "timestamp.seconds": "Seconds: {value}",
+  "timestamp.milliseconds": "Milliseconds: {value}"
+}

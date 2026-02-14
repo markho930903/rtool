@@ -1,0 +1,10 @@
+{
+  "select.placeholder": "Please select",
+  "status.loading": "Loading...",
+  "status.preparingMain": "Preparing main interface",
+  "status.preparingLauncher": "Preparing launcher",
+  "status.preparingClipboard": "Preparing clipboard history",
+  "status.empty": "--",
+  "action.save": "Save",
+  "action.saving": "Saving..."
+}

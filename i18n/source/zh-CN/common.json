@@ -1,0 +1,10 @@
+{
+  "select.placeholder": "请选择",
+  "status.loading": "加载中...",
+  "status.preparingMain": "正在准备主界面",
+  "status.preparingLauncher": "正在准备启动器",
+  "status.preparingClipboard": "正在准备剪贴板历史",
+  "status.empty": "--",
+  "action.save": "保存",
+  "action.saving": "保存中..."
+}

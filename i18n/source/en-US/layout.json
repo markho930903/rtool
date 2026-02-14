@@ -1,0 +1,14 @@
+{
+  "theme.system": "System",
+  "theme.dark": "Dark",
+  "theme.light": "Light",
+  "theme.title": "Theme: {current} (click to switch to {next})",
+  "theme.button": "Theme",
+  "nav.mainAria": "Main navigation",
+  "nav.dashboard": "Dashboard",
+  "nav.tools": "Tools",
+  "nav.logs": "Logs",
+  "nav.settings": "Settings",
+  "titlebar.menuAria": "Title bar menu switcher",
+  "titlebar.switchMenu": "Current menu: {current} (click to switch)"
+}

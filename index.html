@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/tauri.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>rtool</title>
+    <script>
+      (function () {
+        const key = "rtool.theme.preference";
+        const localeKey = "rtool.locale.preference";
+        const root = document.documentElement;
+        const resolveWindowLabelByHash = function () {
+          const hash = window.location.hash || "";
+          if (hash.startsWith("#/launcher")) {
+            return "launcher";
+          }
+
+          if (hash.startsWith("#/clipboard")) {
+            return "clipboard_history";
+          }
+
+          return "main";
+        };
+        let raw = null;
+        let localeRaw = null;
+        try {
+          raw = localStorage.getItem(key);
+          localeRaw = localStorage.getItem(localeKey);
+        } catch {
+          raw = null;
+          localeRaw = null;
+        }
+        const preference = raw === "light" || raw === "dark" || raw === "system" ? raw : "system";
+        const resolved =
+          preference === "system"
+            ? window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light"
+            : preference;
+        root.setAttribute("data-theme", resolved);
+        root.setAttribute("data-theme-preference", preference);
+        root.style.colorScheme = resolved;
+        root.setAttribute("data-window-label", resolveWindowLabelByHash());
+
+        const localePreference =
+          localeRaw === "zh-CN" || localeRaw === "en-US" || localeRaw === "system" ? localeRaw : "system";
+        const detectLocale = function () {
+          const languageCandidates = [];
+          if (Array.isArray(navigator.languages)) {
+            languageCandidates.push.apply(languageCandidates, navigator.languages);
+          }
+          languageCandidates.push(navigator.language);
+
+          for (const candidate of languageCandidates) {
+            if (!candidate) {
+              continue;
+            }
+
+            const normalized = String(candidate).trim().toLowerCase();
+            if (!normalized) {
+              continue;
+            }
+
+            if (normalized.startsWith("zh")) {
+              return "zh-CN";
+            }
+
+            if (normalized.startsWith("en")) {
+              return "en-US";
+            }
+          }
+
+          return "zh-CN";
+        };
+
+        const locale = localePreference === "system" ? detectLocale() : localePreference;
+        root.lang = locale;
+        root.setAttribute("data-locale", locale);
+      })();
+    </script>
+    <style id="boot-base-style">
+      html,
+      body,
+      #root {
+        height: 100%;
+      }
+
+      body {
+        margin: 0;
+      }
+
+      html[data-theme="dark"] body {
+        background: rgb(9 9 11);
+        color: rgb(244 244 245);
+      }
+
+      html[data-theme="light"] body {
+        background: rgb(244 246 252);
+        color: rgb(24 24 27);
+      }
+
+      html[data-window-label="launcher"] body,
+      html[data-window-label="clipboard_history"] body,
+      html[data-window-label="launcher"] #root,
+      html[data-window-label="clipboard_history"] #root {
+        background: transparent;
+        border-radius: 16px;
+        overflow: hidden;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

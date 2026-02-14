@@ -1,0 +1,125 @@
+:root {
+  --color-bg-app: rgb(9 9 11);
+  --color-bg-elevated: rgb(14 14 18 / 84%);
+  --color-surface-card: rgb(40 40 46 / 82%);
+  --color-surface-soft: rgb(255 255 255 / 4%);
+  --color-surface-overlay: rgb(40 40 46 / 94%);
+  --color-surface-popover: rgb(40 40 46 / 97%);
+  --color-surface-scrim: rgb(9 9 11 / 62%);
+
+  --color-border-muted: rgb(255 255 255 / 10%);
+  --color-border-strong: rgb(255 255 255 / 16%);
+
+  --color-text-primary: rgb(244 244 245);
+  --color-text-secondary: rgb(212 212 216);
+  --color-text-muted: rgb(161 161 170);
+
+  --color-accent: rgb(125 211 252);
+  --color-accent-soft: rgb(125 211 252 / 18%);
+  --color-accent-contrast: rgb(8 13 20);
+  --color-danger: rgb(253 164 175);
+  --color-info: rgb(125 211 252);
+  --color-sidebar-item-hover: rgb(125 211 252 / 13%);
+  --color-sidebar-item-active: rgb(125 211 252 / 20%);
+
+  --shadow-surface: 0 8px 20px rgb(0 0 0 / 16%);
+  --shadow-overlay: 0 14px 32px rgb(0 0 0 / 16%);
+  --shadow-popover: 0 18px 36px rgb(0 0 0 / 24%);
+  --color-popover-highlight: rgb(255 255 255 / 5%);
+
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-overlay: 16px;
+  --radius-lg: 14px;
+  --radius-xl: 16px;
+}
+
+html[data-theme="light"] {
+  --color-bg-app: rgb(244 246 252);
+  --color-bg-elevated: rgb(250 252 255 / 90%);
+  --color-surface-card: rgb(250 252 255 / 94%);
+  --color-surface-soft: rgb(255 255 255 / 62%);
+  --color-surface-overlay: rgb(250 252 255 / 96%);
+  --color-surface-popover: rgb(250 252 255 / 98%);
+  --color-surface-scrim: rgb(13 18 26 / 26%);
+
+  --color-border-muted: rgb(15 23 42 / 10%);
+  --color-border-strong: rgb(15 23 42 / 14%);
+
+  --color-text-primary: rgb(24 24 27);
+  --color-text-secondary: rgb(63 63 70);
+  --color-text-muted: rgb(113 113 122);
+
+  --color-accent: rgb(2 132 199);
+  --color-accent-soft: rgb(2 132 199 / 14%);
+  --color-accent-contrast: rgb(241 245 249);
+  --color-danger: rgb(225 29 72);
+  --color-info: rgb(2 132 199);
+  --color-sidebar-item-hover: rgb(2 132 199 / 10%);
+  --color-sidebar-item-active: rgb(2 132 199 / 14%);
+
+  --shadow-surface: 0 6px 16px rgb(15 23 42 / 5%);
+  --shadow-overlay: 0 12px 26px rgb(15 23 42 / 5%);
+  --shadow-popover: 0 16px 30px rgb(15 23 42 / 10%);
+  --color-popover-highlight: rgb(255 255 255 / 24%);
+}
+
+html[data-theme="dark"] {
+  --color-bg-app: rgb(9 9 11);
+  --color-bg-elevated: rgb(14 14 18 / 84%);
+  --color-surface-card: rgb(40 40 46 / 82%);
+  --color-surface-soft: rgb(255 255 255 / 4%);
+  --color-surface-overlay: rgb(40 40 46 / 94%);
+  --color-surface-popover: rgb(40 40 46 / 97%);
+  --color-surface-scrim: rgb(9 9 11 / 62%);
+
+  --color-border-muted: rgb(255 255 255 / 10%);
+  --color-border-strong: rgb(255 255 255 / 16%);
+
+  --color-text-primary: rgb(244 244 245);
+  --color-text-secondary: rgb(212 212 216);
+  --color-text-muted: rgb(161 161 170);
+
+  --color-accent: rgb(125 211 252);
+  --color-accent-soft: rgb(125 211 252 / 18%);
+  --color-accent-contrast: rgb(8 13 20);
+  --color-danger: rgb(253 164 175);
+  --color-info: rgb(125 211 252);
+  --color-sidebar-item-hover: rgb(125 211 252 / 13%);
+  --color-sidebar-item-active: rgb(125 211 252 / 20%);
+
+  --shadow-surface: 0 8px 20px rgb(0 0 0 / 16%);
+  --shadow-overlay: 0 14px 32px rgb(0 0 0 / 16%);
+  --shadow-popover: 0 18px 36px rgb(0 0 0 / 24%);
+  --color-popover-highlight: rgb(255 255 255 / 5%);
+}
+
+@keyframes rtool-boot-ring-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+
+@keyframes rtool-boot-shimmer {
+  0% {
+    transform: translateX(0%);
+  }
+
+  100% {
+    transform: translateX(290%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rtool-boot-motion,
+  .rtool-boot-shimmer-layer {
+    animation: none !important;
+  }
+}

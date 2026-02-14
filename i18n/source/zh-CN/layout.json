@@ -1,0 +1,14 @@
+{
+  "theme.system": "跟随系统",
+  "theme.dark": "深色",
+  "theme.light": "浅色",
+  "theme.title": "主题：{current}（点击切换到{next}）",
+  "theme.button": "主题",
+  "nav.mainAria": "主导航",
+  "nav.dashboard": "仪表盘",
+  "nav.tools": "工具箱",
+  "nav.logs": "日志",
+  "nav.settings": "设置",
+  "titlebar.menuAria": "标题栏菜单切换",
+  "titlebar.switchMenu": "当前菜单：{current}（点击切换）"
+}

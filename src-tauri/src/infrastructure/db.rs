@@ -155,6 +155,14 @@ pub fn init_db(db_path: &Path) -> AppResult<()> {
     let conn = Connection::open(db_path)?;
     conn.execute_batch(
         r#"
+        PRAGMA journal_mode = WAL;
+        PRAGMA synchronous = NORMAL;
+        PRAGMA temp_store = MEMORY;
+        PRAGMA busy_timeout = 3000;
+        "#,
+    )?;
+    conn.execute_batch(
+        r#"
         CREATE TABLE IF NOT EXISTS clipboard_items (
             id TEXT PRIMARY KEY,
             content_key TEXT,
@@ -192,12 +200,66 @@ pub fn init_db(db_path: &Path) -> AppResult<()> {
             aggregated_count INTEGER
         );
 
+        CREATE TABLE IF NOT EXISTS transfer_sessions (
+            id TEXT PRIMARY KEY,
+            direction TEXT NOT NULL,
+            peer_device_id TEXT NOT NULL,
+            peer_name TEXT NOT NULL,
+            status TEXT NOT NULL,
+            total_bytes INTEGER NOT NULL,
+            transferred_bytes INTEGER NOT NULL,
+            avg_speed_bps INTEGER NOT NULL,
+            save_dir TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            started_at INTEGER,
+            finished_at INTEGER,
+            error_code TEXT,
+            error_message TEXT,
+            cleanup_after_at INTEGER
+        );
+
+        CREATE TABLE IF NOT EXISTS transfer_files (
+            id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            relative_path TEXT NOT NULL,
+            source_path TEXT,
+            target_path TEXT,
+            size_bytes INTEGER NOT NULL,
+            transferred_bytes INTEGER NOT NULL,
+            chunk_size INTEGER NOT NULL,
+            chunk_count INTEGER NOT NULL,
+            completed_bitmap BLOB,
+            blake3 TEXT,
+            mime_type TEXT,
+            preview_kind TEXT,
+            preview_data TEXT,
+            status TEXT NOT NULL,
+            is_folder_archive INTEGER NOT NULL DEFAULT 0,
+            updated_at INTEGER NOT NULL,
+            FOREIGN KEY(session_id) REFERENCES transfer_sessions(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS transfer_peers (
+            device_id TEXT PRIMARY KEY,
+            display_name TEXT NOT NULL,
+            last_seen_at INTEGER NOT NULL,
+            paired_at INTEGER,
+            trust_level TEXT NOT NULL DEFAULT 'unknown',
+            failed_attempts INTEGER NOT NULL DEFAULT 0,
+            blocked_until INTEGER
+        );
+
         CREATE INDEX IF NOT EXISTS idx_clipboard_created_at ON clipboard_items(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_clipboard_type_created_at ON clipboard_items(item_type, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_log_ts ON log_entries(timestamp DESC);
         CREATE INDEX IF NOT EXISTS idx_log_level_ts ON log_entries(level, timestamp DESC);
         CREATE INDEX IF NOT EXISTS idx_log_scope_ts ON log_entries(scope, timestamp DESC);
         CREATE INDEX IF NOT EXISTS idx_log_request_id ON log_entries(request_id);
+        CREATE INDEX IF NOT EXISTS idx_transfer_sessions_created_at ON transfer_sessions(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_transfer_sessions_status ON transfer_sessions(status, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_transfer_sessions_cleanup ON transfer_sessions(cleanup_after_at);
+        CREATE INDEX IF NOT EXISTS idx_transfer_files_session_id ON transfer_files(session_id);
+        CREATE INDEX IF NOT EXISTS idx_transfer_peers_last_seen ON transfer_peers(last_seen_at DESC);
         "#,
     )?;
 

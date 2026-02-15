@@ -1,1 +1,1 @@
-export type WindowMode = "launcher" | "tools" | "dashboard" | "logs";
+export type WindowMode = "launcher" | "tools" | "transfer" | "dashboard" | "logs";

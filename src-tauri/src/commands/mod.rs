@@ -5,6 +5,7 @@ pub mod launcher;
 pub mod locale;
 pub mod logging;
 pub mod palette;
+pub mod transfer;
 
 use std::time::Instant;
 

@@ -5,19 +5,27 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useNavigate } from "react-router";
 
 import type { ClipboardSyncPayload } from "@/components/clipboard/types";
+import type { TransferPeer, TransferProgressSnapshot } from "@/components/transfer/types";
 import { useLocaleStore } from "@/i18n/store";
 import { useLayoutStore } from "@/layouts/layout.store";
 import { routes } from "@/routers";
 import { useClipboardStore } from "@/stores/clipboard.store";
+import { useTransferStore } from "@/stores/transfer.store";
 import { useThemeStore } from "@/theme/store";
 
 function AppEventBridge() {
   const navigate = useNavigate();
   const applySync = useClipboardStore((state) => state.applySync);
+  const applyTransferPeerSync = useTransferStore((state) => state.applyPeerSync);
+  const applyTransferSessionSync = useTransferStore((state) => state.applySessionSync);
+  const refreshTransferHistory = useTransferStore((state) => state.refreshHistory);
 
   useEffect(() => {
     let unlistenClipboardSync: UnlistenFn | undefined;
     let unlistenMainNavigate: UnlistenFn | undefined;
+    let unlistenTransferPeerSync: UnlistenFn | undefined;
+    let unlistenTransferSessionSync: UnlistenFn | undefined;
+    let unlistenTransferHistorySync: UnlistenFn | undefined;
 
     const setup = async () => {
       const currentWindow = getCurrentWindow();
@@ -36,6 +44,30 @@ function AppEventBridge() {
 
         navigate(event.payload.route);
       });
+
+      unlistenTransferPeerSync = await listen<TransferPeer[]>("rtool://transfer/peer_sync", (event) => {
+        if (currentWindow.label !== "main") {
+          return;
+        }
+        applyTransferPeerSync(event.payload ?? []);
+      });
+
+      unlistenTransferSessionSync = await listen<TransferProgressSnapshot>("rtool://transfer/session_sync", (event) => {
+        if (currentWindow.label !== "main") {
+          return;
+        }
+        if (!event.payload) {
+          return;
+        }
+        applyTransferSessionSync(event.payload);
+      });
+
+      unlistenTransferHistorySync = await listen("rtool://transfer/history_sync", () => {
+        if (currentWindow.label !== "main") {
+          return;
+        }
+        void refreshTransferHistory();
+      });
     };
 
     void setup();
@@ -43,8 +75,11 @@ function AppEventBridge() {
     return () => {
       unlistenClipboardSync?.();
       unlistenMainNavigate?.();
+      unlistenTransferPeerSync?.();
+      unlistenTransferSessionSync?.();
+      unlistenTransferHistorySync?.();
     };
-  }, [applySync, navigate]);
+  }, [applySync, applyTransferPeerSync, applyTransferSessionSync, navigate, refreshTransferHistory]);
 
   useEffect(() => {
     const currentWindow = getCurrentWindow();

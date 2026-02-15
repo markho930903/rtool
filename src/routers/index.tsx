@@ -7,6 +7,7 @@ import LauncherWindowPage from "@/pages/LauncherWindowPage";
 import LogCenterPage from "@/pages/LogCenterPage";
 import NotFoundPage from "@/pages/NotFoundPage";
 import SettingsPage from "@/pages/SettingsPage";
+import TransferPage from "@/pages/TransferPage";
 import ToolsPage from "@/pages/ToolsPage";
 
 export const routes: RouteObject[] = [
@@ -16,6 +17,7 @@ export const routes: RouteObject[] = [
     children: [
       { index: true, element: <HomePage /> },
       { path: "tools", element: <ToolsPage /> },
+      { path: "transfer", element: <TransferPage /> },
       { path: "logs", element: <LogCenterPage /> },
       { path: "settings", element: <SettingsPage /> },
       { path: "*", element: <NotFoundPage /> },

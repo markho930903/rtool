@@ -1,12 +1,12 @@
 use super::{command_end_error, command_end_ok, command_start, normalize_request_id};
 use crate::app::launcher_service::invalidate_launcher_cache;
 use crate::app::state::AppState;
+use crate::core::AppError;
 use crate::core::i18n::DEFAULT_RESOLVED_LOCALE;
 use crate::core::i18n_catalog::{
     ImportLocaleResult, LocaleCatalogList, ReloadLocalesResult, import_locale_file, list_locales,
     reload_overlays,
 };
-use crate::core::AppError;
 use tauri::{AppHandle, State};
 
 fn map_i18n_error(message: String) -> AppError {
@@ -66,7 +66,11 @@ pub fn app_import_locale_file(
     window_label: Option<String>,
 ) -> Result<ImportLocaleResult, AppError> {
     let request_id = normalize_request_id(request_id);
-    let started_at = command_start("app_import_locale_file", &request_id, window_label.as_deref());
+    let started_at = command_start(
+        "app_import_locale_file",
+        &request_id,
+        window_label.as_deref(),
+    );
 
     let result = (|| -> Result<ImportLocaleResult, AppError> {
         let output = import_locale_file(

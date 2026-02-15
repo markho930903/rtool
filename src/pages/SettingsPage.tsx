@@ -14,6 +14,7 @@ import {
   reloadBackendLocales,
   type BackendLocaleCatalogList,
 } from "@/services/locale.service";
+import { transferGetSettings, transferUpdateSettings } from "@/services/transfer.service";
 import { useLoggingStore } from "@/stores/logging.store";
 import { useSettingsStore } from "@/stores/settings.store";
 
@@ -33,7 +34,7 @@ const LOG_KEEP_DAYS_PRESETS = ["1", "3", "7", "14", "30", "60", "90"];
 const LOG_WINDOW_MS_PRESETS = ["100", "250", "500", "1000", "2000", "5000", "10000", "30000", "60000"];
 const LOG_MAX_PER_KEY_PRESETS = ["1", "5", "10", "20", "50", "100", "200"];
 
-type SettingsSection = "general" | "clipboard" | "launcher" | "logging";
+type SettingsSection = "general" | "clipboard" | "transfer" | "launcher" | "logging";
 type SizeThresholdMode = "preset" | "custom";
 
 interface SettingsNavItem {
@@ -136,6 +137,14 @@ export default function SettingsPage() {
   const customSizeInputRef = useRef<HTMLInputElement>(null);
   const [saveMessage, setSaveMessage] = useState<MessageState | null>(null);
   const [activeSection, setActiveSection] = useState<SettingsSection>("general");
+  const [transferLoading, setTransferLoading] = useState(false);
+  const [transferSaving, setTransferSaving] = useState(false);
+  const [transferDefaultDirInput, setTransferDefaultDirInput] = useState("");
+  const [transferAutoCleanupDaysInput, setTransferAutoCleanupDaysInput] = useState("30");
+  const [transferResumeEnabled, setTransferResumeEnabled] = useState(true);
+  const [transferDiscoveryEnabled, setTransferDiscoveryEnabled] = useState(true);
+  const [transferPairingRequired, setTransferPairingRequired] = useState(true);
+  const [transferSaveMessage, setTransferSaveMessage] = useState<MessageState | null>(null);
 
   const [logMinLevel, setLogMinLevel] = useState("info");
   const [logKeepDaysInput, setLogKeepDaysInput] = useState(String(MIN_KEEP_DAYS));
@@ -169,6 +178,12 @@ export default function SettingsPage() {
         icon: "i-noto:clipboard",
       },
       {
+        key: "transfer",
+        label: t("section.transfer.label"),
+        description: t("section.transfer.description"),
+        icon: "i-noto:outbox-tray",
+      },
+      {
         key: "launcher",
         label: t("section.launcher.label"),
         description: t("section.launcher.description"),
@@ -187,6 +202,25 @@ export default function SettingsPage() {
   useEffect(() => {
     void fetchClipboardSettings();
     void fetchLoggingConfig();
+
+    const loadTransfer = async () => {
+      setTransferLoading(true);
+      try {
+        const settings = await transferGetSettings();
+        setTransferDefaultDirInput(settings.defaultDownloadDir);
+        setTransferAutoCleanupDaysInput(String(settings.autoCleanupDays));
+        setTransferResumeEnabled(settings.resumeEnabled);
+        setTransferDiscoveryEnabled(settings.discoveryEnabled);
+        setTransferPairingRequired(settings.pairingRequired);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setTransferSaveMessage({ text: message, isError: true });
+      } finally {
+        setTransferLoading(false);
+      }
+    };
+
+    void loadTransfer();
   }, [fetchClipboardSettings, fetchLoggingConfig]);
 
   const refreshLocaleCatalog = useCallback(async () => {
@@ -320,6 +354,13 @@ export default function SettingsPage() {
     loggingConfig.highFreqWindowMs === parsedHighFreqWindowMs &&
     loggingConfig.highFreqMaxPerKey === parsedHighFreqMaxPerKey &&
     loggingConfig.allowRawView === logAllowRawView;
+  const parsedTransferCleanupDays = useMemo(
+    () => parsePositiveInt(transferAutoCleanupDaysInput),
+    [transferAutoCleanupDaysInput],
+  );
+  const transferDirInvalid = transferDefaultDirInput.trim().length === 0;
+  const transferCleanupInvalid =
+    parsedTransferCleanupDays === null || parsedTransferCleanupDays < 1 || parsedTransferCleanupDays > 365;
 
   const localePreferenceOptions = useMemo(() => {
     const values = new Set<string>(SUPPORTED_LOCALES);
@@ -389,6 +430,33 @@ export default function SettingsPage() {
         ? t("clipboard.sizeInvalid", { min: MIN_MAX_TOTAL_SIZE_MB, max: MAX_MAX_TOTAL_SIZE_MB })
         : t("clipboard.sizeCustomInputHint")
       : t("clipboard.sizePresetHint", { value: selectedPresetMb });
+
+  const handleSaveTransfer = async () => {
+    if (transferDirInvalid || transferCleanupInvalid) {
+      setTransferSaveMessage({
+        text: t("transfer.saveFailedInvalid"),
+        isError: true,
+      });
+      return;
+    }
+
+    setTransferSaving(true);
+    try {
+      await transferUpdateSettings({
+        defaultDownloadDir: transferDefaultDirInput.trim(),
+        autoCleanupDays: parsedTransferCleanupDays ?? 30,
+        resumeEnabled: transferResumeEnabled,
+        discoveryEnabled: transferDiscoveryEnabled,
+        pairingRequired: transferPairingRequired,
+      });
+      setTransferSaveMessage({ text: t("transfer.saved"), isError: false });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setTransferSaveMessage({ text: t("transfer.saveFailed", { message }), isError: true });
+    } finally {
+      setTransferSaving(false);
+    }
+  };
 
   const handleSaveClipboard = async () => {
     if (parsedMaxItems === null || maxItemsInvalid) {
@@ -836,6 +904,91 @@ export default function SettingsPage() {
                   {saveMessage ? (
                     <span className={`text-xs ${saveMessage.isError ? "text-danger" : "text-text-secondary"}`}>
                       {saveMessage.text}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            </section>
+          ) : null}
+
+          {activeSection === "transfer" ? (
+            <section className="h-full min-h-0">
+              <div className="space-y-3">
+                <h2 className="m-0 text-sm font-semibold text-text-primary">{t("transfer.title")}</h2>
+                <p className="m-0 text-xs text-text-muted">{t("transfer.desc")}</p>
+
+                <div className="max-w-[640px] space-y-3 rounded-lg border border-border-muted bg-surface-soft px-3 py-3">
+                  <div className="space-y-1">
+                    <label htmlFor="transfer-default-dir" className="text-xs text-text-secondary">
+                      {t("transfer.defaultDir")}
+                    </label>
+                    <Input
+                      id="transfer-default-dir"
+                      value={transferDefaultDirInput}
+                      invalid={transferDirInvalid}
+                      onChange={(event) => {
+                        setTransferDefaultDirInput(event.currentTarget.value);
+                        setTransferSaveMessage(null);
+                      }}
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label htmlFor="transfer-auto-cleanup-days" className="text-xs text-text-secondary">
+                      {t("transfer.autoCleanupDays")}
+                    </label>
+                    <Input
+                      id="transfer-auto-cleanup-days"
+                      type="number"
+                      min={1}
+                      max={365}
+                      value={transferAutoCleanupDaysInput}
+                      invalid={transferCleanupInvalid}
+                      onChange={(event) => {
+                        setTransferAutoCleanupDaysInput(event.currentTarget.value);
+                        setTransferSaveMessage(null);
+                      }}
+                    />
+                  </div>
+
+                  <Checkbox
+                    checked={transferResumeEnabled}
+                    label={t("transfer.resumeEnabled")}
+                    onChange={(event) => {
+                      setTransferResumeEnabled(event.currentTarget.checked);
+                      setTransferSaveMessage(null);
+                    }}
+                  />
+                  <Checkbox
+                    checked={transferDiscoveryEnabled}
+                    label={t("transfer.discoveryEnabled")}
+                    onChange={(event) => {
+                      setTransferDiscoveryEnabled(event.currentTarget.checked);
+                      setTransferSaveMessage(null);
+                    }}
+                  />
+                  <Checkbox
+                    checked={transferPairingRequired}
+                    label={t("transfer.pairingRequired")}
+                    onChange={(event) => {
+                      setTransferPairingRequired(event.currentTarget.checked);
+                      setTransferSaveMessage(null);
+                    }}
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="primary"
+                    disabled={transferLoading || transferSaving || transferDirInvalid || transferCleanupInvalid}
+                    onClick={() => void handleSaveTransfer()}
+                  >
+                    {transferSaving ? t("common:action.saving") : t("transfer.save")}
+                  </Button>
+                  {transferSaveMessage ? (
+                    <span className={`text-xs ${transferSaveMessage.isError ? "text-danger" : "text-text-secondary"}`}>
+                      {transferSaveMessage.text}
                     </span>
                   ) : null}
                 </div>

@@ -15,6 +15,8 @@
   "launcher.builtin.dashboard.subtitle": "跳转到主页面",
   "launcher.builtin.tools.title": "打开工具箱",
   "launcher.builtin.tools.subtitle": "跳转到工具箱页面",
+  "launcher.builtin.transfer.title": "打开文件传输助手",
+  "launcher.builtin.transfer.subtitle": "跳转到文件传输页面",
   "launcher.builtin.clipboard.title": "打开剪贴板历史窗口",
   "launcher.builtin.clipboard.subtitle": "显示独立剪贴板窗口",
   "launcher.builtin.tool.base64.title": "工具：Base64",

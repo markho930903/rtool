@@ -20,6 +20,7 @@ const THEME_ICON_MAP: Record<ThemePreference, string> = {
 const NAV_ITEMS = [
   { to: "/", labelKey: "nav.dashboard", icon: "i-noto:house", end: true },
   { to: "/tools", labelKey: "nav.tools", icon: "i-noto:hammer-and-wrench", end: false },
+  { to: "/transfer", labelKey: "nav.transfer", icon: "i-noto:outbox-tray", end: false },
   { to: "/logs", labelKey: "nav.logs", icon: "i-noto:scroll", end: false },
   { to: "/settings", labelKey: "nav.settings", icon: "i-noto:gear", end: false },
 ] as const;
@@ -62,6 +63,10 @@ function resolveWindowMode(pathname: string): WindowMode {
     return "tools";
   }
 
+  if (pathname.startsWith("/transfer")) {
+    return "transfer";
+  }
+
   if (pathname.startsWith("/logs")) {
     return "logs";
   }
@@ -74,12 +79,16 @@ function resolveActiveNavItem(pathname: string): NavItem {
     return NAV_ITEMS[1];
   }
 
-  if (pathname.startsWith("/logs")) {
+  if (pathname.startsWith("/transfer")) {
     return NAV_ITEMS[2];
   }
 
-  if (pathname.startsWith("/settings")) {
+  if (pathname.startsWith("/logs")) {
     return NAV_ITEMS[3];
+  }
+
+  if (pathname.startsWith("/settings")) {
+    return NAV_ITEMS[4];
   }
 
   return NAV_ITEMS[0];

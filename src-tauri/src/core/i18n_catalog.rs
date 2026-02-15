@@ -36,6 +36,11 @@ const BUILTIN_BUNDLES: &[BuiltinBundle] = &[
     },
     BuiltinBundle {
         locale: "zh-CN",
+        namespace: "transfer",
+        content: include_str!("../../../i18n/source/zh-CN/transfer.json"),
+    },
+    BuiltinBundle {
+        locale: "zh-CN",
         namespace: "logs",
         content: include_str!("../../../i18n/source/zh-CN/logs.json"),
     },
@@ -83,6 +88,11 @@ const BUILTIN_BUNDLES: &[BuiltinBundle] = &[
         locale: "en-US",
         namespace: "tools",
         content: include_str!("../../../i18n/source/en-US/tools.json"),
+    },
+    BuiltinBundle {
+        locale: "en-US",
+        namespace: "transfer",
+        content: include_str!("../../../i18n/source/en-US/transfer.json"),
     },
     BuiltinBundle {
         locale: "en-US",
@@ -238,8 +248,7 @@ static CATALOG: OnceLock<RwLock<I18nCatalog>> = OnceLock::new();
 pub fn initialize(app_data_dir: &Path) -> Result<(), String> {
     let builtin = load_builtin_layer()?;
     let overlay_root = app_data_dir.join("locales");
-    fs::create_dir_all(&overlay_root)
-        .map_err(|error| format!("创建语言目录失败: {}", error))?;
+    fs::create_dir_all(&overlay_root).map_err(|error| format!("创建语言目录失败: {}", error))?;
     let overlay = load_overlay_layer(&overlay_root)?;
 
     let catalog = I18nCatalog {
@@ -330,13 +339,7 @@ pub fn import_locale_file(
     let mut guard = write_guard(lock);
 
     let warnings = collect_placeholder_warnings(&guard, fallback_locale, &entries);
-    persist_overlay_namespace(
-        &guard.overlay_root,
-        locale,
-        namespace,
-        &entries,
-        replace,
-    )?;
+    persist_overlay_namespace(&guard.overlay_root, locale, namespace, &entries, replace)?;
 
     let overlay = load_overlay_layer(&guard.overlay_root)?;
     if !overlay.warnings.is_empty() {
@@ -437,8 +440,8 @@ fn load_overlay_layer(root: &Path) -> Result<OverlayLoadResult, String> {
         return Ok(result);
     }
 
-    let locale_dirs = fs::read_dir(root)
-        .map_err(|error| format!("读取 overlay 语言目录失败: {}", error))?;
+    let locale_dirs =
+        fs::read_dir(root).map_err(|error| format!("读取 overlay 语言目录失败: {}", error))?;
     for locale_entry in locale_dirs {
         let locale_entry = match locale_entry {
             Ok(value) => value,
@@ -495,9 +498,10 @@ fn load_overlay_layer(root: &Path) -> Result<OverlayLoadResult, String> {
             let namespace = match namespace_path.file_stem().and_then(|value| value.to_str()) {
                 Some(value) => value.trim().to_string(),
                 None => {
-                    result
-                        .warnings
-                        .push(format!("跳过非法 namespace 文件: {}", namespace_path.display()));
+                    result.warnings.push(format!(
+                        "跳过非法 namespace 文件: {}",
+                        namespace_path.display()
+                    ));
                     continue;
                 }
             };
@@ -578,8 +582,7 @@ fn persist_overlay_namespace(
     replace: bool,
 ) -> Result<(), String> {
     let locale_dir = overlay_root.join(locale);
-    fs::create_dir_all(&locale_dir)
-        .map_err(|error| format!("创建 locale 目录失败: {}", error))?;
+    fs::create_dir_all(&locale_dir).map_err(|error| format!("创建 locale 目录失败: {}", error))?;
 
     let file_path = locale_dir.join(format!("{}.json", namespace));
     if file_path.exists() && !replace {

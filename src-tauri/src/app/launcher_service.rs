@@ -155,7 +155,7 @@ pub fn execute_launcher_action(app: &AppHandle, action: &LauncherActionDto) -> A
                         "rtool://clipboard-window/opened",
                         ClipboardWindowOpenedPayload { compact: false },
                     )
-                        .map_err(|error| error.to_string())?;
+                    .map_err(|error| error.to_string())?;
                 }
                 Ok(format!("window:{window_label}"))
             }),
@@ -222,8 +222,10 @@ pub fn search_palette_legacy(app: &AppHandle, query: &str) -> Vec<LauncherItemDt
 pub fn execute_palette_legacy(action_id: &str) -> ActionResultDto {
     let message = match action_id {
         "action.open-tools" => "route:/tools",
+        "action.open-transfer" => "route:/transfer",
         "action.open-home" => "route:/",
         "builtin.tools" => "route:/tools",
+        "builtin.transfer" => "route:/transfer",
         "builtin.dashboard" => "route:/",
         _ => "unsupported_action",
     };
@@ -293,6 +295,15 @@ fn builtin_items(locale: &str) -> Vec<LauncherItemDto> {
             t(locale, "launcher.builtin.tools.subtitle"),
             "/tools",
             "i-noto:hammer-and-wrench",
+            None,
+        ),
+        build_builtin_route_item(
+            locale,
+            "builtin.transfer",
+            t(locale, "launcher.builtin.transfer.title"),
+            t(locale, "launcher.builtin.transfer.subtitle"),
+            "/transfer",
+            "i-noto:outbox-tray",
             None,
         ),
         build_builtin_window_item(
@@ -437,11 +448,7 @@ fn score_item(
     Some(item)
 }
 
-fn calculate_alias_score(
-    item: &LauncherItemDto,
-    normalized_query: &str,
-    locale: &str,
-) -> i32 {
+fn calculate_alias_score(item: &LauncherItemDto, normalized_query: &str, locale: &str) -> i32 {
     if normalized_query.is_empty() {
         return 0;
     }
@@ -470,30 +477,24 @@ fn alias_terms(id: &str, locale: &str) -> &'static [&'static str] {
         "builtin.tools" | "action.open-tools" if is_en_locale(locale) => {
             &["打开工具箱", "工具箱", "工具", "实用工具"]
         }
+        "builtin.transfer" | "action.open-transfer" if is_zh_locale(locale) => {
+            &["file transfer", "transfer", "send files", "sync files"]
+        }
+        "builtin.transfer" | "action.open-transfer" if is_en_locale(locale) => {
+            &["文件传输", "传输", "发送文件", "互传"]
+        }
         "builtin.clipboard" if is_zh_locale(locale) => {
             &["clipboard", "clipboard history", "clip history"]
         }
-        "builtin.clipboard" if is_en_locale(locale) => {
-            &["剪贴板", "剪贴板历史", "复制历史"]
-        }
+        "builtin.clipboard" if is_en_locale(locale) => &["剪贴板", "剪贴板历史", "复制历史"],
         "builtin.tool.base64" if is_zh_locale(locale) => {
             &["base64", "encode", "decode", "tool base64"]
         }
-        "builtin.tool.base64" if is_en_locale(locale) => {
-            &["base64", "编码", "解码", "工具"]
-        }
-        "builtin.tool.regex" if is_zh_locale(locale) => {
-            &["regex", "regular expression", "regexp"]
-        }
-        "builtin.tool.regex" if is_en_locale(locale) => {
-            &["正则", "正则表达式", "匹配工具"]
-        }
-        "builtin.tool.timestamp" if is_zh_locale(locale) => {
-            &["timestamp", "time", "unix time"]
-        }
-        "builtin.tool.timestamp" if is_en_locale(locale) => {
-            &["时间戳", "时间", "时间转换"]
-        }
+        "builtin.tool.base64" if is_en_locale(locale) => &["base64", "编码", "解码", "工具"],
+        "builtin.tool.regex" if is_zh_locale(locale) => &["regex", "regular expression", "regexp"],
+        "builtin.tool.regex" if is_en_locale(locale) => &["正则", "正则表达式", "匹配工具"],
+        "builtin.tool.timestamp" if is_zh_locale(locale) => &["timestamp", "time", "unix time"],
+        "builtin.tool.timestamp" if is_en_locale(locale) => &["时间戳", "时间", "时间转换"],
         _ => &[],
     }
 }

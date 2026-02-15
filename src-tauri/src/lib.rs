@@ -7,6 +7,7 @@ use active_win_pos_rs::get_active_window;
 use app::clipboard_service::ClipboardService;
 use app::launcher_service::execute_launcher_action;
 use app::state::AppState;
+use app::transfer_service::TransferService;
 use core::i18n::{
     APP_LOCALE_PREFERENCE_KEY, AppLocaleState, init_i18n_catalog, normalize_locale_preference,
     resolve_locale, t,
@@ -41,7 +42,9 @@ const TRAY_MENU_ID_TOOLS: &str = "tray.tools";
 const TRAY_MENU_ID_CLIPBOARD: &str = "tray.clipboard";
 const TRAY_MENU_ID_QUIT: &str = "tray.quit";
 
-fn read_initial_locale_state(db_pool: &infrastructure::db::DbPool) -> Result<AppLocaleState, Box<dyn Error>> {
+fn read_initial_locale_state(
+    db_pool: &infrastructure::db::DbPool,
+) -> Result<AppLocaleState, Box<dyn Error>> {
     let preference = infrastructure::db::get_app_setting(db_pool, APP_LOCALE_PREFERENCE_KEY)?
         .as_deref()
         .and_then(normalize_locale_preference)
@@ -52,10 +55,7 @@ fn read_initial_locale_state(db_pool: &infrastructure::db::DbPool) -> Result<App
     ))
 }
 
-fn build_tray_menu<R: Runtime>(
-    app: &AppHandle<R>,
-    locale: &str,
-) -> tauri::Result<Menu<R>> {
+fn build_tray_menu<R: Runtime>(app: &AppHandle<R>, locale: &str) -> tauri::Result<Menu<R>> {
     let dashboard_label = t(locale, "tray.dashboard");
     let dashboard_item = MenuItem::with_id(
         app,
@@ -65,13 +65,7 @@ fn build_tray_menu<R: Runtime>(
         None::<&str>,
     )?;
     let tools_label = t(locale, "tray.tools");
-    let tools_item = MenuItem::with_id(
-        app,
-        TRAY_MENU_ID_TOOLS,
-        &tools_label,
-        true,
-        None::<&str>,
-    )?;
+    let tools_item = MenuItem::with_id(app, TRAY_MENU_ID_TOOLS, &tools_label, true, None::<&str>)?;
     let clipboard_label = t(locale, "tray.clipboard");
     let clipboard_item = MenuItem::with_id(
         app,
@@ -82,13 +76,7 @@ fn build_tray_menu<R: Runtime>(
     )?;
     let separator = PredefinedMenuItem::separator(app)?;
     let quit_label = t(locale, "tray.quit");
-    let quit_item = MenuItem::with_id(
-        app,
-        TRAY_MENU_ID_QUIT,
-        &quit_label,
-        true,
-        None::<&str>,
-    )?;
+    let quit_item = MenuItem::with_id(app, TRAY_MENU_ID_QUIT, &quit_label, true, None::<&str>)?;
 
     Menu::with_items(
         app,
@@ -131,17 +119,11 @@ fn refresh_tray_menu<R: Runtime>(app: &AppHandle<R>, locale: &str) {
     match build_tray_menu(app, locale) {
         Ok(menu) => {
             if let Err(error) = tray.set_menu(Some(menu)) {
-                tracing::warn!(
-                    event = "tray_menu_update_failed",
-                    error = error.to_string()
-                );
+                tracing::warn!(event = "tray_menu_update_failed", error = error.to_string());
             }
         }
         Err(error) => {
-            tracing::warn!(
-                event = "tray_menu_build_failed",
-                error = error.to_string()
-            );
+            tracing::warn!(event = "tray_menu_build_failed", error = error.to_string());
         }
     }
 
@@ -153,10 +135,7 @@ fn refresh_tray_menu<R: Runtime>(app: &AppHandle<R>, locale: &str) {
     }
 
     if let Err(error) = tray.set_title(Option::<&str>::None) {
-        tracing::warn!(
-            event = "tray_title_clear_failed",
-            error = error.to_string()
-        );
+        tracing::warn!(event = "tray_title_clear_failed", error = error.to_string());
     }
 }
 
@@ -285,7 +264,10 @@ pub(crate) fn apply_clipboard_window_mode(
     let target_height_logical =
         (before_size.height as f64 / scale_factor).max(CLIPBOARD_MIN_HEIGHT_LOGICAL);
     window
-        .set_size(LogicalSize::new(target_width_logical, target_height_logical))
+        .set_size(LogicalSize::new(
+            target_width_logical,
+            target_height_logical,
+        ))
         .map_err(|error| format!("set_size_failed:{error}"))?;
 
     let target_width_px = (target_width_logical * scale_factor).round().max(1.0) as u32;
@@ -663,20 +645,21 @@ impl<R: Runtime> ClipboardProcessor<R> {
     }
 
     fn handle_image(&mut self, png_bytes: &[u8], source_app: Option<String>) {
-        let (width_u32, height_u32) = if let Some(dimensions) = read_image_dimensions_from_header(png_bytes) {
-            dimensions
-        } else {
-            match image::load_from_memory(png_bytes) {
-                Ok(decoded) => (decoded.width(), decoded.height()),
-                Err(error) => {
-                    tracing::warn!(
-                        event = "clipboard_image_decode_failed",
-                        error = error.to_string()
-                    );
-                    return;
+        let (width_u32, height_u32) =
+            if let Some(dimensions) = read_image_dimensions_from_header(png_bytes) {
+                dimensions
+            } else {
+                match image::load_from_memory(png_bytes) {
+                    Ok(decoded) => (decoded.width(), decoded.height()),
+                    Err(error) => {
+                        tracing::warn!(
+                            event = "clipboard_image_decode_failed",
+                            error = error.to_string()
+                        );
+                        return;
+                    }
                 }
-            }
-        };
+            };
         let width = width_u32 as usize;
         let height = height_u32 as usize;
         let signature = build_image_signature(width, height, png_bytes);
@@ -929,6 +912,8 @@ pub fn run() {
                 high_freq_max_per_key = logging_config.high_freq_max_per_key
             );
             let clipboard_service = ClipboardService::new(db_pool.clone(), db_path.clone())?;
+            let transfer_service =
+                TransferService::new(app_handle.clone(), db_pool.clone(), app_data_dir.as_path())?;
             start_clipboard_watcher(app_handle.clone(), clipboard_service.clone());
             let initial_resolved_locale = initial_locale_state.resolved.clone();
             let locale_state = Arc::new(Mutex::new(initial_locale_state));
@@ -937,6 +922,7 @@ pub fn run() {
                 db_path,
                 db_pool,
                 clipboard_service,
+                transfer_service,
                 locale_state,
                 clipboard_window_compact: Arc::new(Mutex::new(false)),
                 started_at: Instant::now(),
@@ -989,6 +975,20 @@ pub fn run() {
             commands::logging::logging_get_config,
             commands::logging::logging_update_config,
             commands::logging::logging_export_jsonl,
+            commands::transfer::transfer_get_settings,
+            commands::transfer::transfer_update_settings,
+            commands::transfer::transfer_generate_pairing_code,
+            commands::transfer::transfer_start_discovery,
+            commands::transfer::transfer_stop_discovery,
+            commands::transfer::transfer_list_peers,
+            commands::transfer::transfer_send_files,
+            commands::transfer::transfer_pause_session,
+            commands::transfer::transfer_resume_session,
+            commands::transfer::transfer_cancel_session,
+            commands::transfer::transfer_retry_session,
+            commands::transfer::transfer_list_history,
+            commands::transfer::transfer_clear_history,
+            commands::transfer::transfer_open_download_dir,
         ])
         .run(tauri::generate_context!())
         .unwrap_or_else(|error| {

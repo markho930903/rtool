@@ -98,18 +98,10 @@ pub fn init_i18n_catalog(app_data_dir: &Path) -> Result<(), String> {
 }
 
 pub fn t(locale: &str, key: &str) -> String {
-    if let Some(value) = super::i18n_catalog::translate(
-        locale,
-        DEFAULT_RESOLVED_LOCALE,
-        key,
-    ) {
+    if let Some(value) = super::i18n_catalog::translate(locale, DEFAULT_RESOLVED_LOCALE, key) {
         return value;
     }
 
-    tracing::warn!(
-        event = "i18n_missing_key",
-        locale = locale,
-        key = key
-    );
+    tracing::warn!(event = "i18n_missing_key", locale = locale, key = key);
     key.to_string()
 }

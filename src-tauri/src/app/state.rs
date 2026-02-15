@@ -1,4 +1,5 @@
 use crate::app::clipboard_service::ClipboardService;
+use crate::app::transfer_service::TransferService;
 use crate::core::i18n::{AppLocaleState, LocaleStateDto, ResolvedAppLocale};
 use crate::infrastructure::db::DbPool;
 use std::path::PathBuf;
@@ -10,6 +11,7 @@ pub struct AppState {
     pub db_path: PathBuf,
     pub db_pool: DbPool,
     pub clipboard_service: ClipboardService,
+    pub transfer_service: TransferService,
     pub locale_state: Arc<Mutex<AppLocaleState>>,
     pub clipboard_window_compact: Arc<Mutex<bool>>,
     pub started_at: Instant,
@@ -31,11 +33,7 @@ impl AppState {
         self.read_locale_state().resolved
     }
 
-    pub fn update_locale(
-        &self,
-        preference: String,
-        resolved: ResolvedAppLocale,
-    ) -> LocaleStateDto {
+    pub fn update_locale(&self, preference: String, resolved: ResolvedAppLocale) -> LocaleStateDto {
         let next = AppLocaleState::new(preference, resolved);
         match self.locale_state.lock() {
             Ok(mut guard) => {

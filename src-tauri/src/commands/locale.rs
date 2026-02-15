@@ -1,10 +1,10 @@
 use super::{command_end_error, command_end_ok, command_start, normalize_request_id};
 use crate::app::launcher_service::invalidate_launcher_cache;
 use crate::app::state::AppState;
+use crate::core::AppError;
 use crate::core::i18n::{
     APP_LOCALE_PREFERENCE_KEY, LocaleStateDto, normalize_locale_preference, resolve_locale,
 };
-use crate::core::AppError;
 use crate::infrastructure::db;
 use tauri::{AppHandle, State};
 

@@ -311,8 +311,8 @@ pub fn clipboard_window_apply_mode(
         window_label.as_deref(),
     );
     let result = (|| -> Result<ClipboardWindowModeAppliedDto, AppError> {
-        let applied = crate::apply_clipboard_window_mode(&app, compact, "command")
-            .map_err(|detail| {
+        let applied =
+            crate::apply_clipboard_window_mode(&app, compact, "command").map_err(|detail| {
                 AppError::new("clipboard_window_resize_failed", "设置剪贴板窗口尺寸失败")
                     .with_detail(detail)
             })?;
@@ -321,9 +321,12 @@ pub fn clipboard_window_apply_mode(
     })();
     match &result {
         Ok(_) => command_end_ok("clipboard_window_apply_mode", &request_id, started_at),
-        Err(error) => {
-            command_end_error("clipboard_window_apply_mode", &request_id, started_at, error)
-        }
+        Err(error) => command_end_error(
+            "clipboard_window_apply_mode",
+            &request_id,
+            started_at,
+            error,
+        ),
     }
     result
 }
@@ -418,7 +421,9 @@ pub fn clipboard_copy_file_paths(
 
     match &result {
         Ok(_) => command_end_ok("clipboard_copy_file_paths", &request_id, started_at),
-        Err(error) => command_end_error("clipboard_copy_file_paths", &request_id, started_at, error),
+        Err(error) => {
+            command_end_error("clipboard_copy_file_paths", &request_id, started_at, error)
+        }
     }
     result
 }

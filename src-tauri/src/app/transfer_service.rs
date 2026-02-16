@@ -10,7 +10,8 @@ use serde::Serialize;
 use tauri::async_runtime::JoinHandle;
 use tauri::{AppHandle, Emitter};
 use tokio::net::{TcpListener, TcpStream};
-use tokio::time::{Instant, sleep};
+use tokio::sync::watch;
+use tokio::time::{Instant, MissedTickBehavior, interval, sleep};
 
 use crate::core::models::{
     TransferClearHistoryInputDto, TransferFileDto, TransferFileInputDto, TransferHistoryFilterDto,
@@ -20,6 +21,7 @@ use crate::core::models::{
 };
 use crate::core::{AppError, AppResult};
 use crate::infrastructure::db::DbPool;
+use crate::infrastructure::runtime::blocking::run_blocking;
 use crate::infrastructure::transfer::TRANSFER_LISTEN_PORT;
 use crate::infrastructure::transfer::archive::{cleanup_temp_paths, collect_sources};
 use crate::infrastructure::transfer::discovery::{
@@ -61,7 +63,7 @@ struct PairCodeEntry {
 
 #[derive(Debug)]
 struct RuntimeSessionControl {
-    paused: Arc<AtomicBool>,
+    paused_tx: watch::Sender<bool>,
     canceled: Arc<AtomicBool>,
 }
 
@@ -224,12 +226,15 @@ impl TransferService {
 
         let service = self.clone();
         tauri::async_runtime::spawn(async move {
+            let mut ticker = interval(Duration::from_secs(2));
+            ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
+            ticker.tick().await;
             loop {
                 if service.discovery_stop.load(Ordering::Relaxed) {
                     break;
                 }
                 let _ = service.emit_peer_sync().await;
-                sleep(Duration::from_secs(2)).await;
+                ticker.tick().await;
             }
         });
     }
@@ -245,10 +250,21 @@ impl TransferService {
 
     pub async fn list_peers(&self) -> AppResult<Vec<TransferPeerDto>> {
         let online = self.collect_online_peers().await;
-        for peer in &online {
-            let _ = upsert_peer(&self.db_pool, peer);
-        }
-        let stored = list_stored_peers(&self.db_pool)?;
+        let pool = self.db_pool.clone();
+        let online_for_upsert = online.clone();
+        let _ = run_blocking("transfer_upsert_peers", move || {
+            for peer in &online_for_upsert {
+                let _ = upsert_peer(&pool, peer);
+            }
+            Ok(())
+        })
+        .await;
+
+        let pool = self.db_pool.clone();
+        let stored = run_blocking("transfer_list_stored_peers", move || {
+            list_stored_peers(&pool)
+        })
+        .await?;
         Ok(merge_online_peers(stored, online.as_slice()))
     }
 
@@ -271,35 +287,45 @@ impl TransferService {
             .filter(|value| !value.trim().is_empty())
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-        let bundle = collect_sources(input.files.as_slice())?;
         let settings = self.get_settings();
+        let input_files = input.files.clone();
+        let bundle = run_blocking("transfer_collect_sources", move || {
+            collect_sources(input_files.as_slice())
+        })
+        .await?;
         let cleanup_after_at = now_millis() + i64::from(settings.auto_cleanup_days) * 86_400_000;
 
-        let mut files = Vec::new();
+        let mut files = Vec::with_capacity(bundle.files.len());
         let mut total_bytes = 0u64;
         for source in &bundle.files {
-            let hash = file_hash_hex(PathBuf::from(source.source_path.as_str()).as_path())?;
-            let chunk_size = settings.chunk_size_kb.saturating_mul(1024);
-            let chunk_count = chunk_count(source.size_bytes, chunk_size);
-            let path = PathBuf::from(source.source_path.as_str());
-            let (mime_type, preview_kind, preview_data) = build_preview(path.as_path());
-            let file_dto = TransferFileDto {
-                id: uuid::Uuid::new_v4().to_string(),
-                session_id: session_id.clone(),
-                relative_path: source.relative_path.clone(),
-                source_path: Some(source.source_path.clone()),
-                target_path: None,
-                size_bytes: source.size_bytes,
-                transferred_bytes: 0,
-                chunk_size,
-                chunk_count,
-                status: "queued".to_string(),
-                blake3: Some(hash),
-                mime_type,
-                preview_kind,
-                preview_data,
-                is_folder_archive: source.is_folder_archive,
-            };
+            let source = source.clone();
+            let session_for_manifest = session_id.clone();
+            let settings_for_manifest = settings.clone();
+            let file_dto = run_blocking("transfer_prepare_manifest_file", move || {
+                let source_path = PathBuf::from(source.source_path.as_str());
+                let hash = file_hash_hex(source_path.as_path())?;
+                let chunk_size = settings_for_manifest.chunk_size_kb.saturating_mul(1024);
+                let chunk_count = chunk_count(source.size_bytes, chunk_size);
+                let (mime_type, preview_kind, preview_data) = build_preview(source_path.as_path());
+                Ok(TransferFileDto {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    session_id: session_for_manifest,
+                    relative_path: source.relative_path,
+                    source_path: Some(source.source_path),
+                    target_path: None,
+                    size_bytes: source.size_bytes,
+                    transferred_bytes: 0,
+                    chunk_size,
+                    chunk_count,
+                    status: "queued".to_string(),
+                    blake3: Some(hash),
+                    mime_type,
+                    preview_kind,
+                    preview_data,
+                    is_folder_archive: source.is_folder_archive,
+                })
+            })
+            .await?;
             total_bytes = total_bytes.saturating_add(file_dto.size_bytes);
             files.push(file_dto);
         }
@@ -323,11 +349,17 @@ impl TransferService {
             files,
         };
 
-        insert_session(&self.db_pool, &session)?;
-        for file in &session.files {
-            let bitmap = empty_bitmap(file.chunk_count);
-            insert_or_update_file(&self.db_pool, file, bitmap.as_slice())?;
-        }
+        let pool = self.db_pool.clone();
+        let session_for_store = session.clone();
+        run_blocking("transfer_insert_session", move || {
+            insert_session(&pool, &session_for_store)?;
+            for file in &session_for_store.files {
+                let bitmap = empty_bitmap(file.chunk_count);
+                insert_or_update_file(&pool, file, bitmap.as_slice())?;
+            }
+            Ok(())
+        })
+        .await?;
 
         self.register_session_control(session.id.as_str());
         self.session_pair_codes
@@ -356,13 +388,24 @@ impl TransferService {
                     error_code = error.code,
                     error_detail = error.detail.as_deref().unwrap_or_default()
                 );
-                let _ = service.update_session_failure(session_id.as_str(), &error);
+                let _ = service
+                    .update_session_failure(session_id.as_str(), &error)
+                    .await;
             }
-            cleanup_temp_paths(temp_paths.as_slice());
+            let _ = run_blocking("transfer_cleanup_temp_paths", move || {
+                cleanup_temp_paths(temp_paths.as_slice());
+                Ok(())
+            })
+            .await;
             service.unregister_session_control(session_id.as_str());
         });
 
-        Ok(ensure_session_exists(&self.db_pool, session.id.as_str())?)
+        let pool = self.db_pool.clone();
+        let created_session_id = session.id.clone();
+        run_blocking("transfer_ensure_session", move || {
+            ensure_session_exists(&pool, created_session_id.as_str())
+        })
+        .await
     }
 
     pub fn pause_session(&self, session_id: &str) -> AppResult<()> {
@@ -370,7 +413,7 @@ impl TransferService {
         let control = controls
             .get(session_id)
             .ok_or_else(|| AppError::new("transfer_session_not_running", "会话未运行，无法暂停"))?;
-        control.paused.store(true, Ordering::Relaxed);
+        let _ = control.paused_tx.send(true);
         let mut session = ensure_session_exists(&self.db_pool, session_id)?;
         session.status = "paused".to_string();
         insert_session(&self.db_pool, &session)?;
@@ -383,7 +426,7 @@ impl TransferService {
         let control = controls
             .get(session_id)
             .ok_or_else(|| AppError::new("transfer_session_not_running", "会话未运行，无法继续"))?;
-        control.paused.store(false, Ordering::Relaxed);
+        let _ = control.paused_tx.send(false);
         let mut session = ensure_session_exists(&self.db_pool, session_id)?;
         session.status = "running".to_string();
         insert_session(&self.db_pool, &session)?;
@@ -633,13 +676,14 @@ impl TransferService {
     }
 
     fn register_session_control(&self, session_id: &str) {
+        let (paused_tx, _) = watch::channel(false);
         self.session_controls
             .write()
             .expect("session controls write")
             .insert(
                 session_id.to_string(),
                 RuntimeSessionControl {
-                    paused: Arc::new(AtomicBool::new(false)),
+                    paused_tx,
                     canceled: Arc::new(AtomicBool::new(false)),
                 },
             );
@@ -662,9 +706,63 @@ impl TransferService {
             .expect("session controls read")
             .get(session_id)
             .map(|value| RuntimeSessionControl {
-                paused: value.paused.clone(),
+                paused_tx: value.paused_tx.clone(),
                 canceled: value.canceled.clone(),
             })
+    }
+
+    async fn blocking_ensure_session_exists(
+        &self,
+        session_id: String,
+    ) -> AppResult<TransferSessionDto> {
+        let pool = self.db_pool.clone();
+        run_blocking("transfer_ensure_session_exists", move || {
+            ensure_session_exists(&pool, session_id.as_str())
+        })
+        .await
+    }
+
+    async fn blocking_get_file_bitmap(
+        &self,
+        session_id: String,
+        file_id: String,
+    ) -> AppResult<Option<Vec<u8>>> {
+        let pool = self.db_pool.clone();
+        run_blocking("transfer_get_file_bitmap", move || {
+            get_file_bitmap(&pool, session_id.as_str(), file_id.as_str())
+        })
+        .await
+    }
+
+    async fn blocking_upsert_files_batch(
+        &self,
+        items: Vec<TransferFilePersistItem>,
+    ) -> AppResult<()> {
+        let pool = self.db_pool.clone();
+        run_blocking("transfer_upsert_files_batch", move || {
+            upsert_files_batch(&pool, items.as_slice())
+        })
+        .await
+    }
+
+    async fn blocking_upsert_session_progress(&self, session: TransferSessionDto) -> AppResult<()> {
+        let pool = self.db_pool.clone();
+        run_blocking("transfer_upsert_session_progress", move || {
+            upsert_session_progress(&pool, &session)
+        })
+        .await
+    }
+
+    async fn blocking_insert_or_update_file(
+        &self,
+        file: TransferFileDto,
+        completed_bitmap: Vec<u8>,
+    ) -> AppResult<()> {
+        let pool = self.db_pool.clone();
+        run_blocking("transfer_insert_or_update_file", move || {
+            insert_or_update_file(&pool, &file, completed_bitmap.as_slice())
+        })
+        .await
     }
 
     async fn run_outgoing_session(
@@ -783,10 +881,13 @@ impl TransferService {
         let session_key =
             derive_session_key(pair_code, client_nonce.as_str(), server_nonce.as_str());
 
-        let mut session = ensure_session_exists(&self.db_pool, session_id)?;
+        let mut session = self
+            .blocking_ensure_session_exists(session_id.to_string())
+            .await?;
         session.status = "running".to_string();
         session.started_at = Some(now_millis());
-        upsert_session_progress(&self.db_pool, &session)?;
+        self.blocking_upsert_session_progress(session.clone())
+            .await?;
 
         let manifest_files = session
             .files
@@ -846,7 +947,9 @@ impl TransferService {
         let mut per_file_missing = Vec::<VecDeque<u32>>::new();
 
         for (index, file) in session.files.iter_mut().enumerate() {
-            let bitmap = get_file_bitmap(&self.db_pool, session.id.as_str(), file.id.as_str())
+            let bitmap = self
+                .blocking_get_file_bitmap(session.id.clone(), file.id.clone())
+                .await
                 .unwrap_or_default()
                 .unwrap_or_else(|| empty_bitmap(file.chunk_count));
             let source_path = PathBuf::from(file.source_path.clone().unwrap_or_default());
@@ -1144,10 +1247,11 @@ impl TransferService {
             if last_db_flush.elapsed() >= db_flush_interval {
                 if !dirty_files.is_empty() {
                     let items = dirty_files.values().cloned().collect::<Vec<_>>();
-                    upsert_files_batch(&self.db_pool, items.as_slice())?;
+                    self.blocking_upsert_files_batch(items).await?;
                     dirty_files.clear();
                 }
-                upsert_session_progress(&self.db_pool, &session)?;
+                self.blocking_upsert_session_progress(session.clone())
+                    .await?;
                 last_db_flush = Instant::now();
             }
 
@@ -1175,7 +1279,7 @@ impl TransferService {
 
         if !dirty_files.is_empty() {
             let items = dirty_files.values().cloned().collect::<Vec<_>>();
-            upsert_files_batch(&self.db_pool, items.as_slice())?;
+            self.blocking_upsert_files_batch(items).await?;
         }
 
         write_frame_to(
@@ -1196,7 +1300,8 @@ impl TransferService {
         session.finished_at = Some(now_millis());
         session.error_code = None;
         session.error_message = None;
-        upsert_session_progress(&self.db_pool, &session)?;
+        self.blocking_upsert_session_progress(session.clone())
+            .await?;
         self.maybe_emit_session_snapshot(
             &session,
             None,
@@ -1300,18 +1405,20 @@ impl TransferService {
             }
         };
 
-        self.validate_pair_code(peer_device_id.as_str(), pair_code.as_str())?;
+        self.validate_pair_code(peer_device_id.as_str(), pair_code.as_str())
+            .await?;
         let expected = derive_proof(
             pair_code.as_str(),
             client_nonce.as_str(),
             server_nonce.as_str(),
         );
         if proof != expected {
-            mark_peer_pair_failure(
-                &self.db_pool,
-                peer_device_id.as_str(),
-                Some(now_millis() + 60_000),
-            )?;
+            let pool = self.db_pool.clone();
+            let peer_device_id = peer_device_id.clone();
+            run_blocking("transfer_mark_pair_failure", move || {
+                mark_peer_pair_failure(&pool, peer_device_id.as_str(), Some(now_millis() + 60_000))
+            })
+            .await?;
             write_frame(
                 &mut stream,
                 &TransferFrame::Error {
@@ -1324,7 +1431,12 @@ impl TransferService {
             return Err(AppError::new("transfer_auth_failed", "配对码校验失败"));
         }
 
-        mark_peer_pair_success(&self.db_pool, peer_device_id.as_str(), now_millis())?;
+        let pool = self.db_pool.clone();
+        let peer_device_id_for_success = peer_device_id.clone();
+        run_blocking("transfer_mark_pair_success", move || {
+            mark_peer_pair_success(&pool, peer_device_id_for_success.as_str(), now_millis())
+        })
+        .await?;
         write_frame(
             &mut stream,
             &TransferFrame::AuthOk {
@@ -1385,7 +1497,8 @@ impl TransferService {
             cleanup_after_at: Some(cleanup_after_at),
             files: Vec::new(),
         };
-        upsert_session_progress(&self.db_pool, &session)?;
+        self.blocking_upsert_session_progress(session.clone())
+            .await?;
 
         let save_dir_path = PathBuf::from(settings.default_download_dir);
         let mut missing_chunks_payload = Vec::new();
@@ -1393,13 +1506,11 @@ impl TransferService {
         let mut file_id_to_idx = HashMap::<String, usize>::new();
 
         for manifest_file in files {
-            let mut bitmap = get_file_bitmap(
-                &self.db_pool,
-                session.id.as_str(),
-                manifest_file.file_id.as_str(),
-            )
-            .unwrap_or_default()
-            .unwrap_or_else(|| empty_bitmap(manifest_file.chunk_count));
+            let mut bitmap = self
+                .blocking_get_file_bitmap(session.id.clone(), manifest_file.file_id.clone())
+                .await
+                .unwrap_or_default()
+                .unwrap_or_else(|| empty_bitmap(manifest_file.chunk_count));
             if bitmap.is_empty() {
                 bitmap = empty_bitmap(manifest_file.chunk_count);
             }
@@ -1441,7 +1552,8 @@ impl TransferService {
                 preview_data: Some(part_path.to_string_lossy().to_string()),
                 is_folder_archive: manifest_file.is_folder_archive,
             };
-            insert_or_update_file(&self.db_pool, &file, bitmap.as_slice())?;
+            self.blocking_insert_or_update_file(file.clone(), bitmap.clone())
+                .await?;
             file_id_to_idx.insert(file.id.clone(), runtimes.len());
             let writer = ChunkWriter::open(part_path.as_path(), Some(file.size_bytes)).await?;
             runtimes.push(IncomingFileRuntime {
@@ -1671,14 +1783,18 @@ impl TransferService {
                     runtime.writer.flush().await?;
                     let part_path =
                         PathBuf::from(runtime.file.preview_data.clone().unwrap_or_default());
-                    let source_hash = file_hash_hex(part_path.as_path())?;
+                    let part_path_for_hash = part_path.clone();
+                    let source_hash = run_blocking("transfer_verify_file_hash", move || {
+                        file_hash_hex(part_path_for_hash.as_path())
+                    })
+                    .await?;
                     if source_hash != blake3 {
                         runtime.file.status = "failed".to_string();
-                        insert_or_update_file(
-                            &self.db_pool,
-                            &runtime.file,
-                            empty_bitmap(runtime.file.chunk_count).as_slice(),
-                        )?;
+                        self.blocking_insert_or_update_file(
+                            runtime.file.clone(),
+                            empty_bitmap(runtime.file.chunk_count),
+                        )
+                        .await?;
                         return Err(AppError::new("transfer_file_hash_mismatch", "文件校验失败")
                             .with_detail(format!("file_id={}", runtime.file.id)));
                     }
@@ -1753,7 +1869,7 @@ impl TransferService {
 
                     if !dirty_files.is_empty() {
                         let items = dirty_files.values().cloned().collect::<Vec<_>>();
-                        upsert_files_batch(&self.db_pool, items.as_slice())?;
+                        self.blocking_upsert_files_batch(items).await?;
                     }
 
                     session.finished_at = Some(now_millis());
@@ -1771,7 +1887,8 @@ impl TransferService {
                         session.error_code = Some("remote_failed".to_string());
                         session.error_message = error;
                     }
-                    upsert_session_progress(&self.db_pool, &session)?;
+                    self.blocking_upsert_session_progress(session.clone())
+                        .await?;
                     self.maybe_emit_session_snapshot(
                         &session,
                         None,
@@ -1796,7 +1913,8 @@ impl TransferService {
                     session.error_code = Some(code);
                     session.error_message = Some(message);
                     session.finished_at = Some(now_millis());
-                    upsert_session_progress(&self.db_pool, &session)?;
+                    self.blocking_upsert_session_progress(session.clone())
+                        .await?;
                     self.maybe_emit_session_snapshot(
                         &session,
                         None,
@@ -1855,10 +1973,11 @@ impl TransferService {
             if last_db_flush.elapsed() >= db_flush_interval {
                 if !dirty_files.is_empty() {
                     let items = dirty_files.values().cloned().collect::<Vec<_>>();
-                    upsert_files_batch(&self.db_pool, items.as_slice())?;
+                    self.blocking_upsert_files_batch(items).await?;
                     dirty_files.clear();
                 }
-                upsert_session_progress(&self.db_pool, &session)?;
+                self.blocking_upsert_session_progress(session.clone())
+                    .await?;
                 last_db_flush = Instant::now();
             }
         }
@@ -1866,7 +1985,7 @@ impl TransferService {
         Ok(())
     }
 
-    fn validate_pair_code(&self, peer_device_id: &str, pair_code: &str) -> AppResult<()> {
+    async fn validate_pair_code(&self, peer_device_id: &str, pair_code: &str) -> AppResult<()> {
         let settings = self.get_settings();
         if !settings.pairing_required {
             return Ok(());
@@ -1885,7 +2004,12 @@ impl TransferService {
         }
 
         if entry.code != pair_code {
-            mark_peer_pair_failure(&self.db_pool, peer_device_id, Some(now_millis() + 60_000))?;
+            let pool = self.db_pool.clone();
+            let device_id = peer_device_id.to_string();
+            run_blocking("transfer_mark_pair_failure", move || {
+                mark_peer_pair_failure(&pool, device_id.as_str(), Some(now_millis() + 60_000))
+            })
+            .await?;
             return Err(AppError::new("transfer_pair_code_invalid", "配对码错误"));
         }
 
@@ -1900,24 +2024,38 @@ impl TransferService {
 
     async fn wait_if_paused(&self, session_id: &str) {
         loop {
-            let paused = self
-                .read_session_control(session_id)
-                .map(|value| value.paused.load(Ordering::Relaxed))
-                .unwrap_or(false);
-            if !paused {
+            let Some(control) = self.read_session_control(session_id) else {
+                return;
+            };
+            if !*control.paused_tx.borrow() {
                 return;
             }
-            sleep(Duration::from_millis(200)).await;
+
+            let mut paused_rx = control.paused_tx.subscribe();
+            if !*paused_rx.borrow() {
+                return;
+            }
+
+            if paused_rx.changed().await.is_err() {
+                return;
+            }
         }
     }
 
-    fn update_session_failure(&self, session_id: &str, error: &AppError) -> AppResult<()> {
-        let mut session = ensure_session_exists(&self.db_pool, session_id)?;
+    async fn update_session_failure(&self, session_id: &str, error: &AppError) -> AppResult<()> {
+        let mut session = self
+            .blocking_ensure_session_exists(session_id.to_string())
+            .await?;
         session.status = "failed".to_string();
         session.error_code = Some(error.code.clone());
         session.error_message = Some(error.message.clone());
         session.finished_at = Some(now_millis());
-        insert_session(&self.db_pool, &session)?;
+        let pool = self.db_pool.clone();
+        let session_for_store = session.clone();
+        run_blocking("transfer_insert_failed_session", move || {
+            insert_session(&pool, &session_for_store)
+        })
+        .await?;
         self.maybe_emit_session_snapshot(&session, None, 0, None, true, None, None, None, None);
         self.emit_history_sync("session_failed");
         Ok(())

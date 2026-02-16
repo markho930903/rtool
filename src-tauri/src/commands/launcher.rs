@@ -1,9 +1,10 @@
 use super::{command_end_ok, command_end_status, command_start, normalize_request_id};
 use crate::app::launcher_service::{execute_launcher_action, search_launcher};
 use crate::core::models::{ActionResultDto, LauncherActionDto, LauncherItemDto};
+use crate::infrastructure::runtime::blocking::run_blocking;
 
 #[tauri::command]
-pub fn launcher_search(
+pub async fn launcher_search(
     app: tauri::AppHandle,
     query: String,
     limit: Option<u16>,
@@ -12,13 +13,31 @@ pub fn launcher_search(
 ) -> Vec<LauncherItemDto> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start("launcher_search", &request_id, window_label.as_deref());
-    let items = search_launcher(&app, &query, limit);
-    command_end_ok("launcher_search", &request_id, started_at);
-    items
+    let result = run_blocking("launcher_search", move || {
+        Ok(search_launcher(&app, &query, limit))
+    })
+    .await;
+    match result {
+        Ok(items) => {
+            command_end_ok("launcher_search", &request_id, started_at);
+            items
+        }
+        Err(error) => {
+            command_end_status(
+                "launcher_search",
+                &request_id,
+                started_at,
+                false,
+                Some(error.code.as_str()),
+                Some(error.message.as_str()),
+            );
+            Vec::new()
+        }
+    }
 }
 
 #[tauri::command]
-pub fn launcher_execute(
+pub async fn launcher_execute(
     app: tauri::AppHandle,
     action: LauncherActionDto,
     request_id: Option<String>,
@@ -26,7 +45,14 @@ pub fn launcher_execute(
 ) -> ActionResultDto {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start("launcher_execute", &request_id, window_label.as_deref());
-    let result = execute_launcher_action(&app, &action);
+    let result = run_blocking("launcher_execute", move || {
+        Ok(execute_launcher_action(&app, &action))
+    })
+    .await
+    .unwrap_or_else(|error| ActionResultDto {
+        ok: false,
+        message: error.message,
+    });
     command_end_status(
         "launcher_execute",
         &request_id,

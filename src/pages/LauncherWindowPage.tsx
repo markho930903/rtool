@@ -305,8 +305,8 @@ export default function LauncherWindowPage() {
   }
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden rounded-[var(--radius-overlay)] bg-transparent p-0">
-      <section className="flex h-full w-full overflow-hidden rounded-[var(--radius-overlay)] border border-border-muted/85 bg-surface-overlay shadow-[var(--shadow-overlay)] backdrop-blur-[24px] backdrop-saturate-140">
+    <div className="relative h-screen w-screen overflow-hidden rounded-overlay bg-transparent p-0">
+      <section className="flex h-full w-full overflow-hidden rounded-overlay border border-border-muted/85 bg-surface-overlay shadow-overlay backdrop-blur-[24px] backdrop-saturate-140">
         <div className="flex min-w-0 flex-[1.4] flex-col border-r border-border-muted/85">
           <PaletteInput query={query} loading={loading} onQueryChange={setQuery} inputRef={inputRef} />
 
@@ -323,7 +323,7 @@ export default function LauncherWindowPage() {
                     <div className="h-3 w-[62%] rounded bg-border-muted/70" />
                     <div className="mt-2 h-2.5 w-[78%] rounded bg-border-muted/55" />
                     <span
-                      className="rtool-boot-shimmer-layer absolute inset-y-0 bg-gradient-to-r from-transparent via-white/26 to-transparent"
+                      className="rtool-boot-shimmer-layer absolute inset-y-0 bg-gradient-to-r from-transparent via-shimmer-highlight/26 to-transparent"
                       style={{
                         left: "-45%",
                         width: "45%",

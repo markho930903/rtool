@@ -5,6 +5,7 @@ use crate::infrastructure::logging::{
     RecordLogInput, export_log_entries, get_log_config, record_log_event, sanitize_for_log,
     sanitize_json_value, update_log_config,
 };
+use crate::infrastructure::runtime::blocking::run_blocking;
 use serde_json::Value;
 
 const MAX_MESSAGE_LEN: usize = 2048;
@@ -38,7 +39,7 @@ fn normalize_message(message: &str) -> String {
 }
 
 #[tauri::command]
-pub fn client_log(
+pub async fn client_log(
     level: String,
     request_id: Option<String>,
     scope: String,
@@ -65,7 +66,19 @@ pub fn client_log(
         metadata: metadata.clone(),
         raw_ref: None,
     };
-    let _ = record_log_event(record);
+    let request_id_for_record = request_id.clone();
+    run_blocking("client_log_record", move || {
+        if let Err(error) = record_log_event(record) {
+            tracing::warn!(
+                event = "client_log_record_failed",
+                request_id = %request_id_for_record,
+                error_code = error.code,
+                error_detail = error.detail.unwrap_or_default()
+            );
+        }
+        Ok(())
+    })
+    .await?;
 
     match level {
         "trace" => tracing::trace!(
@@ -110,7 +123,7 @@ pub fn client_log(
 }
 
 #[tauri::command]
-pub fn logging_query(
+pub async fn logging_query(
     query: Option<LogQueryDto>,
     request_id: Option<String>,
     window_label: Option<String>,
@@ -118,7 +131,11 @@ pub fn logging_query(
     let request_id = normalize_request_id(request_id);
     let started_at = command_start("logging_query", &request_id, window_label.as_deref());
 
-    let result = crate::infrastructure::logging::query_log_entries(query.unwrap_or_default());
+    let normalized = query.unwrap_or_default();
+    let result = run_blocking("logging_query", move || {
+        crate::infrastructure::logging::query_log_entries(normalized)
+    })
+    .await;
     match &result {
         Ok(_) => command_end_ok("logging_query", &request_id, started_at),
         Err(error) => command_end_error("logging_query", &request_id, started_at, error),
@@ -127,14 +144,14 @@ pub fn logging_query(
 }
 
 #[tauri::command]
-pub fn logging_get_config(
+pub async fn logging_get_config(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> AppResult<LogConfigDto> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start("logging_get_config", &request_id, window_label.as_deref());
 
-    let result = get_log_config();
+    let result = run_blocking("logging_get_config", get_log_config).await;
     match &result {
         Ok(_) => command_end_ok("logging_get_config", &request_id, started_at),
         Err(error) => command_end_error("logging_get_config", &request_id, started_at, error),
@@ -143,7 +160,7 @@ pub fn logging_get_config(
 }
 
 #[tauri::command]
-pub fn logging_update_config(
+pub async fn logging_update_config(
     config: LogConfigDto,
     request_id: Option<String>,
     window_label: Option<String>,
@@ -155,7 +172,7 @@ pub fn logging_update_config(
         window_label.as_deref(),
     );
 
-    let result = update_log_config(config);
+    let result = run_blocking("logging_update_config", move || update_log_config(config)).await;
     match &result {
         Ok(_) => command_end_ok("logging_update_config", &request_id, started_at),
         Err(error) => command_end_error("logging_update_config", &request_id, started_at, error),
@@ -164,7 +181,7 @@ pub fn logging_update_config(
 }
 
 #[tauri::command]
-pub fn logging_export_jsonl(
+pub async fn logging_export_jsonl(
     query: Option<LogQueryDto>,
     output_path: Option<String>,
     request_id: Option<String>,
@@ -173,7 +190,11 @@ pub fn logging_export_jsonl(
     let request_id = normalize_request_id(request_id);
     let started_at = command_start("logging_export_jsonl", &request_id, window_label.as_deref());
 
-    let result = export_log_entries(query.unwrap_or_default(), output_path);
+    let normalized = query.unwrap_or_default();
+    let result = run_blocking("logging_export_jsonl", move || {
+        export_log_entries(normalized, output_path)
+    })
+    .await;
     match &result {
         Ok(_) => command_end_ok("logging_export_jsonl", &request_id, started_at),
         Err(error) => command_end_error("logging_export_jsonl", &request_id, started_at, error),
@@ -185,15 +206,16 @@ pub fn logging_export_jsonl(
 mod tests {
     use super::*;
 
-    #[test]
-    fn should_reject_invalid_level() {
+    #[tokio::test]
+    async fn should_reject_invalid_level() {
         let result = client_log(
             "invalid".to_string(),
             Some("req".to_string()),
             "ui".to_string(),
             "message".to_string(),
             None,
-        );
+        )
+        .await;
 
         assert!(result.is_err());
         assert_eq!(

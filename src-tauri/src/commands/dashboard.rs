@@ -1,6 +1,8 @@
-use super::{command_end_ok, command_start, normalize_request_id};
+use super::{command_end_ok, command_end_status, command_start, normalize_request_id};
 use crate::app::state::AppState;
+use crate::core::AppResult;
 use crate::core::models::{AppRuntimeInfoDto, DashboardSnapshotDto, SystemInfoDto};
+use crate::infrastructure::runtime::blocking::run_blocking;
 use std::time::{SystemTime, UNIX_EPOCH};
 use sysinfo::{Pid, ProcessesToUpdate, System};
 use tauri::State;
@@ -23,72 +25,118 @@ fn non_zero_u64(value: u64) -> Option<u64> {
 }
 
 #[tauri::command]
-pub fn dashboard_snapshot(
+pub async fn dashboard_snapshot(
     state: State<'_, AppState>,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> DashboardSnapshotDto {
+) -> AppResult<DashboardSnapshotDto> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start("dashboard_snapshot", &request_id, window_label.as_deref());
+    let uptime_seconds = state.started_at.elapsed().as_secs();
+    let db_path = state.db_path.clone();
 
-    let sampled_at = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()
-        .and_then(|duration| i64::try_from(duration.as_millis()).ok())
-        .unwrap_or_default();
-
-    let mut system = System::new_all();
-    system.refresh_memory();
-
-    let current_pid = Pid::from_u32(std::process::id());
-    system.refresh_processes(ProcessesToUpdate::Some(&[current_pid]), true);
-
-    let process_memory_bytes = system.process(current_pid).map(|process| process.memory());
-
-    let app_info = AppRuntimeInfoDto {
-        app_name: env!("CARGO_PKG_NAME").to_string(),
-        app_version: env!("CARGO_PKG_VERSION").to_string(),
-        build_mode: if cfg!(debug_assertions) {
-            "debug".to_string()
-        } else {
-            "release".to_string()
-        },
-        uptime_seconds: state.started_at.elapsed().as_secs(),
-        process_memory_bytes,
-        database_size_bytes: std::fs::metadata(&state.db_path)
+    let result = run_blocking("dashboard_snapshot", move || {
+        let sampled_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
             .ok()
-            .map(|metadata| metadata.len()),
-    };
+            .and_then(|duration| i64::try_from(duration.as_millis()).ok())
+            .unwrap_or_default();
 
-    let cpu_brand = system
-        .cpus()
-        .first()
-        .and_then(|cpu| non_empty_string(cpu.brand().to_string()));
+        let mut system = System::new_all();
+        system.refresh_memory();
 
-    let cpu_cores = System::physical_core_count()
-        .or_else(|| {
-            let fallback = system.cpus().len();
-            if fallback == 0 { None } else { Some(fallback) }
+        let current_pid = Pid::from_u32(std::process::id());
+        system.refresh_processes(ProcessesToUpdate::Some(&[current_pid]), true);
+
+        let process_memory_bytes = system.process(current_pid).map(|process| process.memory());
+
+        let app_info = AppRuntimeInfoDto {
+            app_name: env!("CARGO_PKG_NAME").to_string(),
+            app_version: env!("CARGO_PKG_VERSION").to_string(),
+            build_mode: if cfg!(debug_assertions) {
+                "debug".to_string()
+            } else {
+                "release".to_string()
+            },
+            uptime_seconds,
+            process_memory_bytes,
+            database_size_bytes: std::fs::metadata(&db_path)
+                .ok()
+                .map(|metadata| metadata.len()),
+        };
+
+        let cpu_brand = system
+            .cpus()
+            .first()
+            .and_then(|cpu| non_empty_string(cpu.brand().to_string()));
+
+        let cpu_cores = System::physical_core_count()
+            .or_else(|| {
+                let fallback = system.cpus().len();
+                if fallback == 0 { None } else { Some(fallback) }
+            })
+            .and_then(|count| u32::try_from(count).ok());
+
+        let system_info = SystemInfoDto {
+            os_name: System::name(),
+            os_version: System::os_version(),
+            kernel_version: System::kernel_version(),
+            arch: non_empty_string(System::cpu_arch()),
+            host_name: System::host_name(),
+            cpu_brand,
+            cpu_cores,
+            total_memory_bytes: non_zero_u64(system.total_memory()),
+            used_memory_bytes: non_zero_u64(system.used_memory()),
+        };
+
+        Ok(DashboardSnapshotDto {
+            sampled_at,
+            app: app_info,
+            system: system_info,
         })
-        .and_then(|count| u32::try_from(count).ok());
+    })
+    .await;
 
-    let system_info = SystemInfoDto {
-        os_name: System::name(),
-        os_version: System::os_version(),
-        kernel_version: System::kernel_version(),
-        arch: non_empty_string(System::cpu_arch()),
-        host_name: System::host_name(),
-        cpu_brand,
-        cpu_cores,
-        total_memory_bytes: non_zero_u64(system.total_memory()),
-        used_memory_bytes: non_zero_u64(system.used_memory()),
-    };
-
-    let result = DashboardSnapshotDto {
-        sampled_at,
-        app: app_info,
-        system: system_info,
-    };
-    command_end_ok("dashboard_snapshot", &request_id, started_at);
-    result
+    match result {
+        Ok(snapshot) => {
+            command_end_ok("dashboard_snapshot", &request_id, started_at);
+            Ok(snapshot)
+        }
+        Err(error) => {
+            command_end_status(
+                "dashboard_snapshot",
+                &request_id,
+                started_at,
+                false,
+                Some(error.code.as_str()),
+                Some(error.message.as_str()),
+            );
+            Ok(DashboardSnapshotDto {
+                sampled_at: 0,
+                app: AppRuntimeInfoDto {
+                    app_name: env!("CARGO_PKG_NAME").to_string(),
+                    app_version: env!("CARGO_PKG_VERSION").to_string(),
+                    build_mode: if cfg!(debug_assertions) {
+                        "debug".to_string()
+                    } else {
+                        "release".to_string()
+                    },
+                    uptime_seconds,
+                    process_memory_bytes: None,
+                    database_size_bytes: None,
+                },
+                system: SystemInfoDto {
+                    os_name: None,
+                    os_version: None,
+                    kernel_version: None,
+                    arch: None,
+                    host_name: None,
+                    cpu_brand: None,
+                    cpu_cores: None,
+                    total_memory_bytes: None,
+                    used_memory_bytes: None,
+                },
+            })
+        }
+    }
 }

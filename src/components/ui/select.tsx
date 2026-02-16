@@ -50,12 +50,13 @@ const wrapperClassMap: Record<SelectVariant, string> = {
 
 const triggerClassMap: Record<SelectVariant, string> = {
   default:
-    "w-full min-h-[38px] rounded-md border border-border-muted bg-surface px-3 text-sm text-text-primary shadow-[0_1px_0_rgb(255_255_255_/_2%)_inset] outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong hover:bg-surface-soft",
-  tool: "min-h-[36px] rounded-md border border-border-muted bg-surface px-2.5 text-[13px] text-text-primary shadow-[0_1px_0_rgb(255_255_255_/_2%)_inset] outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong hover:bg-surface-soft",
+    "w-full min-h-[38px] rounded-md border border-border-muted bg-surface px-3 text-sm text-text-primary shadow-inset-soft outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong hover:bg-surface-soft",
+  tool:
+    "min-h-[36px] rounded-md border border-border-muted bg-surface px-2.5 text-ui-sm leading-ui-sm text-text-primary shadow-inset-soft outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong hover:bg-surface-soft",
   clipboard:
-    "min-h-[36px] rounded-md border border-border-muted bg-surface px-2.5 text-[13px] text-text-primary shadow-[0_1px_0_rgb(255_255_255_/_2%)_inset] outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong hover:bg-surface-soft",
+    "min-h-[36px] rounded-md border border-border-muted bg-surface px-2.5 text-ui-sm leading-ui-sm text-text-primary shadow-inset-soft outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong hover:bg-surface-soft",
   theme:
-    "h-8 rounded-lg border border-border-muted bg-surface px-2 text-xs text-text-secondary shadow-[0_1px_0_rgb(255_255_255_/_2%)_inset] outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong hover:bg-surface-soft",
+    "h-8 rounded-lg border border-border-muted bg-surface px-2 text-xs text-text-secondary shadow-inset-soft outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong hover:bg-surface-soft",
 };
 
 const panelClassMap: Record<SelectVariant, string> = {
@@ -70,8 +71,8 @@ const panelClassMap: Record<SelectVariant, string> = {
 
 const optionClassMap: Record<SelectVariant, string> = {
   default: "min-h-[34px] rounded-md px-2.5 text-sm",
-  tool: "min-h-[32px] rounded-md px-2.5 text-[13px]",
-  clipboard: "min-h-[32px] rounded-md px-2.5 text-[13px]",
+  tool: "min-h-[32px] rounded-md px-2.5 text-ui-sm leading-ui-sm",
+  clipboard: "min-h-[32px] rounded-md px-2.5 text-ui-sm leading-ui-sm",
   theme: "min-h-[30px] rounded-md px-2 text-xs",
 };
 

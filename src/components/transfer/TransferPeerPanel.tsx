@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 
-import { Select } from "@/components/ui";
+import { Button, Input, Select } from "@/components/ui";
 import type { TransferPeer } from "@/components/transfer/types";
 
 interface TransferPeerPanelProps {
@@ -24,15 +24,17 @@ export default function TransferPeerPanel(props: TransferPeerPanelProps) {
     <section className="rounded-4 border border-border-muted bg-surface p-4">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-text-primary">{t("peer.title")}</h2>
-        <button
+        <Button
           type="button"
-          className="rounded-2 border border-border-muted px-2 py-1 text-xs text-text-secondary hover:text-text-primary"
+          size="xs"
+          variant="secondary"
+          className="text-ui-xs"
           onClick={() => {
             void props.onRefresh();
           }}
         >
           {t("peer.refresh")}
-        </button>
+        </Button>
       </div>
 
       <div className="mt-3 space-y-2">
@@ -51,9 +53,10 @@ export default function TransferPeerPanel(props: TransferPeerPanelProps) {
         <label className="text-xs text-text-secondary" htmlFor="transfer-pair-code-input">
           {t("peer.pairCode")}
         </label>
-        <input
+        <Input
           id="transfer-pair-code-input"
-          className="w-full rounded-2 border border-border-muted bg-elevated px-3 py-2 text-sm text-text-primary"
+          variant="tool"
+          className="w-full bg-elevated"
           value={props.pairCode}
           onChange={(event) => props.onPairCodeChange(event.currentTarget.value)}
           placeholder={t("peer.pairCodePlaceholder")}

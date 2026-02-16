@@ -5,6 +5,32 @@ import { runRecoverable } from "@/services/recoverable";
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
+export type ClipboardActionFeedbackKind = "success" | "error";
+
+export interface ClipboardActionFeedback {
+  kind: ClipboardActionFeedbackKind;
+  message: string;
+}
+
+function toActionFeedback(kind: ClipboardActionFeedbackKind, message: string): ClipboardActionFeedback {
+  return {
+    kind,
+    message,
+  };
+}
+
+function resolveCopyBackErrorMessage(item: ClipboardItem, message: string, t: Translate): string {
+  if (item.itemType !== "file") {
+    return message;
+  }
+
+  if (message.includes("clipboard_set_files_verify_failed") || message.includes("clipboard_set_files_unsupported_target")) {
+    return t("panel.copyMessageFileFailedUnsupported");
+  }
+
+  return message;
+}
+
 interface UseClipboardActionFeedbackOptions {
   t: Translate;
   copyBack: (id: string) => Promise<void>;
@@ -19,8 +45,8 @@ interface ClearAllCallbacks {
 }
 
 interface UseClipboardActionFeedbackResult {
-  previewMessage: string | null;
-  setPreviewMessage: (message: string | null) => void;
+  actionFeedback: ClipboardActionFeedback | null;
+  setActionFeedback: (feedback: ClipboardActionFeedback | null) => void;
   clearAllError: string | null;
   setClearAllError: (message: string | null) => void;
   isClearingAll: boolean;
@@ -34,7 +60,7 @@ export function useClipboardActionFeedback(
   options: UseClipboardActionFeedbackOptions,
 ): UseClipboardActionFeedbackResult {
   const { t, copyBack, copyFilePathsBack, copyImageBack, clearAllItems } = options;
-  const [previewMessage, setPreviewMessage] = useState<string | null>(null);
+  const [actionFeedback, setActionFeedback] = useState<ClipboardActionFeedback | null>(null);
   const [clearAllError, setClearAllError] = useState<string | null>(null);
   const [isClearingAll, setIsClearingAll] = useState(false);
 
@@ -51,11 +77,11 @@ export function useClipboardActionFeedback(
       );
 
       if (!result.ok) {
-        setPreviewMessage(result.message);
+        setActionFeedback(toActionFeedback("error", result.message));
         return;
       }
 
-      setPreviewMessage(t("panel.copyMessageImage"));
+      setActionFeedback(toActionFeedback("success", t("panel.copyMessageImage")));
     },
     [copyImageBack, t],
   );
@@ -81,11 +107,11 @@ export function useClipboardActionFeedback(
       );
 
       if (!result.ok) {
-        setPreviewMessage(result.message);
+        setActionFeedback(toActionFeedback("error", resolveCopyBackErrorMessage(item, result.message, t)));
         return;
       }
 
-      setPreviewMessage(result.data);
+      setActionFeedback(toActionFeedback("success", result.data));
     },
     [copyBack, copyImageBack, t],
   );
@@ -106,11 +132,11 @@ export function useClipboardActionFeedback(
       );
 
       if (!result.ok) {
-        setPreviewMessage(result.message);
+        setActionFeedback(toActionFeedback("error", result.message));
         return;
       }
 
-      setPreviewMessage(result.data);
+      setActionFeedback(toActionFeedback("success", result.data));
     },
     [copyFilePathsBack, t],
   );
@@ -147,8 +173,8 @@ export function useClipboardActionFeedback(
   );
 
   return {
-    previewMessage,
-    setPreviewMessage,
+    actionFeedback,
+    setActionFeedback,
     clearAllError,
     setClearAllError,
     isClearingAll,

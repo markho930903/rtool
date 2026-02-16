@@ -8,6 +8,7 @@ import ClipboardItemCard from "@/components/clipboard/ClipboardItemCard";
 import type { ClipboardItem } from "@/components/clipboard/types";
 import { BootOverlay } from "@/components/loading";
 import { Button, Dialog } from "@/components/ui";
+import type { ClipboardActionFeedback } from "@/hooks/clipboard/useClipboardActionFeedback";
 
 interface ClipboardPanelViewProps {
   className?: string;
@@ -20,6 +21,7 @@ interface ClipboardPanelViewProps {
   itemType: string;
   onlyPinned: boolean;
   error: string | null;
+  actionFeedback: ClipboardActionFeedback | null;
   clearAllError: string | null;
   loading: boolean;
   visibleItems: ClipboardItem[];
@@ -44,7 +46,6 @@ interface ClipboardPanelViewProps {
   onCloseClearConfirm: () => void;
   onConfirmClearAll: () => void;
   previewItem: ClipboardItem | null;
-  previewMessage: string | null;
   onClosePreview: () => void;
   onCopyPreviewImage: (id: string) => Promise<void>;
 }
@@ -143,6 +144,16 @@ export default function ClipboardPanelView(props: ClipboardPanelViewProps) {
       />
 
       {props.error ? <div className="mt-2 text-[12px] text-text-muted text-danger">{props.error}</div> : null}
+      {props.actionFeedback ? (
+        <div
+          className={[
+            "mt-2 text-[12px]",
+            props.actionFeedback.kind === "error" ? "text-danger" : "text-info",
+          ].join(" ")}
+        >
+          {props.actionFeedback.message}
+        </div>
+      ) : null}
       {props.clearAllError ? <div className="mt-2 text-[12px] text-text-muted text-danger">{props.clearAllError}</div> : null}
 
       <div
@@ -167,7 +178,7 @@ export default function ClipboardPanelView(props: ClipboardPanelViewProps) {
                     <div className="h-3 w-[64%] rounded bg-border-muted/70" />
                     <div className="mt-2 h-2.5 w-[82%] rounded bg-border-muted/55" />
                     <span
-                      className="rtool-boot-shimmer-layer absolute inset-y-0 bg-gradient-to-r from-transparent via-white/26 to-transparent"
+                      className="rtool-boot-shimmer-layer absolute inset-y-0 bg-gradient-to-r from-transparent via-shimmer-highlight/26 to-transparent"
                       style={{
                         left: "-45%",
                         width: "45%",
@@ -266,7 +277,7 @@ export default function ClipboardPanelView(props: ClipboardPanelViewProps) {
         open={props.showClearConfirm}
         onClose={props.onCloseClearConfirm}
         zIndexClassName="z-[72] flex items-center justify-center"
-        className="w-[min(460px,92vw)] rounded-xl border border-border-muted bg-surface-overlay p-4 shadow-[var(--shadow-overlay)] backdrop-blur-[16px]"
+        className="w-[min(460px,92vw)] rounded-xl border border-border-muted bg-surface-overlay p-4 shadow-overlay backdrop-blur-[16px]"
         ariaLabel={t("confirm.clearAllTitle")}
         closeOnBackdrop
         closeOnEscape
@@ -286,7 +297,6 @@ export default function ClipboardPanelView(props: ClipboardPanelViewProps) {
 
       <ClipboardImagePreview
         item={props.previewItem}
-        message={props.previewMessage}
         onClose={props.onClosePreview}
         onCopyImage={props.onCopyPreviewImage}
       />

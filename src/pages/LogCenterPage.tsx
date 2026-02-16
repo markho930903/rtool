@@ -124,19 +124,19 @@ export default function LogCenterPage() {
   return (
     <div className="space-y-3 pb-2">
       <section className="rounded-2xl border border-border-strong bg-surface p-4">
-        <div className="font-mono text-[11px] uppercase tracking-widest text-text-muted">
+        <div className="font-mono ui-text-micro uppercase tracking-ui-wider text-text-muted">
           rtool / log center / realtime
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <h1 className="m-0 text-xl font-semibold tracking-tight text-text-primary">{t("header.title")}</h1>
           <span
-            className={`rounded-full border px-2 py-0.5 font-mono text-[11px] uppercase tracking-wide ${
+            className={`rounded-full border px-2 py-0.5 font-mono ui-text-micro uppercase tracking-ui-wide ${
               streamConnected ? "border-accent/35 bg-accent/10 text-accent" : "border-border-muted text-text-muted"
             }`}
           >
             {streamConnected ? t("stream.on") : t("stream.off")}
           </span>
-          <span className="rounded-full border border-border-muted bg-app px-2 py-0.5 font-mono text-[11px] uppercase tracking-wide text-text-muted">
+          <span className="rounded-full border border-border-muted bg-app px-2 py-0.5 font-mono ui-text-micro uppercase tracking-ui-wide text-text-muted">
             {t("minLevel", { level: config?.minLevel ?? t("common:status.empty") })}
           </span>
         </div>
@@ -312,11 +312,11 @@ export default function LogCenterPage() {
                   >
                     <div className="flex items-center gap-2">
                       <span
-                        className={`rounded border px-1.5 py-0.5 font-mono text-[11px] uppercase ${levelClassName(item.level)}`}
+                        className={`rounded border px-1.5 py-0.5 font-mono ui-text-micro uppercase ${levelClassName(item.level)}`}
                       >
                         {item.level}
                       </span>
-                      <span className="truncate font-mono text-[11px] text-text-secondary">
+                      <span className="truncate font-mono ui-text-micro text-text-secondary">
                         {formatTimestamp(item.timestamp, locale)}
                       </span>
                       <span className="truncate text-xs text-text-primary">{item.scope}</span>
@@ -324,7 +324,7 @@ export default function LogCenterPage() {
                     <div className="mt-1 truncate text-xs text-text-secondary">
                       {item.event} · {item.message}
                     </div>
-                    <div className="mt-1 truncate font-mono text-[11px] text-text-muted">{item.requestId}</div>
+                    <div className="mt-1 truncate font-mono ui-text-micro text-text-muted">{item.requestId}</div>
                   </Button>
                 );
               })}
@@ -347,7 +347,7 @@ export default function LogCenterPage() {
             <div className="mb-2 flex items-center justify-between">
               <h2 className="m-0 text-sm font-semibold text-text-primary">{t("detail.title")}</h2>
               {selectedLog?.aggregatedCount ? (
-                <span className="rounded border border-border-muted px-2 py-0.5 font-mono text-[11px] text-text-muted">
+                <span className="rounded border border-border-muted px-2 py-0.5 font-mono ui-text-micro text-text-muted">
                   {t("detail.aggregated", { count: selectedLog.aggregatedCount })}
                 </span>
               ) : null}

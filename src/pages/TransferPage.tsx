@@ -5,6 +5,7 @@ import TransferDropzone from "@/components/transfer/TransferDropzone";
 import TransferHistoryPanel from "@/components/transfer/TransferHistoryPanel";
 import TransferPeerPanel from "@/components/transfer/TransferPeerPanel";
 import TransferSessionList from "@/components/transfer/TransferSessionList";
+import { Button, Input } from "@/components/ui";
 import { useTransferStore } from "@/stores/transfer.store";
 
 export default function TransferPage() {
@@ -73,24 +74,28 @@ export default function TransferPage() {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <button
+            <Button
               type="button"
-              className="rounded-2 border border-border-muted px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary"
+              size="sm"
+              variant="secondary"
+              className="text-ui-xs"
               onClick={() => {
                 void generatePairingCode();
               }}
             >
               {t("page.generatePairCode")}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className="rounded-2 border border-border-muted px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary"
+              size="sm"
+              variant="secondary"
+              className="text-ui-xs"
               onClick={() => {
                 void openDownloadDir();
               }}
             >
               {t("page.openDownloadDir")}
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -102,21 +107,25 @@ export default function TransferPage() {
 
         {settings ? (
           <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_120px_auto]">
-            <input
-              className="rounded-2 border border-border-muted bg-elevated px-3 py-2 text-xs text-text-primary"
+            <Input
+              variant="tool"
+              className="bg-elevated text-ui-xs"
               value={downloadDirInput}
               onChange={(event) => setDownloadDirInput(event.currentTarget.value)}
               placeholder={t("page.downloadDir")}
             />
-            <input
-              className="rounded-2 border border-border-muted bg-elevated px-3 py-2 text-xs text-text-primary"
+            <Input
+              variant="tool"
+              className="bg-elevated text-ui-xs"
               value={autoCleanupDaysInput}
               onChange={(event) => setAutoCleanupDaysInput(event.currentTarget.value)}
               placeholder={t("page.autoCleanupDays")}
             />
-            <button
+            <Button
               type="button"
-              className="rounded-2 border border-border-muted px-3 py-2 text-xs text-text-secondary hover:text-text-primary"
+              size="sm"
+              variant="secondary"
+              className="text-ui-xs"
               onClick={() => {
                 const parsedDays = Number.parseInt(autoCleanupDaysInput, 10);
                 void updateSettings({
@@ -126,11 +135,11 @@ export default function TransferPage() {
               }}
             >
               {t("page.saveSettings")}
-            </button>
+            </Button>
           </div>
         ) : null}
 
-        {error ? <div className="mt-2 text-xs text-red-500">{error}</div> : null}
+        {error ? <div className="mt-2 text-xs text-danger">{error}</div> : null}
       </header>
 
       {!initialized && loading ? <p className="text-xs text-text-secondary">{t("page.loading")}</p> : null}

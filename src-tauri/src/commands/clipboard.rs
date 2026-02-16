@@ -6,10 +6,12 @@ use crate::core::models::{
 };
 use crate::core::{AppError, AppResult};
 use crate::infrastructure::db;
+use crate::infrastructure::runtime::blocking::run_blocking;
 use arboard::{Clipboard as ArboardClipboard, ImageData};
 use base64::Engine as _;
 use image::ImageReader;
 use std::borrow::Cow;
+use std::collections::BTreeSet;
 use tauri::{AppHandle, Emitter, State};
 
 const CLIPBOARD_SYNC_EVENT: &str = "rtool://clipboard/sync";
@@ -47,7 +49,7 @@ fn parse_file_paths_from_plain_text(plain_text: &str) -> AppResult<Vec<String>> 
     })
 }
 
-#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[cfg(all(not(target_os = "macos"), target_os = "linux"))]
 fn to_clipboard_files_uris(file_paths: &[String]) -> Vec<String> {
     file_paths
         .iter()
@@ -55,9 +57,207 @@ fn to_clipboard_files_uris(file_paths: &[String]) -> Vec<String> {
         .collect()
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(all(not(target_os = "macos"), target_os = "windows"))]
 fn to_clipboard_files_uris(file_paths: &[String]) -> Vec<String> {
     file_paths.to_vec()
+}
+
+fn normalize_path_for_compare(path: &str) -> String {
+    let trimmed = path.trim().trim_matches('"').trim_matches('\'');
+    let without_uri = if let Some(value) = trimmed.strip_prefix("file://") {
+        #[cfg(target_os = "windows")]
+        {
+            value.strip_prefix('/').unwrap_or(value)
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            value
+        }
+    } else {
+        trimmed
+    };
+
+    #[cfg(target_os = "windows")]
+    {
+        without_uri.replace('/', "\\").to_ascii_lowercase()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        without_uri.to_string()
+    }
+}
+
+fn normalize_file_paths_for_compare(file_paths: &[String]) -> BTreeSet<String> {
+    file_paths
+        .iter()
+        .map(|path| normalize_path_for_compare(path))
+        .collect()
+}
+
+fn file_paths_digest(file_paths: &[String]) -> String {
+    let mut normalized: Vec<String> = normalize_file_paths_for_compare(file_paths)
+        .into_iter()
+        .collect();
+    normalized.sort();
+    let hash = blake3::hash(normalized.join("\n").as_bytes())
+        .to_hex()
+        .to_string();
+    hash.chars().take(16).collect()
+}
+
+fn ensure_expected_and_actual_file_paths(
+    expected_file_paths: &[String],
+    actual_file_paths: &[String],
+) -> AppResult<()> {
+    let expected = normalize_file_paths_for_compare(expected_file_paths);
+    let actual = normalize_file_paths_for_compare(actual_file_paths);
+
+    if expected == actual {
+        return Ok(());
+    }
+
+    Err(AppError::new(
+        "clipboard_set_files_verify_failed",
+        "文件复制失败，写入剪贴板的文件与预期不一致",
+    ))
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn escape_applescript_string(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+#[cfg(any(target_os = "macos", test))]
+fn build_macos_copy_files_script(file_paths: &[String]) -> String {
+    let file_list = file_paths
+        .iter()
+        .map(|path| format!("POSIX file \"{}\"", escape_applescript_string(path)))
+        .collect::<Vec<String>>()
+        .join(", ");
+    format!("set the clipboard to {{{file_list}}}")
+}
+
+#[cfg(target_os = "macos")]
+fn write_files_to_system_clipboard(
+    _clipboard_plugin: &tauri_plugin_clipboard::Clipboard,
+    file_paths: &[String],
+) -> AppResult<()> {
+    let script = build_macos_copy_files_script(file_paths);
+    let output = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(script)
+        .output()
+        .map_err(|error| {
+            AppError::new(
+                "clipboard_set_files_unsupported_target",
+                "文件复制失败，当前环境不支持文件粘贴",
+            )
+            .with_detail(error.to_string())
+        })?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    Err(
+        AppError::new("clipboard_set_files_failed", "写入文件到剪贴板失败")
+            .with_detail(format!("exit_code={:?}", output.status.code())),
+    )
+}
+
+#[cfg(not(target_os = "macos"))]
+fn write_files_to_system_clipboard(
+    clipboard_plugin: &tauri_plugin_clipboard::Clipboard,
+    file_paths: &[String],
+) -> AppResult<()> {
+    let files_uris = to_clipboard_files_uris(file_paths);
+    clipboard_plugin
+        .write_files_uris(files_uris)
+        .map_err(|error| {
+            AppError::new("clipboard_set_files_failed", "写入文件到剪贴板失败").with_detail(error)
+        })
+}
+
+fn verify_files_written_to_clipboard(
+    clipboard_plugin: &tauri_plugin_clipboard::Clipboard,
+    expected_file_paths: &[String],
+) -> AppResult<()> {
+    let has_files = clipboard_plugin.has_files().map_err(|error| {
+        AppError::new(
+            "clipboard_set_files_unsupported_target",
+            "文件复制失败，当前目标应用不支持文件粘贴",
+        )
+        .with_detail(error)
+    })?;
+    if !has_files {
+        return Err(AppError::new(
+            "clipboard_set_files_unsupported_target",
+            "文件复制失败，当前目标应用不支持文件粘贴",
+        ));
+    }
+
+    let actual_files_uris = clipboard_plugin.read_files_uris().map_err(|error| {
+        AppError::new(
+            "clipboard_set_files_unsupported_target",
+            "文件复制失败，当前目标应用不支持文件粘贴",
+        )
+        .with_detail(error)
+    })?;
+    if actual_files_uris.is_empty() {
+        return Err(AppError::new(
+            "clipboard_set_files_verify_failed",
+            "文件复制失败，未检测到文件剪贴板数据",
+        ));
+    }
+
+    let actual_file_paths = parse_file_paths_from_plain_text(&actual_files_uris.join("\n"))
+        .map_err(|_| {
+            AppError::new(
+                "clipboard_set_files_verify_failed",
+                "文件复制失败，目标未识别为文件粘贴",
+            )
+        })?;
+    ensure_expected_and_actual_file_paths(expected_file_paths, &actual_file_paths)
+}
+
+fn copy_files_to_clipboard_with_verify(
+    clipboard_plugin: &tauri_plugin_clipboard::Clipboard,
+    file_paths: &[String],
+) -> AppResult<()> {
+    let file_count = file_paths.len();
+    let file_digest = file_paths_digest(file_paths);
+    tracing::info!(
+        event = "clipboard_file_copy_write_started",
+        file_count,
+        file_digest = file_digest.as_str()
+    );
+
+    if let Err(error) = write_files_to_system_clipboard(clipboard_plugin, file_paths) {
+        tracing::warn!(
+            event = "clipboard_file_copy_write_failed",
+            file_count,
+            file_digest = file_digest.as_str(),
+            error_code = error.code.as_str()
+        );
+        return Err(error);
+    }
+
+    if let Err(error) = verify_files_written_to_clipboard(clipboard_plugin, file_paths) {
+        tracing::warn!(
+            event = "clipboard_file_copy_verify_failed",
+            file_count,
+            file_digest = file_digest.as_str(),
+            error_code = error.code.as_str()
+        );
+        return Err(error);
+    }
+
+    tracing::info!(
+        event = "clipboard_file_copy_succeeded",
+        file_count,
+        file_digest = file_digest.as_str()
+    );
+    Ok(())
 }
 
 fn emit_clipboard_sync(app: &AppHandle, payload: ClipboardSyncPayload) {
@@ -71,7 +271,7 @@ fn emit_clipboard_sync(app: &AppHandle, payload: ClipboardSyncPayload) {
 }
 
 #[tauri::command]
-pub fn clipboard_list(
+pub async fn clipboard_list(
     state: State<'_, AppState>,
     filter: Option<ClipboardFilterDto>,
     request_id: Option<String>,
@@ -79,9 +279,9 @@ pub fn clipboard_list(
 ) -> Result<Vec<ClipboardItemDto>, AppError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start("clipboard_list", &request_id, window_label.as_deref());
-    let result = state
-        .clipboard_service
-        .list(filter.unwrap_or_else(default_filter));
+    let service = state.clipboard_service.clone();
+    let filter = filter.unwrap_or_else(default_filter);
+    let result = run_blocking("clipboard_list", move || service.list(filter)).await;
     match &result {
         Ok(_) => command_end_ok("clipboard_list", &request_id, started_at),
         Err(error) => command_end_error("clipboard_list", &request_id, started_at, error),
@@ -90,7 +290,7 @@ pub fn clipboard_list(
 }
 
 #[tauri::command]
-pub fn clipboard_pin(
+pub async fn clipboard_pin(
     app: AppHandle,
     state: State<'_, AppState>,
     id: String,
@@ -100,19 +300,23 @@ pub fn clipboard_pin(
 ) -> AppResult<()> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start("clipboard_pin", &request_id, window_label.as_deref());
-    let result = (|| -> AppResult<()> {
-        let updated = state.clipboard_service.pin(id, pinned)?;
-        emit_clipboard_sync(
-            &app,
-            ClipboardSyncPayload {
-                upsert: vec![updated],
-                removed_ids: Vec::new(),
-                clear_all: false,
-                reason: Some("pin".to_string()),
-            },
-        );
-        Ok(())
-    })();
+    let service = state.clipboard_service.clone();
+    let result = run_blocking("clipboard_pin", move || service.pin(id, pinned)).await;
+    let result = match result {
+        Ok(updated) => {
+            emit_clipboard_sync(
+                &app,
+                ClipboardSyncPayload {
+                    upsert: vec![updated],
+                    removed_ids: Vec::new(),
+                    clear_all: false,
+                    reason: Some("pin".to_string()),
+                },
+            );
+            Ok(())
+        }
+        Err(error) => Err(error),
+    };
     match &result {
         Ok(_) => command_end_ok("clipboard_pin", &request_id, started_at),
         Err(error) => command_end_error("clipboard_pin", &request_id, started_at, error),
@@ -121,7 +325,7 @@ pub fn clipboard_pin(
 }
 
 #[tauri::command]
-pub fn clipboard_delete(
+pub async fn clipboard_delete(
     app: AppHandle,
     state: State<'_, AppState>,
     id: String,
@@ -130,19 +334,24 @@ pub fn clipboard_delete(
 ) -> AppResult<()> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start("clipboard_delete", &request_id, window_label.as_deref());
-    let result = (|| -> AppResult<()> {
-        state.clipboard_service.delete(id.clone())?;
-        emit_clipboard_sync(
-            &app,
-            ClipboardSyncPayload {
-                upsert: Vec::new(),
-                removed_ids: vec![id],
-                clear_all: false,
-                reason: Some("delete".to_string()),
-            },
-        );
-        Ok(())
-    })();
+    let service = state.clipboard_service.clone();
+    let removed_id = id.clone();
+    let result = run_blocking("clipboard_delete", move || service.delete(id)).await;
+    let result = match result {
+        Ok(()) => {
+            emit_clipboard_sync(
+                &app,
+                ClipboardSyncPayload {
+                    upsert: Vec::new(),
+                    removed_ids: vec![removed_id],
+                    clear_all: false,
+                    reason: Some("delete".to_string()),
+                },
+            );
+            Ok(())
+        }
+        Err(error) => Err(error),
+    };
     match &result {
         Ok(_) => command_end_ok("clipboard_delete", &request_id, started_at),
         Err(error) => command_end_error("clipboard_delete", &request_id, started_at, error),
@@ -151,7 +360,7 @@ pub fn clipboard_delete(
 }
 
 #[tauri::command]
-pub fn clipboard_clear_all(
+pub async fn clipboard_clear_all(
     app: AppHandle,
     state: State<'_, AppState>,
     request_id: Option<String>,
@@ -159,19 +368,23 @@ pub fn clipboard_clear_all(
 ) -> AppResult<()> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start("clipboard_clear_all", &request_id, window_label.as_deref());
-    let result = (|| -> AppResult<()> {
-        state.clipboard_service.clear_all()?;
-        emit_clipboard_sync(
-            &app,
-            ClipboardSyncPayload {
-                upsert: Vec::new(),
-                removed_ids: Vec::new(),
-                clear_all: true,
-                reason: Some("clear_all".to_string()),
-            },
-        );
-        Ok(())
-    })();
+    let service = state.clipboard_service.clone();
+    let result = run_blocking("clipboard_clear_all", move || service.clear_all()).await;
+    let result = match result {
+        Ok(()) => {
+            emit_clipboard_sync(
+                &app,
+                ClipboardSyncPayload {
+                    upsert: Vec::new(),
+                    removed_ids: Vec::new(),
+                    clear_all: true,
+                    reason: Some("clear_all".to_string()),
+                },
+            );
+            Ok(())
+        }
+        Err(error) => Err(error),
+    };
     match &result {
         Ok(_) => command_end_ok("clipboard_clear_all", &request_id, started_at),
         Err(error) => command_end_error("clipboard_clear_all", &request_id, started_at, error),
@@ -180,7 +393,7 @@ pub fn clipboard_clear_all(
 }
 
 #[tauri::command]
-pub fn clipboard_save_text(
+pub async fn clipboard_save_text(
     app: AppHandle,
     state: State<'_, AppState>,
     text: String,
@@ -189,19 +402,23 @@ pub fn clipboard_save_text(
 ) -> AppResult<ClipboardItemDto> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start("clipboard_save_text", &request_id, window_label.as_deref());
-    let result = (|| -> AppResult<ClipboardItemDto> {
-        let saved = state.clipboard_service.save_text(text, None)?;
-        emit_clipboard_sync(
-            &app,
-            ClipboardSyncPayload {
-                upsert: vec![saved.item.clone()],
-                removed_ids: saved.removed_ids,
-                clear_all: false,
-                reason: Some("save_text".to_string()),
-            },
-        );
-        Ok(saved.item)
-    })();
+    let service = state.clipboard_service.clone();
+    let result = run_blocking("clipboard_save_text", move || service.save_text(text, None)).await;
+    let result = match result {
+        Ok(saved) => {
+            emit_clipboard_sync(
+                &app,
+                ClipboardSyncPayload {
+                    upsert: vec![saved.item.clone()],
+                    removed_ids: saved.removed_ids,
+                    clear_all: false,
+                    reason: Some("save_text".to_string()),
+                },
+            );
+            Ok(saved.item)
+        }
+        Err(error) => Err(error),
+    };
     match &result {
         Ok(_) => command_end_ok("clipboard_save_text", &request_id, started_at),
         Err(error) => command_end_error("clipboard_save_text", &request_id, started_at, error),
@@ -210,7 +427,7 @@ pub fn clipboard_save_text(
 }
 
 #[tauri::command]
-pub fn clipboard_get_settings(
+pub async fn clipboard_get_settings(
     state: State<'_, AppState>,
     request_id: Option<String>,
     window_label: Option<String>,
@@ -221,13 +438,17 @@ pub fn clipboard_get_settings(
         &request_id,
         window_label.as_deref(),
     );
-    let result = Ok(state.clipboard_service.get_settings());
-    command_end_ok("clipboard_get_settings", &request_id, started_at);
+    let service = state.clipboard_service.clone();
+    let result = run_blocking("clipboard_get_settings", move || Ok(service.get_settings())).await;
+    match &result {
+        Ok(_) => command_end_ok("clipboard_get_settings", &request_id, started_at),
+        Err(error) => command_end_error("clipboard_get_settings", &request_id, started_at, error),
+    }
     result
 }
 
 #[tauri::command]
-pub fn clipboard_update_settings(
+pub async fn clipboard_update_settings(
     app: AppHandle,
     state: State<'_, AppState>,
     max_items: u32,
@@ -242,25 +463,28 @@ pub fn clipboard_update_settings(
         &request_id,
         window_label.as_deref(),
     );
-    let result = (|| -> Result<ClipboardSettingsDto, AppError> {
-        let updated = state.clipboard_service.update_settings(
-            max_items,
-            size_cleanup_enabled,
-            max_total_size_mb,
-        )?;
-        if !updated.removed_ids.is_empty() {
-            emit_clipboard_sync(
-                &app,
-                ClipboardSyncPayload {
-                    upsert: Vec::new(),
-                    removed_ids: updated.removed_ids.clone(),
-                    clear_all: false,
-                    reason: Some("update_settings_prune".to_string()),
-                },
-            );
+    let service = state.clipboard_service.clone();
+    let result = run_blocking("clipboard_update_settings", move || {
+        service.update_settings(max_items, size_cleanup_enabled, max_total_size_mb)
+    })
+    .await;
+    let result = match result {
+        Ok(updated) => {
+            if !updated.removed_ids.is_empty() {
+                emit_clipboard_sync(
+                    &app,
+                    ClipboardSyncPayload {
+                        upsert: Vec::new(),
+                        removed_ids: updated.removed_ids.clone(),
+                        clear_all: false,
+                        reason: Some("update_settings_prune".to_string()),
+                    },
+                );
+            }
+            Ok(updated.settings)
         }
-        Ok(updated.settings)
-    })();
+        Err(error) => Err(error),
+    };
     match &result {
         Ok(_) => command_end_ok("clipboard_update_settings", &request_id, started_at),
         Err(error) => {
@@ -332,7 +556,7 @@ pub fn clipboard_window_apply_mode(
 }
 
 #[tauri::command]
-pub fn clipboard_copy_back(
+pub async fn clipboard_copy_back(
     app: AppHandle,
     state: State<'_, AppState>,
     clipboard_plugin: State<'_, tauri_plugin_clipboard::Clipboard>,
@@ -343,36 +567,42 @@ pub fn clipboard_copy_back(
     let request_id = normalize_request_id(request_id);
     let started_at = command_start("clipboard_copy_back", &request_id, window_label.as_deref());
 
-    let result = (|| -> AppResult<()> {
-        let item = db::get_clipboard_item(&state.db_pool, &id)?
-            .ok_or_else(|| AppError::new("clipboard_not_found", "未找到对应剪贴板记录"))?;
+    let pool = state.db_pool.clone();
+    let query_id = id.clone();
+    let result = run_blocking("clipboard_copy_back_query", move || {
+        db::get_clipboard_item(&pool, &query_id)
+    })
+    .await;
+    let result = match result {
+        Ok(Some(item)) => {
+            if item.item_type == "file" {
+                let file_paths = parse_file_paths_from_plain_text(&item.plain_text)?;
+                copy_files_to_clipboard_with_verify(clipboard_plugin.inner(), &file_paths)?;
+            } else {
+                let mut clipboard = ArboardClipboard::new()?;
+                clipboard.set_text(item.plain_text)?;
+            }
 
-        if item.item_type == "file" {
-            let file_paths = parse_file_paths_from_plain_text(&item.plain_text)?;
-            let files_uris = to_clipboard_files_uris(&file_paths);
-            clipboard_plugin
-                .write_files_uris(files_uris)
-                .map_err(|error| {
-                    AppError::new("clipboard_set_files_failed", "写入文件到剪贴板失败")
-                        .with_detail(error)
-                })?;
-        } else {
-            let mut clipboard = ArboardClipboard::new()?;
-            clipboard.set_text(item.plain_text)?;
+            let service = state.clipboard_service.clone();
+            let touch_id = id.clone();
+            let touched = run_blocking("clipboard_copy_back_touch", move || {
+                service.touch_item(touch_id)
+            })
+            .await?;
+            emit_clipboard_sync(
+                &app,
+                ClipboardSyncPayload {
+                    upsert: vec![touched],
+                    removed_ids: Vec::new(),
+                    clear_all: false,
+                    reason: Some("copy_back".to_string()),
+                },
+            );
+            Ok(())
         }
-
-        let touched = state.clipboard_service.touch_item(id)?;
-        emit_clipboard_sync(
-            &app,
-            ClipboardSyncPayload {
-                upsert: vec![touched],
-                removed_ids: Vec::new(),
-                clear_all: false,
-                reason: Some("copy_back".to_string()),
-            },
-        );
-        Ok(())
-    })();
+        Ok(None) => Err(AppError::new("clipboard_not_found", "未找到对应剪贴板记录")),
+        Err(error) => Err(error),
+    };
 
     match &result {
         Ok(_) => command_end_ok("clipboard_copy_back", &request_id, started_at),
@@ -381,8 +611,43 @@ pub fn clipboard_copy_back(
     result
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_normalize_file_uri_for_compare() {
+        let value = normalize_path_for_compare("file:///tmp/example.txt");
+        assert_eq!(value, "/tmp/example.txt");
+    }
+
+    #[test]
+    fn should_return_verify_failed_when_paths_mismatch() {
+        let expected = vec!["/tmp/a.txt".to_string()];
+        let actual = vec!["/tmp/b.txt".to_string()];
+        let result = ensure_expected_and_actual_file_paths(&expected, &actual);
+        assert!(result.is_err());
+        assert_eq!(
+            result.expect_err("expected mismatch error").code,
+            "clipboard_set_files_verify_failed"
+        );
+    }
+
+    #[test]
+    fn should_build_macos_script_with_escaped_path() {
+        let file_paths = vec![
+            "/tmp/space file.txt".to_string(),
+            "/tmp/中文\"test\".txt".to_string(),
+        ];
+        let script = build_macos_copy_files_script(&file_paths);
+        assert!(script.starts_with("set the clipboard to {"));
+        assert!(script.contains("POSIX file \"/tmp/space file.txt\""));
+        assert!(script.contains("POSIX file \"/tmp/中文\\\"test\\\".txt\""));
+    }
+}
+
 #[tauri::command]
-pub fn clipboard_copy_file_paths(
+pub async fn clipboard_copy_file_paths(
     app: AppHandle,
     state: State<'_, AppState>,
     id: String,
@@ -396,28 +661,41 @@ pub fn clipboard_copy_file_paths(
         window_label.as_deref(),
     );
 
-    let result = (|| -> AppResult<()> {
-        let item = db::get_clipboard_item(&state.db_pool, &id)?
-            .ok_or_else(|| AppError::new("clipboard_not_found", "未找到对应剪贴板记录"))?;
-        if item.item_type != "file" {
-            return Err(AppError::new("clipboard_not_file", "当前条目不是文件类型"));
+    let pool = state.db_pool.clone();
+    let query_id = id.clone();
+    let result = run_blocking("clipboard_copy_file_paths_query", move || {
+        db::get_clipboard_item(&pool, &query_id)
+    })
+    .await;
+    let result = match result {
+        Ok(Some(item)) => {
+            if item.item_type != "file" {
+                Err(AppError::new("clipboard_not_file", "当前条目不是文件类型"))
+            } else {
+                let mut clipboard = ArboardClipboard::new()?;
+                clipboard.set_text(item.plain_text)?;
+
+                let service = state.clipboard_service.clone();
+                let touch_id = id.clone();
+                let touched = run_blocking("clipboard_copy_file_paths_touch", move || {
+                    service.touch_item(touch_id)
+                })
+                .await?;
+                emit_clipboard_sync(
+                    &app,
+                    ClipboardSyncPayload {
+                        upsert: vec![touched],
+                        removed_ids: Vec::new(),
+                        clear_all: false,
+                        reason: Some("copy_file_paths".to_string()),
+                    },
+                );
+                Ok(())
+            }
         }
-
-        let mut clipboard = ArboardClipboard::new()?;
-        clipboard.set_text(item.plain_text)?;
-
-        let touched = state.clipboard_service.touch_item(id)?;
-        emit_clipboard_sync(
-            &app,
-            ClipboardSyncPayload {
-                upsert: vec![touched],
-                removed_ids: Vec::new(),
-                clear_all: false,
-                reason: Some("copy_file_paths".to_string()),
-            },
-        );
-        Ok(())
-    })();
+        Ok(None) => Err(AppError::new("clipboard_not_found", "未找到对应剪贴板记录")),
+        Err(error) => Err(error),
+    };
 
     match &result {
         Ok(_) => command_end_ok("clipboard_copy_file_paths", &request_id, started_at),
@@ -429,7 +707,7 @@ pub fn clipboard_copy_file_paths(
 }
 
 #[tauri::command]
-pub fn clipboard_copy_image_back(
+pub async fn clipboard_copy_image_back(
     app: AppHandle,
     state: State<'_, AppState>,
     id: String,
@@ -443,58 +721,81 @@ pub fn clipboard_copy_image_back(
         window_label.as_deref(),
     );
 
-    let result = (|| -> AppResult<()> {
-        let item = db::get_clipboard_item(&state.db_pool, &id)?
-            .ok_or_else(|| AppError::new("clipboard_not_found", "未找到对应剪贴板记录"))?;
+    let pool = state.db_pool.clone();
+    let query_id = id.clone();
+    let result = run_blocking("clipboard_copy_image_back_query", move || {
+        db::get_clipboard_item(&pool, &query_id)
+    })
+    .await;
+    let result = match result {
+        Ok(Some(item)) => {
+            if item.item_type != "image" {
+                Err(AppError::new("clipboard_not_image", "当前条目不是图片类型"))
+            } else {
+                let preview_path = item.preview_path.clone();
+                let preview_data_url = item.preview_data_url.clone();
+                let (width, height, bytes) =
+                    run_blocking("clipboard_copy_image_back_decode", move || {
+                        let image_from_path = preview_path.as_ref().and_then(|path| {
+                            let reader = ImageReader::open(path).ok()?;
+                            reader.decode().ok()
+                        });
 
-        if item.item_type != "image" {
-            return Err(AppError::new("clipboard_not_image", "当前条目不是图片类型"));
+                        let image = if let Some(image) = image_from_path {
+                            image
+                        } else if let Some(data_url) = preview_data_url.as_deref() {
+                            let decoded_bytes = decode_data_url_image_bytes(data_url)?;
+                            image::load_from_memory(&decoded_bytes).map_err(|error| {
+                                AppError::new("image_decode_failed", "解码图片失败")
+                                    .with_detail(error.to_string())
+                            })?
+                        } else {
+                            return Err(AppError::new(
+                                "image_preview_missing",
+                                "图片预览数据不存在",
+                            ));
+                        };
+
+                        let rgba = image.to_rgba8();
+                        let (width, height) = rgba.dimensions();
+                        Ok((width, height, rgba.into_raw()))
+                    })
+                    .await?;
+
+                let image_data = ImageData {
+                    width: width as usize,
+                    height: height as usize,
+                    bytes: Cow::Owned(bytes),
+                };
+
+                let mut clipboard = ArboardClipboard::new()?;
+                clipboard.set_image(image_data).map_err(|error| {
+                    AppError::new("clipboard_set_image_failed", "写入图片到剪贴板失败")
+                        .with_detail(error.to_string())
+                })?;
+
+                let service = state.clipboard_service.clone();
+                let touch_id = id.clone();
+                let touched = run_blocking("clipboard_copy_image_back_touch", move || {
+                    service.touch_item(touch_id)
+                })
+                .await?;
+                emit_clipboard_sync(
+                    &app,
+                    ClipboardSyncPayload {
+                        upsert: vec![touched],
+                        removed_ids: Vec::new(),
+                        clear_all: false,
+                        reason: Some("copy_image_back".to_string()),
+                    },
+                );
+
+                Ok(())
+            }
         }
-
-        let image_from_path = item.preview_path.as_ref().and_then(|preview_path| {
-            let reader = ImageReader::open(preview_path).ok()?;
-            reader.decode().ok()
-        });
-
-        let image = if let Some(image) = image_from_path {
-            image
-        } else if let Some(preview_data_url) = &item.preview_data_url {
-            let decoded_bytes = decode_data_url_image_bytes(preview_data_url)?;
-            image::load_from_memory(&decoded_bytes).map_err(|error| {
-                AppError::new("image_decode_failed", "解码图片失败").with_detail(error.to_string())
-            })?
-        } else {
-            return Err(AppError::new("image_preview_missing", "图片预览数据不存在"));
-        };
-
-        let rgba = image.to_rgba8();
-        let (width, height) = rgba.dimensions();
-
-        let image_data = ImageData {
-            width: width as usize,
-            height: height as usize,
-            bytes: Cow::Owned(rgba.into_raw()),
-        };
-
-        let mut clipboard = ArboardClipboard::new()?;
-        clipboard.set_image(image_data).map_err(|error| {
-            AppError::new("clipboard_set_image_failed", "写入图片到剪贴板失败")
-                .with_detail(error.to_string())
-        })?;
-
-        let touched = state.clipboard_service.touch_item(id)?;
-        emit_clipboard_sync(
-            &app,
-            ClipboardSyncPayload {
-                upsert: vec![touched],
-                removed_ids: Vec::new(),
-                clear_all: false,
-                reason: Some("copy_image_back".to_string()),
-            },
-        );
-
-        Ok(())
-    })();
+        Ok(None) => Err(AppError::new("clipboard_not_found", "未找到对应剪贴板记录")),
+        Err(error) => Err(error),
+    };
 
     match &result {
         Ok(_) => command_end_ok("clipboard_copy_image_back", &request_id, started_at),

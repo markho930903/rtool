@@ -50,8 +50,8 @@ export default function ClipboardPanelContainer(props: ClipboardPanelProps) {
   const clipboardItemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   const {
-    previewMessage,
-    setPreviewMessage,
+    actionFeedback,
+    setActionFeedback,
     clearAllError,
     setClearAllError,
     isClearingAll,
@@ -71,7 +71,7 @@ export default function ClipboardPanelContainer(props: ClipboardPanelProps) {
     useClipboardDeleteUndo({
       delayMs: DELETE_UNDO_DELAY,
       commitDelete: deleteItem,
-      onDeleteError: setPreviewMessage,
+      onDeleteError: (message) => setActionFeedback({ kind: "error", message }),
     });
 
   const bootReady = initialized && !initializing;
@@ -181,9 +181,9 @@ export default function ClipboardPanelContainer(props: ClipboardPanelProps) {
   );
 
   const handlePreviewItem = useCallback((item: ClipboardItem) => {
-    setPreviewMessage(null);
+    setActionFeedback(null);
     setPreviewItem(item);
-  }, [setPreviewMessage]);
+  }, [setActionFeedback]);
 
   useClipboardHotkeys({
     visibleItems,
@@ -199,14 +199,14 @@ export default function ClipboardPanelContainer(props: ClipboardPanelProps) {
       before: () => {
         cancelAllScheduledDeletes();
         setPreviewItem(null);
-        setPreviewMessage(null);
+        setActionFeedback(null);
       },
       success: () => {
         setSelectedItemId(null);
         setShowClearConfirm(false);
       },
     });
-  }, [cancelAllScheduledDeletes, handleClearAll, setPreviewMessage]);
+  }, [cancelAllScheduledDeletes, handleClearAll, setActionFeedback]);
 
   const handleOpenClearConfirm = useCallback(() => {
     setClearAllError(null);
@@ -221,8 +221,8 @@ export default function ClipboardPanelContainer(props: ClipboardPanelProps) {
 
   const handleClosePreview = useCallback(() => {
     setPreviewItem(null);
-    setPreviewMessage(null);
-  }, [setPreviewMessage]);
+    setActionFeedback(null);
+  }, [setActionFeedback]);
 
   return (
     <ClipboardPanelView
@@ -236,6 +236,7 @@ export default function ClipboardPanelContainer(props: ClipboardPanelProps) {
       itemType={itemType}
       onlyPinned={onlyPinned}
       error={error}
+      actionFeedback={actionFeedback}
       clearAllError={clearAllError}
       loading={loading}
       visibleItems={visibleItems}
@@ -260,7 +261,6 @@ export default function ClipboardPanelContainer(props: ClipboardPanelProps) {
       onCloseClearConfirm={handleCloseClearConfirm}
       onConfirmClearAll={handleConfirmClearAll}
       previewItem={previewItem}
-      previewMessage={previewMessage}
       onClosePreview={handleClosePreview}
       onCopyPreviewImage={handleCopyPreviewImage}
     />

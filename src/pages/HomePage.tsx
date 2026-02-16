@@ -108,8 +108,8 @@ function MetricCard(props: MetricCardProps) {
 
   return (
     <article className="relative overflow-hidden rounded-xl border border-border-muted bg-surface px-4 py-3">
-      <div className="font-mono text-[11px] uppercase tracking-wide text-text-muted">{props.title}</div>
-      <div className={`mt-2 font-mono text-[1.65rem] leading-none font-semibold ${valueClassName}`}>{props.value}</div>
+      <div className="font-mono ui-text-micro uppercase tracking-ui-wide text-text-muted">{props.title}</div>
+      <div className={`mt-2 font-mono text-ui-lg leading-none font-semibold ${valueClassName}`}>{props.value}</div>
       <div className="mt-1.5 text-xs text-text-secondary">{props.hint}</div>
     </article>
   );
@@ -128,7 +128,7 @@ function TerminalPanel(props: TerminalPanelProps) {
   return (
     <section className="rounded-xl border border-border-muted bg-surface p-4">
       <header className="mb-3">
-        <div className="font-mono text-[11px] uppercase tracking-wide text-text-muted">{props.title}</div>
+        <div className="font-mono ui-text-micro uppercase tracking-ui-wide text-text-muted">{props.title}</div>
         <h2 className="mt-1 text-sm font-semibold text-text-primary">{props.subtitle}</h2>
       </header>
       {props.children}
@@ -168,7 +168,7 @@ function MemorySparkline(props: {
           );
         })}
       </div>
-      <div className="mt-2 flex justify-between text-[11px] text-text-muted">
+      <div className="mt-2 flex justify-between ui-text-micro text-text-muted">
         <span>{props.t("timeline.min", { value: formatBytes(min) })}</span>
         <span>{props.t("timeline.max", { value: formatBytes(max) })}</span>
       </div>
@@ -217,12 +217,12 @@ export default function HomePage() {
     <div className="space-y-3 pb-2">
       <section className="rounded-2xl border border-border-strong bg-surface p-4">
         <div>
-          <div className="font-mono text-[11px] uppercase tracking-widest text-text-muted">
+          <div className="font-mono ui-text-micro uppercase tracking-ui-wider text-text-muted">
             rtool / dashboard / live telemetry
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <h1 className="m-0 text-xl font-semibold tracking-tight text-text-primary">{t("header.title")}</h1>
-            <span className="rounded-full border border-border-muted bg-app px-2 py-0.5 font-mono text-[11px] uppercase tracking-wide text-accent">
+            <span className="rounded-full border border-border-muted bg-app px-2 py-0.5 font-mono ui-text-micro uppercase tracking-ui-wide text-accent">
               {statusLabel}
             </span>
           </div>
@@ -321,7 +321,7 @@ export default function HomePage() {
                   <div className="text-sm font-medium text-text-primary">{item.name}</div>
                   <div className="mt-0.5 text-xs text-text-muted">{item.detail}</div>
                 </div>
-                <span className="rounded-full border border-accent/50 bg-accent/15 px-2 py-0.5 font-mono text-[11px] uppercase text-accent">
+                <span className="rounded-full border border-accent/50 bg-accent/15 px-2 py-0.5 font-mono ui-text-micro uppercase text-accent">
                   {item.state}
                 </span>
               </article>

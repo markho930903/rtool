@@ -147,22 +147,22 @@ export default function ClipboardItemCard(props: ClipboardItemCardProps) {
       >
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
-            <span className="text-[10px] text-info uppercase tracking-wide">{typeLabel}</span>
+            <span className="ui-text-micro text-info uppercase tracking-ui-wide">{typeLabel}</span>
             <span
-              className="max-w-[130px] truncate text-[10px] text-text-muted"
+              className="max-w-[130px] truncate ui-text-micro text-text-muted"
               title={props.item.sourceApp ?? t("common:status.empty")}
             >
               {props.item.sourceApp ?? t("common:status.empty")}
             </span>
             {props.item.pinned ? (
-              <span className="rounded-full border border-border-muted bg-surface px-1.5 py-0.5 text-[10px] text-text-secondary">
+              <span className="rounded-full border border-border-muted bg-surface px-1.5 py-0.5 ui-text-micro text-text-secondary">
                 {t("item.pinnedShort")}
               </span>
             ) : null}
           </div>
-          <span className="text-[11px] text-text-muted">{formatTime(props.item.createdAt, locale)}</span>
+          <span className="ui-text-micro text-text-muted">{formatTime(props.item.createdAt, locale)}</span>
         </div>
-        <p className="mt-1 text-[12px] leading-[1.35] text-text-secondary [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical] overflow-hidden">
+        <p className="mt-1 ui-text-caption text-text-secondary [display:-webkit-box] [-webkit-line-clamp:2] [-webkit-box-orient:vertical] overflow-hidden">
           {compactSummary}
         </p>
       </article>
@@ -173,23 +173,23 @@ export default function ClipboardItemCard(props: ClipboardItemCardProps) {
     <article className="rounded-md border border-border-muted bg-surface p-3">
       <header className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-1.5">
-          <span className="rounded-full border border-border-muted bg-surface px-2 py-0.5 text-[11px] text-text-secondary">
+          <span className="rounded-full border border-border-muted bg-surface px-2 py-0.5 ui-text-micro text-text-secondary">
             {typeLabel}
           </span>
           <span
-            className="max-w-[180px] truncate rounded-full border border-border-muted bg-surface px-2 py-0.5 text-[11px] text-text-secondary"
+            className="max-w-[180px] truncate rounded-full border border-border-muted bg-surface px-2 py-0.5 ui-text-micro text-text-secondary"
             title={props.item.sourceApp ?? t("common:status.empty")}
           >
             {t("item.sourcePrefix")}
             {props.item.sourceApp ?? t("common:status.empty")}
           </span>
           {props.item.pinned ? (
-            <span className="rounded-full border border-border-muted bg-surface px-2 py-0.5 text-[11px] text-text-secondary">
+            <span className="rounded-full border border-border-muted bg-surface px-2 py-0.5 ui-text-micro text-text-secondary">
               {t("item.pinned")}
             </span>
           ) : null}
         </div>
-        <span className="text-[11px] text-text-muted">{formatTime(props.item.createdAt, locale)}</span>
+        <span className="ui-text-micro text-text-muted">{formatTime(props.item.createdAt, locale)}</span>
       </header>
 
       <div className="mt-2 space-y-2">
@@ -229,12 +229,12 @@ export default function ClipboardItemCard(props: ClipboardItemCardProps) {
               {filePaths.slice(0, 6).map((path) => (
                 <li key={path} className="flex flex-col gap-0.5" title={path}>
                   <span className="text-xs font-semibold text-text-primary">{fileBaseName(path)}</span>
-                  <span className="truncate whitespace-nowrap text-[11px] text-text-muted">{path}</span>
+                  <span className="truncate whitespace-nowrap ui-text-micro text-text-muted">{path}</span>
                 </li>
               ))}
             </ul>
             {filePaths.length > 6 ? (
-              <div className="mt-2 text-[11px] text-text-muted">
+              <div className="mt-2 ui-text-micro text-text-muted">
                 {t("item.moreFiles", { count: filePaths.length - 6 })}
               </div>
             ) : null}

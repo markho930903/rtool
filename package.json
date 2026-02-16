@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "i18n:check": "node scripts/i18n-check.mjs",
+    "tokens:check": "node scripts/check-style-tokens.mjs",
     "lint": "oxlint --tsconfig ./tsconfig.json .",
     "lint:fix": "oxlint --fix --tsconfig ./tsconfig.json .",
     "format": "oxfmt .",

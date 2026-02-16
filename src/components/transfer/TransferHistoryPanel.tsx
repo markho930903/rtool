@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 
+import { Button } from "@/components/ui";
 import type { TransferSession } from "@/components/transfer/types";
 
 interface TransferHistoryPanelProps {
@@ -23,24 +24,28 @@ export default function TransferHistoryPanel(props: TransferHistoryPanelProps) {
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-text-primary">{t("history.title")}</h2>
         <div className="flex items-center gap-1">
-          <button
+          <Button
             type="button"
-            className="rounded-2 border border-border-muted px-2 py-1 text-[11px] text-text-secondary hover:text-text-primary"
+            size="xs"
+            variant="secondary"
+            className="ui-text-micro"
             onClick={() => {
               void props.onRefresh();
             }}
           >
             {t("history.refresh")}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className="rounded-2 border border-border-muted px-2 py-1 text-[11px] text-text-secondary hover:text-text-primary"
+            size="xs"
+            variant="secondary"
+            className="ui-text-micro"
             onClick={() => {
               void props.onClear();
             }}
           >
             {t("history.clear")}
-          </button>
+          </Button>
         </div>
       </div>
 

@@ -53,7 +53,7 @@ export default function BootOverlay(props: BootOverlayProps) {
 
       <div
         className={[
-          "relative rounded-[var(--radius-overlay)] border border-border-muted bg-surface-overlay/96 p-5 shadow-[var(--shadow-overlay)]",
+          "relative rounded-overlay border border-border-muted bg-surface-overlay/96 p-5 shadow-overlay",
           "backdrop-blur-[20px] backdrop-saturate-140",
           config.panelClassName,
         ].join(" ")}
@@ -82,7 +82,7 @@ export default function BootOverlay(props: BootOverlayProps) {
               style={{ width }}
             >
               <span
-                className="rtool-boot-shimmer-layer absolute inset-y-0 bg-gradient-to-r from-transparent via-white/30 to-transparent"
+                className="rtool-boot-shimmer-layer absolute inset-y-0 bg-gradient-to-r from-transparent via-shimmer-highlight/30 to-transparent"
                 style={{
                   left: "-45%",
                   width: "45%",

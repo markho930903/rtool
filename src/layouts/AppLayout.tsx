@@ -31,20 +31,20 @@ const SIDEBAR_ITEM_BASE_CLASS =
   "relative inline-flex h-14 w-14 select-none flex-col items-center justify-center gap-0.5 overflow-hidden rounded-3 text-text-secondary transition-[background-color,color,box-shadow,transform] duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 [&_.sidebar-item-icon]:transition-transform [&_.sidebar-item-icon]:duration-200 [&_.sidebar-item-label]:transition-colors [&_.sidebar-item-label]:duration-200";
 
 const SIDEBAR_ITEM_ACTIVE_CLASS =
-  "bg-[var(--color-sidebar-item-active)] text-text-primary shadow-[0_4px_10px_rgb(0_0_0/6%),inset_0_1px_0_rgb(255_255_255/6%)] [&_.sidebar-item-icon]:-translate-y-[0.5px] [&_.sidebar-item-label]:text-text-primary";
+  "bg-sidebar-item-active text-text-primary shadow-sidebar-item-active [&_.sidebar-item-icon]:-translate-y-[0.5px] [&_.sidebar-item-label]:text-text-primary";
 
 const SIDEBAR_ITEM_IDLE_CLASS =
-  "text-text-secondary hover:-translate-y-[1px] hover:bg-[var(--color-sidebar-item-hover)] hover:text-text-primary hover:shadow-[0_2px_6px_rgb(0_0_0/4%)] hover:[&_.sidebar-item-icon]:-translate-y-[1px] hover:[&_.sidebar-item-label]:text-text-primary active:translate-y-0 active:scale-[0.98]";
+  "text-text-secondary hover:-translate-y-[1px] hover:bg-sidebar-item-hover hover:text-text-primary hover:shadow-sidebar-item-hover hover:[&_.sidebar-item-icon]:-translate-y-[1px] hover:[&_.sidebar-item-label]:text-text-primary active:translate-y-0 active:scale-[0.98]";
 
 const TITLEBAR_ICON_BUTTON_CLASS =
-  "inline-flex h-9 w-9 select-none items-center justify-center rounded-3 text-text-secondary transition-[background-color,color,transform] duration-200 ease-out hover:bg-[var(--color-sidebar-item-hover)] hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 active:scale-[0.97]";
+  "inline-flex h-9 w-9 select-none items-center justify-center rounded-3 text-text-secondary transition-[background-color,color,transform] duration-200 ease-out hover:bg-sidebar-item-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 active:scale-[0.97]";
 
 const TITLEBAR_MENU_ITEM_BASE_CLASS =
   "flex items-center gap-2 rounded-2 px-2.5 py-2 text-text-secondary transition-colors duration-150 ease-out";
 
-const TITLEBAR_MENU_ITEM_ACTIVE_CLASS = "bg-[var(--color-sidebar-item-active)] text-text-primary";
+const TITLEBAR_MENU_ITEM_ACTIVE_CLASS = "bg-sidebar-item-active text-text-primary";
 
-const TITLEBAR_MENU_ITEM_IDLE_CLASS = "hover:bg-[var(--color-sidebar-item-hover)] hover:text-text-primary";
+const TITLEBAR_MENU_ITEM_IDLE_CLASS = "hover:bg-sidebar-item-hover hover:text-text-primary";
 
 function getNextTheme(preference: ThemePreference): ThemePreference {
   if (preference === "system") {
@@ -159,7 +159,7 @@ function SideBar() {
   const { t } = useTranslation("layout");
 
   return (
-    <aside className="z-20 flex h-full w-[80px] shrink-0 flex-col items-center overflow-hidden border-r border-border-muted bg-elevated shadow-[inset_-1px_0_0_rgb(255_255_255/2%)] backdrop-blur-xl backdrop-saturate-125">
+    <aside className="z-20 flex h-full w-[80px] shrink-0 flex-col items-center overflow-hidden border-r border-border-muted bg-elevated shadow-inset-divider backdrop-blur-xl backdrop-saturate-125">
       <div className="h-16 w-full shrink-0" data-tauri-drag-region />
       <nav className="mt-1 flex flex-1 flex-col items-center gap-2 py-2" aria-label={t("nav.mainAria")}>
         {NAV_ITEMS.map((item) => {
@@ -293,7 +293,7 @@ export default function AppLayout() {
             {menuOpen ? (
               <div
                 ref={menuRef}
-                className="absolute left-0 top-[calc(100%+0.45rem)] z-50 min-w-[180px] rounded-[var(--radius-overlay)] border border-border-muted bg-[var(--color-surface-popover)] p-2 shadow-[var(--shadow-popover)] ring-1 ring-inset ring-[var(--color-popover-highlight)] backdrop-blur-md backdrop-saturate-130"
+                className="absolute left-0 top-[calc(100%+0.45rem)] z-50 min-w-[180px] rounded-overlay border border-border-muted bg-surface-popover p-2 shadow-popover ring-1 ring-inset ring-popover-highlight backdrop-blur-md backdrop-saturate-130"
                 role="menu"
                 aria-label={t("titlebar.menuAria")}
               >

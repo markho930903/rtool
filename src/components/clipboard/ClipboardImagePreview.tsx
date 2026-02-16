@@ -7,7 +7,6 @@ import { Button, Dialog } from "@/components/ui";
 
 interface ClipboardImagePreviewProps {
   item: ClipboardItem | null;
-  message: string | null;
   onClose: () => void;
   onCopyImage: (id: string) => Promise<void>;
 }
@@ -32,7 +31,7 @@ function resolveImageUrlCandidates(item: ClipboardItem | null): string[] {
 
 export default function ClipboardImagePreview(props: ClipboardImagePreviewProps) {
   const { t } = useTranslation("clipboard");
-  const { item, message, onClose, onCopyImage } = props;
+  const { item, onClose, onCopyImage } = props;
 
   const imageUrlCandidates = useMemo(() => resolveImageUrlCandidates(item), [item]);
   const [imageUrlIndex, setImageUrlIndex] = useState(0);
@@ -55,7 +54,7 @@ export default function ClipboardImagePreview(props: ClipboardImagePreviewProps)
       open
       onClose={onClose}
       zIndexClassName="z-[70] flex items-center justify-center"
-      className="flex max-h-[88vh] w-[min(900px,92vw)] flex-col rounded-xl border border-border-muted bg-surface-overlay shadow-[var(--shadow-overlay)] backdrop-blur-[16px]"
+      className="flex max-h-[88vh] w-[min(900px,92vw)] flex-col rounded-xl border border-border-muted bg-surface-overlay shadow-overlay backdrop-blur-[16px]"
       ariaLabel={t("preview.title")}
       closeOnBackdrop
       closeOnEscape
@@ -102,8 +101,6 @@ export default function ClipboardImagePreview(props: ClipboardImagePreviewProps)
             <span>{t("preview.downloadImage")}</span>
           </Button>
         </footer>
-
-        {message ? <div className="px-[14px] pb-3 text-xs text-info">{message}</div> : null}
       </>
     </Dialog>
   );

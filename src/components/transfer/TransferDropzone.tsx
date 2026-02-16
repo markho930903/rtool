@@ -1,6 +1,7 @@
 import { useRef, type DragEvent } from "react";
 import { useTranslation } from "react-i18next";
 
+import { Button } from "@/components/ui";
 import type { TransferFileInput } from "@/components/transfer/types";
 
 interface TransferDropzoneProps {
@@ -74,31 +75,37 @@ export default function TransferDropzone(props: TransferDropzoneProps) {
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
-        <button
+        <Button
           type="button"
-          className="rounded-2 border border-border-muted px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary"
+          size="sm"
+          variant="secondary"
+          className="text-ui-xs"
           onClick={() => fileInputRef.current?.click()}
         >
           {t("dropzone.pickFiles")}
-        </button>
+        </Button>
 
-        <button
+        <Button
           type="button"
-          className="rounded-2 border border-border-muted px-3 py-1.5 text-xs text-text-secondary hover:text-text-primary"
+          size="sm"
+          variant="secondary"
+          className="text-ui-xs"
           onClick={() => folderInputRef.current?.click()}
         >
           {t("dropzone.pickFolder")}
-        </button>
+        </Button>
 
-        <button
+        <Button
           type="button"
-          className="rounded-2 bg-accent px-3 py-1.5 text-xs text-white hover:opacity-90"
+          size="sm"
+          variant="primary"
+          className="text-ui-xs"
           onClick={() => {
             void props.onSend();
           }}
         >
           {t("dropzone.send")}
-        </button>
+        </Button>
       </div>
 
       <input

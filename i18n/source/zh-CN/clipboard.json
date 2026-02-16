@@ -39,6 +39,7 @@
   "panel.undo.text": "文本条目",
   "panel.copyMessageImage": "图片已复制到系统剪贴板",
   "panel.copyMessageFile": "文件已复制到系统剪贴板",
+  "panel.copyMessageFileFailedUnsupported": "文件复制失败，请在支持文件粘贴的应用中重试",
   "panel.copyMessageFilePath": "文件路径已复制到系统剪贴板",
   "panel.copyMessageText": "文本已复制到系统剪贴板",
   "panel.empty": "暂无记录，先复制一段内容试试。",

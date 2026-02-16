@@ -6,7 +6,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use serde::{Deserialize, Serialize};
 use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
-use tokio::time::{Duration, Instant, sleep};
+use tokio::time::{Duration, Instant, MissedTickBehavior, interval};
 
 use super::TRANSFER_DISCOVERY_PORT;
 
@@ -62,6 +62,10 @@ pub async fn run_broadcast_loop(stop: Arc<AtomicBool>, packet: DiscoveryPacket) 
     }
 
     let target = SocketAddr::from(([255, 255, 255, 255], TRANSFER_DISCOVERY_PORT));
+    let mut tick = interval(Duration::from_secs(3));
+    tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
+    tick.tick().await;
+
     while !stop.load(Ordering::Relaxed) {
         let mut payload = packet.clone();
         payload.ts = now_millis();
@@ -83,7 +87,7 @@ pub async fn run_broadcast_loop(stop: Arc<AtomicBool>, packet: DiscoveryPacket) 
             }
         }
 
-        sleep(Duration::from_secs(3)).await;
+        tick.tick().await;
     }
 }
 
@@ -101,6 +105,9 @@ pub async fn run_listen_loop(stop: Arc<AtomicBool>, peers: PeerMap, local_device
 
     let mut buffer = vec![0u8; 4096];
     let mut prune_deadline = Instant::now() + Duration::from_secs(10);
+    let mut maintenance_tick = interval(Duration::from_millis(300));
+    maintenance_tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    maintenance_tick.tick().await;
 
     while !stop.load(Ordering::Relaxed) {
         tokio::select! {
@@ -131,7 +138,7 @@ pub async fn run_listen_loop(stop: Arc<AtomicBool>, peers: PeerMap, local_device
 
                 peers.write().await.insert(peer.device_id.clone(), peer);
             }
-            _ = sleep(Duration::from_millis(300)) => {}
+            _ = maintenance_tick.tick() => {}
         }
 
         if Instant::now() >= prune_deadline {

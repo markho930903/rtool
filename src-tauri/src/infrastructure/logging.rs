@@ -1,6 +1,7 @@
 use crate::core::AppError;
 use crate::core::models::{LogConfigDto, LogEntryDto, LogPageDto, LogQueryDto};
 use crate::infrastructure::db::{self, DbPool};
+use crate::infrastructure::runtime::blocking::run_blocking;
 use rusqlite::{OptionalExtension, params};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -39,6 +40,8 @@ const MAX_COLLECTION_ITEMS: usize = 64;
 const MAX_NESTED_DEPTH: usize = 6;
 const QUERY_LIMIT_MAX: u32 = 500;
 const QUERY_LIMIT_DEFAULT: u32 = 100;
+const EXPORT_FLUSH_EVERY_PAGES: u32 = 4;
+const EXPORT_THROTTLE_SLEEP_MS: u64 = 1;
 const STREAM_EVENT_NAME: &str = "rtool://logging/stream";
 
 const SENSITIVE_TEXT_KEYS: [&str; 5] = ["text", "content", "clipboard", "prompt", "input"];
@@ -845,8 +848,26 @@ pub fn record_log_event(input: RecordLogInput) -> Result<(), AppError> {
 }
 
 pub fn record_log_event_best_effort(input: RecordLogInput) {
-    if let Err(error) = record_log_event(input) {
-        eprintln!("logging ingest failed: {}", error);
+    if tokio::runtime::Handle::try_current().is_ok() {
+        tauri::async_runtime::spawn(async move {
+            let _ = run_blocking("record_log_event_best_effort", move || {
+                if let Err(error) = record_log_event(input) {
+                    tracing::warn!(
+                        event = "logging_ingest_failed",
+                        error_code = error.code,
+                        error_detail = error.detail.unwrap_or_default()
+                    );
+                }
+                Ok(())
+            })
+            .await;
+        });
+    } else {
+        std::thread::spawn(move || {
+            if let Err(error) = record_log_event(input) {
+                eprintln!("logging ingest failed: {}", error);
+            }
+        });
     }
 }
 
@@ -1008,6 +1029,7 @@ pub fn export_log_entries(
     output_path: Option<String>,
 ) -> Result<String, AppError> {
     let mut cursor = query.cursor.clone();
+    let mut page_count = 0u32;
 
     let target_path = with_log_center(|center| {
         let resolved = output_path
@@ -1050,6 +1072,15 @@ pub fn export_log_entries(
                 AppError::new("log_export_write_failed", "写入日志导出文件失败")
                     .with_detail(error.to_string())
             })?;
+        }
+
+        page_count = page_count.saturating_add(1);
+        if page_count % EXPORT_FLUSH_EVERY_PAGES == 0 {
+            writer.flush().map_err(|error| {
+                AppError::new("log_export_flush_failed", "刷新日志导出文件失败")
+                    .with_detail(error.to_string())
+            })?;
+            std::thread::sleep(Duration::from_millis(EXPORT_THROTTLE_SLEEP_MS));
         }
 
         if page.next_cursor.is_none() {

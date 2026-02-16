@@ -1,5 +1,6 @@
 import { useTranslation } from "react-i18next";
 
+import { Button } from "@/components/ui";
 import type { TransferSession } from "@/components/transfer/types";
 
 interface TransferSessionListProps {
@@ -69,56 +70,64 @@ export default function TransferSessionList(props: TransferSessionListProps) {
 
               <div className="mt-2 flex flex-wrap gap-1">
                 {isRunning ? (
-                  <button
+                  <Button
                     type="button"
-                    className="rounded-2 border border-border-muted px-2 py-1 text-[11px] text-text-secondary hover:text-text-primary"
+                    size="xs"
+                    variant="secondary"
+                    className="ui-text-micro"
                     onClick={() => {
                       void props.onPause(session.id);
                     }}
                   >
                     {t("session.pause")}
-                  </button>
+                  </Button>
                 ) : null}
 
                 {isPaused ? (
-                  <button
+                  <Button
                     type="button"
-                    className="rounded-2 border border-border-muted px-2 py-1 text-[11px] text-text-secondary hover:text-text-primary"
+                    size="xs"
+                    variant="secondary"
+                    className="ui-text-micro"
                     onClick={() => {
                       void props.onResume(session.id);
                     }}
                   >
                     {t("session.resume")}
-                  </button>
+                  </Button>
                 ) : null}
 
                 {(isRunning || isPaused) ? (
-                  <button
+                  <Button
                     type="button"
-                    className="rounded-2 border border-border-muted px-2 py-1 text-[11px] text-text-secondary hover:text-text-primary"
+                    size="xs"
+                    variant="secondary"
+                    className="ui-text-micro"
                     onClick={() => {
                       void props.onCancel(session.id);
                     }}
                   >
                     {t("session.cancel")}
-                  </button>
+                  </Button>
                 ) : null}
 
                 {canRetry ? (
-                  <button
+                  <Button
                     type="button"
-                    className="rounded-2 border border-border-muted px-2 py-1 text-[11px] text-text-secondary hover:text-text-primary"
+                    size="xs"
+                    variant="secondary"
+                    className="ui-text-micro"
                     onClick={() => {
                       void props.onRetry(session.id);
                     }}
                   >
                     {t("session.retry")}
-                  </button>
+                  </Button>
                 ) : null}
               </div>
 
               {session.errorMessage ? (
-                <div className="mt-2 text-[11px] text-red-500">{session.errorMessage}</div>
+                <div className="mt-2 text-[11px] text-danger">{session.errorMessage}</div>
               ) : null}
             </article>
           );

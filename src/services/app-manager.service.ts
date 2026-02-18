@@ -51,3 +51,7 @@ export async function appManagerUninstall(input: AppManagerUninstallInput): Prom
 export async function appManagerOpenUninstallHelp(appId: string): Promise<AppManagerActionResult> {
   return invokeWithLog<AppManagerActionResult>("app_manager_open_uninstall_help", { appId });
 }
+
+export async function appManagerRevealPath(path: string): Promise<void> {
+  await invokeWithLog("app_manager_reveal_path", { path });
+}

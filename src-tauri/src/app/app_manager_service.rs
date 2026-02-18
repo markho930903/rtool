@@ -1,10 +1,11 @@
 use crate::app::icon_service::{resolve_application_icon, resolve_builtin_icon};
 use crate::core::models::{
     AppManagerActionResultDto, AppManagerCleanupInputDto, AppManagerCleanupItemResultDto,
+    AppManagerCapabilitiesDto, AppManagerIdentityDto,
     AppManagerCleanupResultDto, AppManagerDetailQueryDto, AppManagerExportScanInputDto,
     AppManagerExportScanResultDto, AppManagerPageDto, AppManagerQueryDto,
     AppManagerResidueGroupDto, AppManagerResidueItemDto, AppManagerResidueScanInputDto,
-    AppManagerResidueScanResultDto, AppManagerScanWarningDto, AppManagerStartupUpdateInputDto,
+    AppManagerResidueScanResultDto, AppManagerStartupUpdateInputDto,
     AppManagerUninstallInputDto, AppRelatedRootDto, AppSizeSummaryDto, ManagedAppDetailDto,
     ManagedAppDto,
 };
@@ -646,6 +647,8 @@ struct ResidueCandidate {
     exists: bool,
     filesystem: bool,
     match_reason: String,
+    confidence: String,
+    evidence: Vec<String>,
     risk_level: String,
     recommended: bool,
     readonly_reason_code: Option<String>,
@@ -674,6 +677,99 @@ fn app_install_root(item: &ManagedAppDto) -> PathBuf {
     path
 }
 
+fn build_app_capabilities(startup: bool, uninstall: bool, residue_scan: bool) -> AppManagerCapabilitiesDto {
+    AppManagerCapabilitiesDto {
+        startup,
+        uninstall,
+        residue_scan,
+    }
+}
+
+fn build_app_identity(
+    primary_id: impl Into<String>,
+    aliases: Vec<String>,
+    identity_source: &str,
+) -> AppManagerIdentityDto {
+    AppManagerIdentityDto {
+        primary_id: primary_id.into(),
+        aliases,
+        identity_source: identity_source.to_string(),
+    }
+}
+
+fn collect_app_path_aliases_from_parts(name: &str, path: &str, bundle_or_app_id: Option<&str>) -> Vec<String> {
+    let mut aliases = Vec::new();
+    let mut seen = HashSet::new();
+    let mut push_alias = |value: &str| {
+        let normalized = value
+            .trim()
+            .trim_matches(|ch| matches!(ch, '"' | '\''));
+        if normalized.len() < 2
+            || matches!(normalized, "." | "..")
+            || normalized.contains('/')
+            || normalized.contains('\\')
+        {
+            return;
+        }
+        let key = normalize_path_key(normalized);
+        if key.is_empty() || !seen.insert(key) {
+            return;
+        }
+        aliases.push(normalized.to_string());
+    };
+
+    push_alias(name);
+    if let Some(file_name) = Path::new(path).file_stem().and_then(|value| value.to_str()) {
+        push_alias(file_name);
+    }
+    if let Some(bundle) = bundle_or_app_id {
+        push_alias(bundle);
+        if let Some(last_part) = bundle.rsplit('.').next() {
+            push_alias(last_part);
+        }
+    }
+    aliases
+}
+
+fn collect_app_path_aliases(item: &ManagedAppDto) -> Vec<String> {
+    collect_app_path_aliases_from_parts(
+        item.name.as_str(),
+        item.path.as_str(),
+        item.bundle_or_app_id.as_deref(),
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn mac_is_var_folders_temp_root(path: &Path) -> bool {
+    let key = normalize_path_key(path.to_string_lossy().as_ref());
+    key.contains("/var/folders/")
+}
+
+#[cfg(target_os = "macos")]
+fn mac_collect_temp_alias_roots(alias: &str) -> Vec<PathBuf> {
+    if alias.trim().is_empty() {
+        return Vec::new();
+    }
+    let temp_root = std::env::temp_dir();
+    let mut roots = vec![temp_root.join(alias)];
+    if !mac_is_var_folders_temp_root(temp_root.as_path()) {
+        return roots;
+    }
+
+    let Some(parent) = temp_root.parent() else {
+        return roots;
+    };
+    let Some(leaf) = temp_root.file_name().and_then(|value| value.to_str()) else {
+        return roots;
+    };
+    if leaf.eq_ignore_ascii_case("t") {
+        roots.push(parent.join("C").join(alias));
+    } else if leaf.eq_ignore_ascii_case("c") {
+        roots.push(parent.join("T").join(alias));
+    }
+    roots
+}
+
 fn collect_related_root_specs(item: &ManagedAppDto) -> Vec<RelatedRootSpec> {
     let mut roots = Vec::new();
     let install_root = app_install_root(item);
@@ -689,133 +785,138 @@ fn collect_related_root_specs(item: &ManagedAppDto) -> Vec<RelatedRootSpec> {
         install_scope,
         "install",
     );
+    let aliases = collect_app_path_aliases(item);
 
     #[cfg(target_os = "macos")]
     {
         if let Some(home) = home_dir() {
+            for alias in &aliases {
+                push_related_root(
+                    &mut roots,
+                    "用户应用支持目录",
+                    home.join("Library/Application Support").join(alias),
+                    "user",
+                    "app_support",
+                );
+                push_related_root(
+                    &mut roots,
+                    "用户缓存目录",
+                    home.join("Library/Caches").join(alias),
+                    "user",
+                    "cache",
+                );
+                push_related_root(
+                    &mut roots,
+                    "用户 HTTP 存储目录",
+                    home.join("Library/HTTPStorages").join(alias),
+                    "user",
+                    "cache",
+                );
+                for temp_root in mac_collect_temp_alias_roots(alias.as_str()) {
+                    push_related_root(&mut roots, "用户临时缓存目录", temp_root, "user", "cache");
+                }
+                push_related_root(
+                    &mut roots,
+                    "用户偏好设置",
+                    home.join("Library/Preferences").join(format!("{alias}.plist")),
+                    "user",
+                    "preferences",
+                );
+                push_related_root(
+                    &mut roots,
+                    "用户日志目录",
+                    home.join("Library/Logs").join(alias),
+                    "user",
+                    "logs",
+                );
+            }
+            if let Some(startup_path) = mac_startup_file_path(item.id.as_str()) {
+                push_related_root(&mut roots, "用户启动项", startup_path, "user", "startup");
+            }
+        }
+        for alias in &aliases {
             push_related_root(
                 &mut roots,
-                "用户配置目录",
-                home.join("Library/Application Support"),
-                "user",
+                "系统应用支持目录",
+                PathBuf::from("/Library/Application Support").join(alias),
+                "system",
                 "app_support",
             );
             push_related_root(
                 &mut roots,
-                "用户缓存目录",
-                home.join("Library/Caches"),
-                "user",
+                "系统缓存目录",
+                PathBuf::from("/Library/Caches").join(alias),
+                "system",
                 "cache",
             );
             push_related_root(
                 &mut roots,
-                "用户偏好设置",
-                home.join("Library/Preferences"),
-                "user",
+                "系统偏好设置",
+                PathBuf::from("/Library/Preferences").join(format!("{alias}.plist")),
+                "system",
                 "preferences",
             );
             push_related_root(
                 &mut roots,
-                "用户日志目录",
-                home.join("Library/Logs"),
-                "user",
+                "系统日志目录",
+                PathBuf::from("/Library/Logs").join(alias),
+                "system",
                 "logs",
             );
-            push_related_root(
-                &mut roots,
-                "用户启动项",
-                home.join("Library/LaunchAgents"),
-                "user",
-                "startup",
-            );
         }
-        push_related_root(
-            &mut roots,
-            "系统应用支持目录",
-            PathBuf::from("/Library/Application Support"),
-            "system",
-            "app_support",
-        );
-        push_related_root(
-            &mut roots,
-            "系统缓存目录",
-            PathBuf::from("/Library/Caches"),
-            "system",
-            "cache",
-        );
-        push_related_root(
-            &mut roots,
-            "系统偏好设置",
-            PathBuf::from("/Library/Preferences"),
-            "system",
-            "preferences",
-        );
-        push_related_root(
-            &mut roots,
-            "系统日志目录",
-            PathBuf::from("/Library/Logs"),
-            "system",
-            "logs",
-        );
-        push_related_root(
-            &mut roots,
-            "系统启动项",
-            PathBuf::from("/Library/LaunchAgents"),
-            "system",
-            "startup",
-        );
-        push_related_root(
-            &mut roots,
-            "系统守护进程",
-            PathBuf::from("/Library/LaunchDaemons"),
-            "system",
-            "startup",
-        );
     }
 
     #[cfg(target_os = "windows")]
     {
         if let Some(app_data) = std::env::var_os("APPDATA") {
-            push_related_root(
-                &mut roots,
-                "Roaming 配置目录",
-                PathBuf::from(app_data),
-                "user",
-                "app_data",
-            );
-        }
-        if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
-            push_related_root(
-                &mut roots,
-                "Local 数据目录",
-                PathBuf::from(local_app_data),
-                "user",
-                "app_data",
-            );
-        }
-        if let Some(program_data) = std::env::var_os("ProgramData") {
-            push_related_root(
-                &mut roots,
-                "ProgramData 目录",
-                PathBuf::from(program_data),
-                "system",
-                "app_data",
-            );
-        }
-        if let Some(app_data) = std::env::var_os("APPDATA") {
+            for alias in &aliases {
+                push_related_root(
+                    &mut roots,
+                    "Roaming 配置目录",
+                    PathBuf::from(&app_data).join(alias),
+                    "user",
+                    "app_data",
+                );
+            }
+            let startup_name = format!("{}.lnk", item.name);
             push_related_root(
                 &mut roots,
                 "用户启动项目录",
-                PathBuf::from(app_data).join("Microsoft/Windows/Start Menu/Programs/Startup"),
+                PathBuf::from(app_data)
+                    .join("Microsoft/Windows/Start Menu/Programs/Startup")
+                    .join(startup_name),
                 "user",
                 "startup",
             );
         }
+        if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+            for alias in &aliases {
+                push_related_root(
+                    &mut roots,
+                    "Local 数据目录",
+                    PathBuf::from(&local_app_data).join(alias),
+                    "user",
+                    "app_data",
+                );
+            }
+        }
         if let Some(program_data) = std::env::var_os("ProgramData") {
+            for alias in &aliases {
+                push_related_root(
+                    &mut roots,
+                    "ProgramData 目录",
+                    PathBuf::from(&program_data).join(alias),
+                    "system",
+                    "app_data",
+                );
+            }
+            let startup_name = format!("{}.lnk", item.name);
             push_related_root(
                 &mut roots,
                 "系统启动项目录",
-                PathBuf::from(program_data).join("Microsoft/Windows/Start Menu/Programs/Startup"),
+                PathBuf::from(program_data)
+                    .join("Microsoft/Windows/Start Menu/Programs/Startup")
+                    .join(startup_name),
                 "system",
                 "startup",
             );
@@ -824,7 +925,7 @@ fn collect_related_root_specs(item: &ManagedAppDto) -> Vec<RelatedRootSpec> {
 
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
-        let _ = item;
+        let _ = aliases;
     }
 
     let mut dedup = HashSet::new();
@@ -879,59 +980,6 @@ fn build_app_detail(app: ManagedAppDto) -> ManagedAppDetailDto {
     }
 }
 
-fn normalize_match_token(value: &str) -> String {
-    value
-        .chars()
-        .filter(|ch| ch.is_ascii_alphanumeric() || *ch == '.')
-        .collect::<String>()
-        .to_ascii_lowercase()
-}
-
-fn build_match_tokens(item: &ManagedAppDto) -> Vec<String> {
-    let mut tokens = HashSet::new();
-    let mut push_token = |value: &str| {
-        let lower = value.trim().to_ascii_lowercase();
-        if lower.len() >= 3 {
-            tokens.insert(lower.clone());
-            let normalized = normalize_match_token(lower.as_str());
-            if normalized.len() >= 3 {
-                tokens.insert(normalized);
-            }
-        }
-    };
-
-    push_token(item.name.as_str());
-    if let Some(bundle) = item.bundle_or_app_id.as_deref() {
-        push_token(bundle);
-        for part in bundle.split('.') {
-            if part.len() >= 3 {
-                push_token(part);
-            }
-        }
-    }
-    if let Some(file_name) = Path::new(item.path.as_str())
-        .file_stem()
-        .and_then(|value| value.to_str())
-    {
-        push_token(file_name);
-    }
-
-    let mut out = tokens.into_iter().collect::<Vec<_>>();
-    out.sort();
-    out
-}
-
-fn entry_matches_tokens(entry_name: &str, tokens: &[String]) -> Option<String> {
-    let lower = entry_name.to_ascii_lowercase();
-    let normalized = normalize_match_token(lower.as_str());
-    for token in tokens {
-        if lower.contains(token.as_str()) || normalized.contains(token.as_str()) {
-            return Some(token.clone());
-        }
-    }
-    None
-}
-
 fn path_size_bytes_for_scan(path: &Path) -> u64 {
     if !path.exists() {
         return 0;
@@ -972,68 +1020,7 @@ fn path_size_bytes_for_scan(path: &Path) -> u64 {
     total
 }
 
-fn scan_root_for_matches(
-    root: &RelatedRootSpec,
-    tokens: &[String],
-    warnings: &mut Vec<AppManagerScanWarningDto>,
-) -> Vec<ResidueCandidate> {
-    if !root.path.exists() {
-        return Vec::new();
-    }
-    let entries = match fs::read_dir(&root.path) {
-        Ok(entries) => entries,
-        Err(error) => {
-            warnings.push(AppManagerScanWarningDto {
-                code: "scan_root_unreadable".to_string(),
-                message: format!("无法扫描目录：{}", root.path.to_string_lossy()),
-                detail: Some(error.to_string()),
-            });
-            return Vec::new();
-        }
-    };
-
-    let mut out = Vec::new();
-    for entry in entries.flatten().take(600) {
-        let path = entry.path();
-        let file_name = entry.file_name().to_string_lossy().to_string();
-        let Some(matched) = entry_matches_tokens(file_name.as_str(), tokens) else {
-            continue;
-        };
-
-        let recommended = root.scope == "user";
-        let risk_level = if root.scope == "system" {
-            "high"
-        } else if root.kind == "preferences" || root.kind == "startup" {
-            "medium"
-        } else {
-            "low"
-        };
-        let readonly_reason_code = if root.scope == "system" && root.kind == "startup" {
-            Some("managed_by_policy".to_string())
-        } else if path_is_readonly(path.as_path()) {
-            Some("permission_denied".to_string())
-        } else {
-            None
-        };
-        out.push(ResidueCandidate {
-            path,
-            scope: root.scope.clone(),
-            kind: root.kind.clone(),
-            exists: true,
-            filesystem: true,
-            match_reason: format!("name_match:{matched}"),
-            risk_level: risk_level.to_string(),
-            recommended,
-            readonly_reason_code,
-        });
-    }
-    out
-}
-
-fn collect_known_residue_candidates(
-    item: &ManagedAppDto,
-    _tokens: &[String],
-) -> Vec<ResidueCandidate> {
+fn collect_known_residue_candidates(item: &ManagedAppDto) -> Vec<ResidueCandidate> {
     let mut candidates = Vec::new();
 
     #[cfg(target_os = "macos")]
@@ -1050,6 +1037,8 @@ fn collect_known_residue_candidates(
                     exists: false,
                     filesystem: true,
                     match_reason: "bundle_id".to_string(),
+                    confidence: "exact".to_string(),
+                    evidence: vec!["bundle_id_exact".to_string()],
                     risk_level: "medium".to_string(),
                     recommended: true,
                     readonly_reason_code: None,
@@ -1064,6 +1053,8 @@ fn collect_known_residue_candidates(
                 exists: false,
                 filesystem: true,
                 match_reason: "startup_label".to_string(),
+                confidence: "exact".to_string(),
+                evidence: vec!["startup_label_exact".to_string()],
                 risk_level: "medium".to_string(),
                 recommended: true,
                 readonly_reason_code: None,
@@ -1084,13 +1075,15 @@ fn collect_known_residue_candidates(
                 exists: false,
                 filesystem: true,
                 match_reason: "startup_shortcut".to_string(),
+                confidence: "high".to_string(),
+                evidence: vec!["startup_shortcut_path".to_string()],
                 risk_level: "medium".to_string(),
                 recommended: true,
                 readonly_reason_code: None,
             });
         }
 
-        candidates.extend(windows_collect_registry_residue_candidates(item, _tokens));
+        candidates.extend(windows_collect_registry_residue_candidates(item));
     }
 
     candidates
@@ -1109,10 +1102,7 @@ fn windows_registry_scope(reg_path: &str) -> &'static str {
 }
 
 #[cfg(target_os = "windows")]
-fn windows_collect_registry_residue_candidates(
-    item: &ManagedAppDto,
-    tokens: &[String],
-) -> Vec<ResidueCandidate> {
+fn windows_collect_registry_residue_candidates(item: &ManagedAppDto) -> Vec<ResidueCandidate> {
     let mut candidates = Vec::new();
     let uninstall_entries = windows_list_uninstall_entries();
 
@@ -1130,6 +1120,8 @@ fn windows_collect_registry_residue_candidates(
             exists: true,
             filesystem: false,
             match_reason: "uninstall_registry".to_string(),
+            confidence: "exact".to_string(),
+            evidence: vec!["uninstall_registry_match".to_string()],
             risk_level: if scope == "system" {
                 "high".to_string()
             } else {
@@ -1154,6 +1146,8 @@ fn windows_collect_registry_residue_candidates(
             exists: true,
             filesystem: false,
             match_reason: "startup_registry".to_string(),
+            confidence: "exact".to_string(),
+            evidence: vec!["startup_registry_value".to_string()],
             risk_level: "medium".to_string(),
             recommended: true,
             readonly_reason_code: None,
@@ -1167,12 +1161,8 @@ fn windows_collect_registry_residue_candidates(
     ] {
         for (value_name, value_data) in windows_query_registry_values(root) {
             let value_key = normalize_path_key(value_data.as_str());
-            let value_lower = value_data.to_ascii_lowercase();
-            let token_match = tokens
-                .iter()
-                .any(|token| value_lower.contains(token.as_str()));
             let path_match = !app_path_key.is_empty() && value_key.contains(app_path_key.as_str());
-            if !token_match && !path_match {
+            if !path_match {
                 continue;
             }
             let scope = windows_registry_scope(root).to_string();
@@ -1183,6 +1173,8 @@ fn windows_collect_registry_residue_candidates(
                 exists: true,
                 filesystem: false,
                 match_reason: "run_registry".to_string(),
+                confidence: "high".to_string(),
+                evidence: vec!["run_registry_path_match".to_string()],
                 risk_level: if scope == "system" {
                     "high".to_string()
                 } else {
@@ -1222,15 +1214,73 @@ fn group_label(kind: &str, scope: &str) -> String {
     format!("{kind_label} · {scope_label}")
 }
 
+fn residue_confidence_rank(value: &str) -> u8 {
+    match value {
+        "exact" => 3,
+        "high" => 2,
+        "medium" => 1,
+        _ => 0,
+    }
+}
+
+fn should_replace_residue_candidate(current: &ResidueCandidate, next: &ResidueCandidate) -> bool {
+    let current_rank = residue_confidence_rank(current.confidence.as_str());
+    let next_rank = residue_confidence_rank(next.confidence.as_str());
+    if next_rank != current_rank {
+        return next_rank > current_rank;
+    }
+    if next.evidence.len() != current.evidence.len() {
+        return next.evidence.len() > current.evidence.len();
+    }
+    if next.recommended != current.recommended {
+        return next.recommended;
+    }
+    false
+}
+
+fn candidate_from_related_root(root: &RelatedRootSpec) -> Option<ResidueCandidate> {
+    if root.kind == "install" {
+        return None;
+    }
+    let risk_level = if root.scope == "system" {
+        if root.kind == "startup" {
+            "high"
+        } else {
+            "medium"
+        }
+    } else if root.kind == "preferences" || root.kind == "startup" {
+        "medium"
+    } else {
+        "low"
+    };
+    let readonly_reason_code = if root.scope == "system" && root.kind == "startup" {
+        Some("managed_by_policy".to_string())
+    } else {
+        None
+    };
+    Some(ResidueCandidate {
+        path: root.path.clone(),
+        scope: root.scope.clone(),
+        kind: root.kind.clone(),
+        exists: false,
+        filesystem: true,
+        match_reason: "related_root".to_string(),
+        confidence: "exact".to_string(),
+        evidence: vec![format!("related_root:{}", root.kind)],
+        risk_level: risk_level.to_string(),
+        recommended: root.scope == "user",
+        readonly_reason_code,
+    })
+}
+
 fn build_residue_scan_result(item: &ManagedAppDto) -> AppManagerResidueScanResultDto {
     let roots = collect_related_root_specs(item);
-    let tokens = build_match_tokens(item);
-    let mut warnings = Vec::new();
-    let mut candidates = Vec::new();
-    for root in &roots {
-        candidates.extend(scan_root_for_matches(root, &tokens, &mut warnings));
-    }
-    candidates.extend(collect_known_residue_candidates(item, tokens.as_slice()));
+    let warnings = Vec::new();
+    let mut candidates = roots
+        .iter()
+        .filter_map(candidate_from_related_root)
+        .collect::<Vec<_>>();
+    candidates.extend(collect_known_residue_candidates(item));
 
     let mut dedup = HashMap::<String, ResidueCandidate>::new();
     for candidate in candidates {
@@ -1238,7 +1288,16 @@ fn build_residue_scan_result(item: &ManagedAppDto) -> AppManagerResidueScanResul
         if key.is_empty() {
             continue;
         }
-        dedup.entry(key).or_insert(candidate);
+        match dedup.entry(key) {
+            std::collections::hash_map::Entry::Occupied(mut existing) => {
+                if should_replace_residue_candidate(existing.get(), &candidate) {
+                    existing.insert(candidate);
+                }
+            }
+            std::collections::hash_map::Entry::Vacant(slot) => {
+                slot.insert(candidate);
+            }
+        }
     }
 
     let mut grouped = HashMap::<String, AppManagerResidueGroupDto>::new();
@@ -1291,6 +1350,8 @@ fn build_residue_scan_result(item: &ManagedAppDto) -> AppManagerResidueScanResul
             scope: candidate.scope,
             size_bytes,
             match_reason: candidate.match_reason,
+            confidence: candidate.confidence,
+            evidence: candidate.evidence,
             risk_level: candidate.risk_level,
             recommended: candidate.recommended && !readonly,
             readonly,
@@ -1696,12 +1757,20 @@ fn build_self_item(app: &AppHandle) -> Option<ManagedAppDto> {
     let readonly_reason_code =
         startup_readonly_reason_code(startup_scope.as_str(), startup_editable);
     let icon = resolve_builtin_icon("i-noto:rocket");
+    let bundle_or_app_id = Some(app.package_info().name.to_string());
+    let aliases =
+        collect_app_path_aliases_from_parts(app_name.as_str(), app_path.as_str(), bundle_or_app_id.as_deref());
+    let identity = build_app_identity(
+        normalize_path_key(app_path.as_str()),
+        aliases,
+        "path",
+    );
 
     let mut item = ManagedAppDto {
         id,
         name: app_name.clone(),
         path: app_path,
-        bundle_or_app_id: Some(app.package_info().name.to_string()),
+        bundle_or_app_id,
         version: Some(app.package_info().version.to_string()),
         publisher: None,
         platform: platform_name().to_string(),
@@ -1715,6 +1784,12 @@ fn build_self_item(app: &AppHandle) -> Option<ManagedAppDto> {
         readonly_reason_code,
         uninstall_supported: false,
         uninstall_kind: None,
+        capabilities: build_app_capabilities(
+            cfg!(target_os = "macos") || cfg!(target_os = "windows"),
+            false,
+            true,
+        ),
+        identity,
         risk_level: "high".to_string(),
         fingerprint: String::new(),
     };
@@ -1856,6 +1931,12 @@ fn build_macos_app_item(app: &AppHandle, app_path: &Path) -> Option<ManagedAppDt
         platform_detect_startup_state(id.as_str(), app_path);
     let readonly_reason_code =
         startup_readonly_reason_code(startup_scope.as_str(), startup_editable);
+    let aliases = collect_app_path_aliases_from_parts(name.as_str(), path_str.as_str(), bundle.as_deref());
+    let identity = if let Some(bundle_id) = bundle.as_deref() {
+        build_app_identity(bundle_id, aliases, "bundle_id")
+    } else {
+        build_app_identity(normalize_path_key(path_str.as_str()), aliases, "path")
+    };
     let mut item = ManagedAppDto {
         id,
         name,
@@ -1874,6 +1955,8 @@ fn build_macos_app_item(app: &AppHandle, app_path: &Path) -> Option<ManagedAppDt
         readonly_reason_code,
         uninstall_supported: true,
         uninstall_kind: Some("finder_trash".to_string()),
+        capabilities: build_app_capabilities(true, true, true),
+        identity,
         risk_level: "medium".to_string(),
         fingerprint: String::new(),
     };
@@ -1937,16 +2020,23 @@ fn plist_value(content: &str, key: &str) -> Option<String> {
 
 #[cfg(target_os = "windows")]
 fn collect_windows_apps(app: &AppHandle) -> Vec<ManagedAppDto> {
-    let mut items = Vec::new();
-    let mut seen = HashSet::new();
     let uninstall_entries = windows_list_uninstall_entries();
+    let mut seen_path_keys = HashSet::new();
+    let mut seen_identity_keys = HashSet::new();
+    let mut items = windows_collect_apps_from_uninstall_entries(
+        app,
+        uninstall_entries.as_slice(),
+        &mut seen_path_keys,
+        &mut seen_identity_keys,
+    );
     for root in windows_application_roots() {
         scan_windows_root(
             root.as_path(),
             4,
             WIN_SCAN_MAX_ITEMS,
             &mut items,
-            &mut seen,
+            &mut seen_path_keys,
+            &mut seen_identity_keys,
             app,
             uninstall_entries.as_slice(),
         );
@@ -1958,12 +2048,185 @@ fn collect_windows_apps(app: &AppHandle) -> Vec<ManagedAppDto> {
 }
 
 #[cfg(target_os = "windows")]
+fn windows_normalize_registry_key(value: &str) -> String {
+    value.trim().to_ascii_lowercase()
+}
+
+#[cfg(target_os = "windows")]
+fn windows_is_generic_uninstall_binary(path: &Path) -> bool {
+    let file_name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .map(|value| value.to_ascii_lowercase())
+        .unwrap_or_default();
+    matches!(file_name.as_str(), "msiexec.exe" | "rundll32.exe" | "cmd.exe")
+}
+
+#[cfg(target_os = "windows")]
+fn windows_extract_executable_from_command(command: &str) -> Option<PathBuf> {
+    let trimmed = command.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let raw = if let Some(quoted) = trimmed.strip_prefix('"') {
+        let end = quoted.find('"')?;
+        quoted[..end].to_string()
+    } else {
+        trimmed
+            .split_whitespace()
+            .next()
+            .unwrap_or_default()
+            .trim_matches('"')
+            .to_string()
+    };
+    if raw.trim().is_empty() {
+        return None;
+    }
+    let path = PathBuf::from(raw);
+    if windows_is_generic_uninstall_binary(path.as_path()) {
+        return None;
+    }
+    Some(path)
+}
+
+#[cfg(target_os = "windows")]
+fn windows_discovery_path_from_uninstall_entry(entry: &WindowsUninstallEntry) -> Option<PathBuf> {
+    if let Some(location) = entry.install_location.as_deref() {
+        let location = location.trim().trim_matches('"');
+        if !location.is_empty() {
+            return Some(PathBuf::from(location));
+        }
+    }
+    entry
+        .quiet_uninstall_string
+        .as_deref()
+        .and_then(windows_extract_executable_from_command)
+        .or_else(|| {
+            entry
+                .uninstall_string
+                .as_deref()
+                .and_then(windows_extract_executable_from_command)
+        })
+}
+
+#[cfg(target_os = "windows")]
+fn windows_uninstall_entry_matches_path(entry: &WindowsUninstallEntry, app_path: &Path) -> bool {
+    let app_path_key = normalize_path_key(app_path.to_string_lossy().as_ref());
+    if app_path_key.is_empty() {
+        return false;
+    }
+
+    if let Some(location) = entry.install_location.as_deref() {
+        let install_key = normalize_path_key(location);
+        if !install_key.is_empty()
+            && (app_path_key.starts_with(install_key.as_str())
+                || install_key.starts_with(app_path_key.as_str()))
+        {
+            return true;
+        }
+    }
+
+    for command in [
+        entry.quiet_uninstall_string.as_deref(),
+        entry.uninstall_string.as_deref(),
+    ] {
+        let Some(command) = command else {
+            continue;
+        };
+        if let Some(command_exe) = windows_extract_executable_from_command(command) {
+            let command_key = normalize_path_key(command_exe.to_string_lossy().as_ref());
+            if !command_key.is_empty()
+                && (app_path_key.starts_with(command_key.as_str())
+                    || command_key.starts_with(app_path_key.as_str()))
+            {
+                return true;
+            }
+        } else if normalize_path_key(command).contains(app_path_key.as_str()) {
+            return true;
+        }
+    }
+
+    false
+}
+
+#[cfg(target_os = "windows")]
+fn windows_build_item_from_uninstall_entry(
+    app: &AppHandle,
+    entry: &WindowsUninstallEntry,
+    path: &Path,
+) -> ManagedAppDto {
+    let path_str = path.to_string_lossy().to_string();
+    let id = stable_app_id("application", path_str.as_str());
+    let icon = resolve_application_icon(app, path);
+    let (startup_enabled, startup_scope, startup_editable) =
+        platform_detect_startup_state(id.as_str(), path);
+    let readonly_reason_code = startup_readonly_reason_code(startup_scope.as_str(), startup_editable);
+    let aliases = collect_app_path_aliases_from_parts(entry.display_name.as_str(), path_str.as_str(), None);
+
+    let mut item = ManagedAppDto {
+        id,
+        name: entry.display_name.clone(),
+        path: path_str,
+        bundle_or_app_id: None,
+        version: entry.display_version.clone(),
+        publisher: entry.publisher.clone(),
+        platform: "windows".to_string(),
+        source: "application".to_string(),
+        icon_kind: icon.kind,
+        icon_value: icon.value,
+        estimated_size_bytes: try_get_path_size_bytes(path),
+        startup_enabled,
+        startup_scope,
+        startup_editable,
+        readonly_reason_code,
+        uninstall_supported: true,
+        uninstall_kind: Some("registry_command".to_string()),
+        capabilities: build_app_capabilities(true, true, true),
+        identity: build_app_identity(entry.registry_key.as_str(), aliases, "registry"),
+        risk_level: "medium".to_string(),
+        fingerprint: String::new(),
+    };
+    item.fingerprint = fingerprint_for_app(&item);
+    item
+}
+
+#[cfg(target_os = "windows")]
+fn windows_collect_apps_from_uninstall_entries(
+    app: &AppHandle,
+    entries: &[WindowsUninstallEntry],
+    seen_path_keys: &mut HashSet<String>,
+    seen_identity_keys: &mut HashSet<String>,
+) -> Vec<ManagedAppDto> {
+    let mut items = Vec::new();
+    for entry in entries {
+        if items.len() >= WIN_SCAN_MAX_ITEMS {
+            break;
+        }
+        let Some(path) = windows_discovery_path_from_uninstall_entry(entry) else {
+            continue;
+        };
+        let path_key = normalize_path_key(path.to_string_lossy().as_ref());
+        if path_key.is_empty() || !seen_path_keys.insert(path_key) {
+            continue;
+        }
+        let identity_key = windows_normalize_registry_key(entry.registry_key.as_str());
+        if !seen_identity_keys.insert(identity_key) {
+            continue;
+        }
+        items.push(windows_build_item_from_uninstall_entry(app, entry, path.as_path()));
+    }
+    items
+}
+
+#[cfg(target_os = "windows")]
 fn scan_windows_root(
     root: &Path,
     max_depth: usize,
     max_items: usize,
     items: &mut Vec<ManagedAppDto>,
-    seen: &mut HashSet<String>,
+    seen_path_keys: &mut HashSet<String>,
+    seen_identity_keys: &mut HashSet<String>,
     app: &AppHandle,
     uninstall_entries: &[WindowsUninstallEntry],
 ) {
@@ -2005,59 +2268,35 @@ fn scan_windows_root(
                 .and_then(|value| value.to_str())
                 .map(|value| value.to_ascii_lowercase())
                 .unwrap_or_default();
-            if !matches!(ext.as_str(), "lnk" | "exe" | "appref-ms") {
+            if !matches!(ext.as_str(), "exe" | "appref-ms") {
                 continue;
             }
 
             let path_str = path.to_string_lossy().to_string();
-            let key = normalize_path_key(path_str.as_str());
-            if !seen.insert(key) {
-                continue;
-            }
-
             let name = path
                 .file_stem()
                 .map(|value| value.to_string_lossy().to_string())
                 .unwrap_or_else(|| path_str.clone());
-            let id = stable_app_id("application", path_str.as_str());
-            let icon = resolve_application_icon(app, path.as_path());
-            let (startup_enabled, startup_scope, startup_editable) =
-                platform_detect_startup_state(id.as_str(), path.as_path());
-            let readonly_reason_code =
-                startup_readonly_reason_code(startup_scope.as_str(), startup_editable);
             let uninstall_match =
                 windows_find_best_uninstall_entry(name.as_str(), path.as_path(), uninstall_entries);
-            let mut item = ManagedAppDto {
-                id,
-                name,
-                path: path_str,
-                bundle_or_app_id: None,
-                version: uninstall_match
-                    .as_ref()
-                    .and_then(|entry| entry.display_version.clone()),
-                publisher: uninstall_match
-                    .as_ref()
-                    .and_then(|entry| entry.publisher.clone()),
-                platform: "windows".to_string(),
-                source: "application".to_string(),
-                icon_kind: icon.kind,
-                icon_value: icon.value,
-                estimated_size_bytes: try_get_path_size_bytes(path.as_path()),
-                startup_enabled,
-                startup_scope,
-                startup_editable,
-                readonly_reason_code,
-                uninstall_supported: true,
-                uninstall_kind: Some(
-                    uninstall_match
-                        .as_ref()
-                        .map(|_| "registry_command".to_string())
-                        .unwrap_or_else(|| "apps_features".to_string()),
-                ),
-                risk_level: "medium".to_string(),
-                fingerprint: String::new(),
+            let Some(uninstall_match) = uninstall_match else {
+                continue;
             };
-            item.fingerprint = fingerprint_for_app(&item);
+            if !windows_uninstall_entry_matches_path(&uninstall_match, path.as_path()) {
+                continue;
+            }
+
+            let identity_key = windows_normalize_registry_key(uninstall_match.registry_key.as_str());
+            if seen_identity_keys.contains(identity_key.as_str()) {
+                continue;
+            }
+            let path_key = normalize_path_key(path_str.as_str());
+            if path_key.is_empty() || seen_path_keys.contains(path_key.as_str()) {
+                continue;
+            }
+            let item = windows_build_item_from_uninstall_entry(app, &uninstall_match, path.as_path());
+            seen_identity_keys.insert(identity_key);
+            seen_path_keys.insert(path_key);
             items.push(item);
         }
     }
@@ -2249,9 +2488,11 @@ fn windows_find_best_uninstall_entry(
     let app_name_key = app_name.trim().to_ascii_lowercase();
 
     let mut best_score = 0i32;
+    let mut best_has_path_evidence = false;
     let mut best: Option<&WindowsUninstallEntry> = None;
     for entry in entries {
         let mut score = 0i32;
+        let mut has_path_evidence = false;
         let display_name_key = entry.display_name.to_ascii_lowercase();
         if display_name_key == app_name_key {
             score += 120;
@@ -2263,28 +2504,49 @@ fn windows_find_best_uninstall_entry(
 
         if let Some(location) = entry.install_location.as_deref() {
             let install_key = normalize_path_key(location);
-            if !install_key.is_empty() && app_path_key.starts_with(install_key.as_str()) {
-                score += 100;
+            if !install_key.is_empty()
+                && (app_path_key.starts_with(install_key.as_str())
+                    || install_key.starts_with(app_path_key.as_str()))
+            {
+                score += 140;
+                has_path_evidence = true;
             }
         }
 
-        if let Some(command) = entry.quiet_uninstall_string.as_deref() {
-            if !command.trim().is_empty() {
-                score += 20;
+        for command in [
+            entry.quiet_uninstall_string.as_deref(),
+            entry.uninstall_string.as_deref(),
+        ] {
+            let Some(command) = command else {
+                continue;
+            };
+            if command.trim().is_empty() {
+                continue;
             }
-        } else if let Some(command) = entry.uninstall_string.as_deref() {
-            if !command.trim().is_empty() {
-                score += 12;
+            score += 12;
+            if let Some(command_path) = windows_extract_executable_from_command(command) {
+                let command_key = normalize_path_key(command_path.to_string_lossy().as_ref());
+                if !command_key.is_empty()
+                    && (app_path_key.starts_with(command_key.as_str())
+                        || command_key.starts_with(app_path_key.as_str()))
+                {
+                    score += 90;
+                    has_path_evidence = true;
+                }
+            } else if normalize_path_key(command).contains(app_path_key.as_str()) {
+                score += 60;
+                has_path_evidence = true;
             }
         }
 
-        if score > best_score {
+        if score > best_score || (score == best_score && has_path_evidence && !best_has_path_evidence) {
             best_score = score;
+            best_has_path_evidence = has_path_evidence;
             best = Some(entry);
         }
     }
 
-    if best_score >= 80 {
+    if best_score >= 120 && best_has_path_evidence {
         return best.cloned();
     }
     None
@@ -2819,4 +3081,113 @@ fn home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("USERPROFILE").map(PathBuf::from))
+}
+
+#[cfg(test)]
+mod residue_tests {
+    use super::*;
+
+    fn candidate_with_confidence(confidence: &str, evidence_len: usize) -> ResidueCandidate {
+        ResidueCandidate {
+            path: PathBuf::from("/tmp/a"),
+            scope: "user".to_string(),
+            kind: "cache".to_string(),
+            exists: true,
+            filesystem: true,
+            match_reason: "test".to_string(),
+            confidence: confidence.to_string(),
+            evidence: (0..evidence_len).map(|idx| format!("e{idx}")).collect(),
+            risk_level: "low".to_string(),
+            recommended: true,
+            readonly_reason_code: None,
+        }
+    }
+
+    #[test]
+    fn residue_candidate_replace_prefers_higher_confidence() {
+        let current = candidate_with_confidence("high", 1);
+        let next = candidate_with_confidence("exact", 1);
+        assert!(should_replace_residue_candidate(&current, &next));
+        assert!(!should_replace_residue_candidate(&next, &current));
+    }
+
+    #[test]
+    fn residue_candidate_replace_prefers_more_evidence_when_confidence_equal() {
+        let current = candidate_with_confidence("high", 1);
+        let next = candidate_with_confidence("high", 2);
+        assert!(should_replace_residue_candidate(&current, &next));
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::*;
+
+    fn test_app(bundle_or_app_id: Option<&str>) -> ManagedAppDto {
+        ManagedAppDto {
+            id: "mac.test.app".to_string(),
+            name: "AppCleaner.app".to_string(),
+            path: "/Applications/AppCleaner.app".to_string(),
+            bundle_or_app_id: bundle_or_app_id.map(ToString::to_string),
+            version: None,
+            publisher: None,
+            platform: "macos".to_string(),
+            source: "application".to_string(),
+            icon_kind: "iconify".to_string(),
+            icon_value: "i-noto:desktop-computer".to_string(),
+            estimated_size_bytes: None,
+            startup_enabled: false,
+            startup_scope: "none".to_string(),
+            startup_editable: true,
+            readonly_reason_code: None,
+            uninstall_supported: true,
+            uninstall_kind: None,
+            capabilities: build_app_capabilities(true, true, true),
+            identity: build_app_identity(
+                bundle_or_app_id.unwrap_or("net.freemacsoft.AppCleaner"),
+                vec!["AppCleaner".to_string(), "net.freemacsoft.AppCleaner".to_string()],
+                "bundle_id",
+            ),
+            risk_level: "low".to_string(),
+            fingerprint: "fp".to_string(),
+        }
+    }
+
+    fn has_root_path(roots: &[RelatedRootSpec], expected: &Path) -> bool {
+        let expected_key = normalize_path_key(expected.to_string_lossy().as_ref());
+        roots.iter().any(|root| {
+            normalize_path_key(root.path.to_string_lossy().as_ref()) == expected_key
+        })
+    }
+
+    #[test]
+    fn collect_related_root_specs_includes_http_storages_bundle_path() {
+        let app = test_app(Some("net.freemacsoft.AppCleaner"));
+        let roots = collect_related_root_specs(&app);
+        let home = home_dir().expect("home dir should exist for mac tests");
+        let expected = home
+            .join("Library")
+            .join("HTTPStorages")
+            .join("net.freemacsoft.AppCleaner");
+        assert!(
+            has_root_path(roots.as_slice(), expected.as_path()),
+            "expected HTTPStorages path {} to be included",
+            expected.to_string_lossy()
+        );
+    }
+
+    #[test]
+    fn collect_related_root_specs_includes_temp_cache_alias_paths() {
+        let app = test_app(Some("net.freemacsoft.AppCleaner"));
+        let roots = collect_related_root_specs(&app);
+        let expected_paths = mac_collect_temp_alias_roots("net.freemacsoft.AppCleaner");
+        assert!(!expected_paths.is_empty(), "expected temp candidate paths");
+        for expected in expected_paths {
+            assert!(
+                has_root_path(roots.as_slice(), expected.as_path()),
+                "expected temp cache path {} to be included",
+                expected.to_string_lossy()
+            );
+        }
+    }
 }

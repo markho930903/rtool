@@ -957,6 +957,7 @@ pub fn run() {
             commands::app_manager::app_manager_set_startup,
             commands::app_manager::app_manager_uninstall,
             commands::app_manager::app_manager_open_uninstall_help,
+            commands::app_manager::app_manager_reveal_path,
             commands::launcher::launcher_search,
             commands::launcher::launcher_execute,
             commands::palette::palette_search,

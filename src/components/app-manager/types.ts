@@ -5,6 +5,18 @@ export type AppReadonlyReasonCode =
   | "unknown"
   | string;
 
+export interface AppManagerCapabilities {
+  startup: boolean;
+  uninstall: boolean;
+  residueScan: boolean;
+}
+
+export interface AppManagerIdentity {
+  primaryId: string;
+  aliases: string[];
+  identitySource: "bundle_id" | "registry" | "path" | string;
+}
+
 export interface ManagedApp {
   id: string;
   name: string;
@@ -23,6 +35,8 @@ export interface ManagedApp {
   readonlyReasonCode?: AppReadonlyReasonCode;
   uninstallSupported: boolean;
   uninstallKind?: string;
+  capabilities: AppManagerCapabilities;
+  identity: AppManagerIdentity;
   riskLevel: "low" | "medium" | "high" | string;
   fingerprint: string;
 }
@@ -89,6 +103,8 @@ export interface AppManagerResidueItem {
   scope: "user" | "system" | string;
   sizeBytes: number;
   matchReason: string;
+  confidence: "exact" | "high" | "medium" | string;
+  evidence: string[];
   riskLevel: "low" | "medium" | "high" | string;
   recommended: boolean;
   readonly: boolean;

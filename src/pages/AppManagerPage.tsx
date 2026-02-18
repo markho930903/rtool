@@ -7,7 +7,8 @@ import type {
   AppManagerResidueItem,
   ManagedApp,
 } from "@/components/app-manager/types";
-import { Button, Checkbox, Dialog, Input, Select } from "@/components/ui";
+import { Button, Dialog, Input, Select, SwitchField } from "@/components/ui";
+import { appManagerRevealPath } from "@/services/app-manager.service";
 import { useAppManagerStore } from "@/stores/app-manager.store";
 
 function formatIndexedAt(timestamp: number | null, fallback: string): string {
@@ -30,6 +31,63 @@ function formatBytes(value?: number | null): string {
   }
   const fractionDigits = unitIndex === 0 ? 0 : size >= 100 ? 0 : size >= 10 ? 1 : 2;
   return `${size.toFixed(fractionDigits)} ${units[unitIndex]}`;
+}
+
+interface RelatedLocationEntry {
+  id: string;
+  path: string;
+  name: string;
+  sizeBytes?: number | null;
+  readonlyReasonCode?: string;
+  source: "main" | "scan";
+}
+
+function normalizePathKey(path: string): string {
+  return path.trim().replace(/[\\/]+/g, "/").toLowerCase();
+}
+
+function isRegistryResiduePath(path: string): boolean {
+  return path.includes("::");
+}
+
+function isPathInsideOwnedRoots(path: string, rootKeys: string[]): boolean {
+  const pathKey = normalizePathKey(path);
+  if (!pathKey) {
+    return false;
+  }
+  return rootKeys.some((rootKey) => {
+    if (!rootKey) {
+      return false;
+    }
+    return pathKey === rootKey || pathKey.startsWith(`${rootKey}/`);
+  });
+}
+
+function getPathName(path: string): string {
+  const normalized = path.trim().replace(/[\\/]+/g, "/");
+  if (!normalized) {
+    return path;
+  }
+  const segments = normalized.split("/").filter(Boolean);
+  return segments[segments.length - 1] ?? normalized;
+}
+
+function isLikelyFilePath(path: string): boolean {
+  const name = getPathName(path);
+  if (!name) {
+    return false;
+  }
+  if (name.toLowerCase().endsWith(".app")) {
+    return false;
+  }
+  return /\.[^./\\]+$/.test(name);
+}
+
+function relatedEntryIconClass(entry: RelatedLocationEntry): string {
+  if (entry.source === "main") {
+    return "i-noto:mobile-phone-with-arrow";
+  }
+  return isLikelyFilePath(entry.path) ? "i-noto:document" : "i-noto:open-file-folder";
 }
 
 function AppIcon({ app }: { app: ManagedApp }) {
@@ -141,6 +199,8 @@ export default function AppManagerPage() {
   const [confirmingDeepUninstall, setConfirmingDeepUninstall] = useState(false);
   const [copyPathFeedback, setCopyPathFeedback] = useState<string | null>(null);
   const [highlightExportPath, setHighlightExportPath] = useState(false);
+  const [revealingRelatedId, setRevealingRelatedId] = useState<string | null>(null);
+  const [relatedRevealError, setRelatedRevealError] = useState<string | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -154,6 +214,8 @@ export default function AppManagerPage() {
   useEffect(() => {
     setCopyPathFeedback(null);
     setHighlightExportPath(false);
+    setRevealingRelatedId(null);
+    setRelatedRevealError(null);
   }, [selectedAppId]);
 
   useEffect(() => {
@@ -179,6 +241,7 @@ export default function AppManagerPage() {
   const selectedResidueIds = selectedApp ? selectedResidueIdsByAppId[selectedApp.id] ?? [] : [];
   const selectedDeleteMode = selectedApp ? deleteModeByAppId[selectedApp.id] ?? "trash" : "trash";
   const selectedIncludeMainApp = selectedApp ? includeMainAppByAppId[selectedApp.id] ?? true : true;
+  const selectedScanLoading = selectedApp ? Boolean(scanLoadingById[selectedApp.id]) : false;
 
   const categoryOptions = useMemo(
     () => [
@@ -222,6 +285,94 @@ export default function AppManagerPage() {
 
   const startupReadonlyReason = resolveStartupReadonlyReason(selectedApp);
 
+  const relatedLocations = useMemo(() => {
+    if (!selectedApp) {
+      return [] as RelatedLocationEntry[];
+    }
+
+    const ownedRootKeys = (() => {
+      const keys = new Set<string>();
+      const installPath = selectedDetail?.installPath ?? selectedApp.path;
+      const installKey = normalizePathKey(installPath);
+      if (installKey) {
+        keys.add(installKey);
+      }
+      selectedDetail?.relatedRoots.forEach((root) => {
+        const key = normalizePathKey(root.path);
+        if (key) {
+          keys.add(key);
+        }
+      });
+      return [...keys];
+    })();
+
+    const map = new Map<string, RelatedLocationEntry>();
+    const upsert = (entry: RelatedLocationEntry) => {
+      const key = normalizePathKey(entry.path);
+      if (!key) {
+        return;
+      }
+      const existing = map.get(key);
+      if (!existing) {
+        map.set(key, entry);
+        return;
+      }
+      if (existing.source === "main") {
+        return;
+      }
+      const existingSize = existing.sizeBytes ?? -1;
+      const nextSize = entry.sizeBytes ?? -1;
+      if (nextSize >= existingSize) {
+        map.set(key, entry);
+      }
+    };
+
+    upsert({
+      id: `main-${selectedApp.id}`,
+      path: selectedDetail?.installPath ?? selectedApp.path,
+      name: getPathName(selectedDetail?.installPath ?? selectedApp.path),
+      sizeBytes: selectedApp.estimatedSizeBytes,
+      source: "main",
+    });
+
+    selectedScanResult?.groups.forEach((group) => {
+      group.items.forEach((item) => {
+        if (isRegistryResiduePath(item.path)) {
+          return;
+        }
+        if (!isPathInsideOwnedRoots(item.path, ownedRootKeys)) {
+          return;
+        }
+        upsert({
+          id: item.itemId,
+          path: item.path,
+          name: getPathName(item.path),
+          sizeBytes: item.sizeBytes,
+          readonlyReasonCode: item.readonlyReasonCode,
+          source: "scan",
+        });
+      });
+    });
+
+    return [...map.values()].sort((left, right) => {
+      if (left.source !== right.source) {
+        return left.source === "main" ? -1 : 1;
+      }
+      const sizeDiff = (right.sizeBytes ?? -1) - (left.sizeBytes ?? -1);
+      if (sizeDiff !== 0) {
+        return sizeDiff;
+      }
+      return left.path.localeCompare(right.path);
+    });
+  }, [selectedApp, selectedDetail?.installPath, selectedDetail?.relatedRoots, selectedScanResult]);
+
+  useEffect(() => {
+    if (!selectedApp || selectedScanResult || selectedScanLoading) {
+      return;
+    }
+    void scanResidue(selectedApp.id);
+  }, [selectedApp, selectedScanResult, selectedScanLoading, scanResidue]);
+
   const onConfirmDeepUninstall = async () => {
     if (!confirmTarget) {
       return;
@@ -257,80 +408,117 @@ export default function AppManagerPage() {
     }
   };
 
+  const revealRelatedPath = async (entry: RelatedLocationEntry) => {
+    if (!entry.path || revealingRelatedId) {
+      return;
+    }
+    setRelatedRevealError(null);
+    setRevealingRelatedId(entry.id);
+    try {
+      await appManagerRevealPath(entry.path);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setRelatedRevealError(t("detail.revealFailed", { message }));
+    } finally {
+      setRevealingRelatedId(null);
+    }
+  };
+
+  const isRelatedEntrySelected = (entry: RelatedLocationEntry): boolean => {
+    if (entry.source === "main") {
+      return selectedIncludeMainApp;
+    }
+    return selectedResidueIds.includes(entry.id);
+  };
+
+  const isRelatedEntrySelectionDisabled = (entry: RelatedLocationEntry): boolean => {
+    if (entry.source === "main") {
+      return false;
+    }
+    return entry.readonlyReasonCode === "managed_by_policy";
+  };
+
+  const toggleRelatedEntrySelection = (entry: RelatedLocationEntry) => {
+    if (!selectedApp) {
+      return;
+    }
+    if (entry.source === "main") {
+      setIncludeMainApp(selectedApp.id, !selectedIncludeMainApp);
+      return;
+    }
+    const checked = selectedResidueIds.includes(entry.id);
+    toggleResidueItem(selectedApp.id, entry.id, !checked);
+  };
+
   const isStartupActionDisabled = (app: ManagedApp): boolean => {
     const actionLoading = Boolean(actionLoadingById[app.id]);
     const thirdParty = app.source !== "rtool";
     const startupDisabledByExperiment = thirdParty && !experimentalThirdPartyStartup;
-    return actionLoading || !app.startupEditable || startupDisabledByExperiment;
+    return actionLoading || !app.capabilities.startup || !app.startupEditable || startupDisabledByExperiment;
   };
 
   return (
     <section className="h-full min-h-0">
-      <div className="space-y-4">
-        <header className="rounded-xl border border-border-muted bg-surface-card px-4 py-4 shadow-surface">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="space-y-1">
-              <h1 className="m-0 text-lg font-semibold text-text-primary">{t("title")}</h1>
-              <p className="m-0 text-sm text-text-secondary">{t("desc")}</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button size="default" variant="secondary" disabled={refreshing || loading} onClick={() => void refreshIndex()}>
+      <div className="grid h-full min-h-0 gap-4 md:grid-cols-[360px_minmax(0,1fr)]">
+        <aside className="flex h-full min-h-0 flex-col rounded-xl border border-border-muted bg-surface-card shadow-surface">
+          <div className="shrink-0 space-y-3 border-b border-border-muted px-3 py-3">
+            <div className="flex items-start justify-between gap-2">
+              <div className="space-y-0.5">
+                <h1 className="m-0 text-base font-semibold text-text-primary">{t("title")}</h1>
+                <p className="m-0 text-xs text-text-secondary">{t("desc")}</p>
+              </div>
+              <Button size="xs" variant="secondary" disabled={refreshing || loading} onClick={() => void refreshIndex()}>
                 {refreshing ? t("actions.refreshing") : t("actions.refresh")}
               </Button>
             </div>
-          </div>
 
-          <div className="mt-3 grid gap-3 md:grid-cols-[1fr_220px_auto]">
             <Input
               value={keyword}
               placeholder={t("filters.keywordPlaceholder")}
               onChange={(event) => setKeyword(event.currentTarget.value)}
             />
             <Select value={category} options={categoryOptions} onChange={(event) => setCategory(event.currentTarget.value)} />
-            <Checkbox
-              size="default"
+            <SwitchField
               checked={startupOnly}
+              wrapperClassName="w-auto items-center"
               onChange={(event) => setStartupOnly(event.currentTarget.checked)}
-              label={<span className="text-sm text-text-primary">{t("filters.startupOnly")}</span>}
+              label={<span className="text-xs text-text-primary">{t("filters.startupOnly")}</span>}
             />
-          </div>
-
-          <div className="mt-3 rounded-lg border border-border-muted bg-surface-soft px-3 py-2">
-            <Checkbox
-              size="default"
-              checked={experimentalThirdPartyStartup}
-              onChange={(event) => setExperimentalThirdPartyStartup(event.currentTarget.checked)}
-              label={<span className="text-sm text-text-primary">{t("experimental.title")}</span>}
-              description={<span className="leading-5">{t("experimental.desc")}</span>}
-            />
-          </div>
-
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-text-muted">
-            <span>{t("meta.indexedAt", { value: indexedAtText })}</span>
-            <span>{t("meta.count", { count: items.length })}</span>
-          </div>
-        </header>
-
-        {error ? <div className="rounded-lg border border-danger/35 bg-danger/10 px-3 py-2 text-sm text-danger">{error}</div> : null}
-        {lastActionResult ? (
-          <div
-            className={`rounded-lg border px-3 py-2 text-sm ${
-              lastActionResult.ok
-                ? "border-border-muted bg-surface-soft text-text-secondary"
-                : "border-danger/35 bg-danger/10 text-danger"
-            }`}
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span>{lastActionResult.message}</span>
-              <Button size="xs" variant="ghost" onClick={() => clearLastActionResult()}>
-                {t("actions.dismiss")}
-              </Button>
+            <div className="rounded-lg border border-border-muted bg-surface-soft px-2.5 py-2">
+              <SwitchField
+                checked={experimentalThirdPartyStartup}
+                controlPosition="end"
+                onChange={(event) => setExperimentalThirdPartyStartup(event.currentTarget.checked)}
+                label={<span className="text-xs text-text-primary">{t("experimental.title")}</span>}
+                description={<span className="leading-5">{t("experimental.desc")}</span>}
+              />
             </div>
-          </div>
-        ) : null}
 
-        <div className="grid min-h-[58vh] gap-4 md:grid-cols-[360px_minmax(0,1fr)]">
-          <aside className="rounded-xl border border-border-muted bg-surface-card p-3 shadow-surface">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-text-muted">
+              <span>{t("meta.indexedAt", { value: indexedAtText })}</span>
+              <span>{t("meta.count", { count: items.length })}</span>
+            </div>
+
+            {error ? <div className="rounded-md border border-danger/35 bg-danger/10 px-2.5 py-2 text-xs text-danger">{error}</div> : null}
+            {lastActionResult ? (
+              <div
+                className={`rounded-md border px-2.5 py-2 text-xs ${
+                  lastActionResult.ok
+                    ? "border-border-muted bg-surface-soft text-text-secondary"
+                    : "border-danger/35 bg-danger/10 text-danger"
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="break-all">{lastActionResult.message}</span>
+                  <Button size="xs" variant="ghost" onClick={() => clearLastActionResult()}>
+                    {t("actions.dismiss")}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
             <div className="mb-2 flex items-center justify-between">
               <h2 className="m-0 text-sm font-semibold text-text-primary">{t("list.title")}</h2>
               {loading ? <span className="text-xs text-text-muted">{t("status.loading")}</span> : null}
@@ -340,7 +528,7 @@ export default function AppManagerPage() {
                 {t("status.empty")}
               </div>
             ) : null}
-            <div className="max-h-[64vh] space-y-2 overflow-y-auto pr-1">
+            <div className="space-y-2">
               {items.map((app) => {
                 const selected = app.id === selectedAppId;
                 const actionLoading = Boolean(actionLoadingById[app.id]);
@@ -392,9 +580,11 @@ export default function AppManagerPage() {
                 </Button>
               </div>
             ) : null}
-          </aside>
+          </div>
+        </aside>
 
-          <div className="min-w-0 space-y-3">
+        <div className="h-full min-h-0 overflow-y-auto pr-1">
+          <div className="space-y-3 pb-2">
             {!selectedApp ? (
               <div className="rounded-xl border border-border-muted bg-surface-card px-4 py-8 text-center text-sm text-text-muted">
                 {t("detail.empty")}
@@ -414,7 +604,14 @@ export default function AppManagerPage() {
                         {selectedApp.version ? <span>{t("meta.version", { value: selectedApp.version })}</span> : null}
                         {selectedApp.publisher ? <span>{t("meta.publisher", { value: selectedApp.publisher })}</span> : null}
                         {selectedApp.bundleOrAppId ? <span>{t("meta.bundleId", { value: selectedApp.bundleOrAppId })}</span> : null}
+                        <span>{t("meta.identity", { value: selectedApp.identity.primaryId })}</span>
+                        <span>{t("meta.identitySource", { value: selectedApp.identity.identitySource })}</span>
                         <span>{t("detail.size", { value: formatBytes(selectedApp.estimatedSizeBytes) })}</span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
+                        <span>{selectedApp.capabilities.startup ? t("meta.capability.startupEnabled") : t("meta.capability.startupDisabled")}</span>
+                        <span>{selectedApp.capabilities.uninstall ? t("meta.capability.uninstallEnabled") : t("meta.capability.uninstallDisabled")}</span>
+                        <span>{selectedApp.capabilities.residueScan ? t("meta.capability.scanEnabled") : t("meta.capability.scanDisabled")}</span>
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -430,10 +627,20 @@ export default function AppManagerPage() {
                             ? t("actions.disableStartup")
                             : t("actions.enableStartup")}
                       </Button>
-                      <Button size="default" variant="secondary" onClick={() => void openUninstallHelp(selectedApp)}>
+                      <Button
+                        size="default"
+                        variant="secondary"
+                        disabled={!selectedApp.capabilities.uninstall}
+                        onClick={() => void openUninstallHelp(selectedApp)}
+                      >
                         {t("actions.uninstallGuide")}
                       </Button>
-                      <Button size="default" variant="danger" onClick={() => setConfirmTarget(selectedApp)}>
+                      <Button
+                        size="default"
+                        variant="danger"
+                        disabled={!selectedApp.capabilities.uninstall}
+                        onClick={() => setConfirmTarget(selectedApp)}
+                      >
                         {t("actions.deepUninstall")}
                       </Button>
                     </div>
@@ -455,23 +662,92 @@ export default function AppManagerPage() {
                 </section>
 
                 <section className="rounded-xl border border-border-muted bg-surface-card px-4 py-4 shadow-surface">
-                  <h3 className="m-0 text-sm font-semibold text-text-primary">{t("detail.relatedRoots")}</h3>
-                  <div className="mt-2 space-y-2">
-                    {(selectedDetail?.relatedRoots ?? []).map((root) => (
-                      <div key={root.id} className="rounded-lg border border-border-muted bg-surface-soft px-3 py-2">
-                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-text-secondary">
-                          <span className="font-medium text-text-primary">{root.label}</span>
-                          <span>{t(`detail.scope.${root.scope}`, { defaultValue: root.scope })}</span>
-                        </div>
-                        <p className="m-0 mt-1 break-all text-[11px] text-text-muted">{root.path}</p>
-                        {root.readonlyReasonCode ? (
-                          <p className="m-0 mt-1 text-[11px] text-info">{t(`readonly.${root.readonlyReasonCode}`, { defaultValue: root.readonlyReasonCode })}</p>
-                        ) : null}
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="m-0 text-sm font-semibold text-text-primary">{t("detail.relatedRoots")}</h3>
+                    <span className="text-xs text-text-secondary">
+                      {selectedScanLoading ? t("cleanup.scanning") : t("detail.relatedCount", { count: relatedLocations.length })}
+                    </span>
+                  </div>
+                  <p className="m-0 mt-1 text-[11px] text-text-muted">{t("detail.relatedAutoScanHint")}</p>
+
+                  {relatedRevealError ? (
+                    <div className="mt-2 rounded-md border border-danger/35 bg-danger/10 px-3 py-2 text-xs text-danger">
+                      {relatedRevealError}
+                    </div>
+                  ) : null}
+
+                  <div className="mt-3 rounded-lg border border-border-muted bg-surface-soft">
+                    {relatedLocations.length === 0 ? (
+                      <p className="m-0 px-3 py-4 text-xs text-text-muted">
+                        {selectedScanLoading ? t("cleanup.scanning") : t("detail.noRelatedRoots")}
+                      </p>
+                    ) : (
+                      <div className="divide-y divide-border-muted">
+                        {relatedLocations.map((entry) => {
+                          const revealing = revealingRelatedId === entry.id;
+                          const selected = isRelatedEntrySelected(entry);
+                          const selectionDisabled = isRelatedEntrySelectionDisabled(entry);
+                          return (
+                            <div
+                              key={entry.path}
+                              className={`flex w-full items-start gap-2 px-3 py-2.5 text-left transition-colors ${
+                                selected ? "bg-accent/8" : "hover:bg-surface"
+                              }`}
+                            >
+                              <button
+                                type="button"
+                                aria-pressed={selected}
+                                disabled={selectionDisabled || Boolean(revealingRelatedId)}
+                                className={`mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors ${
+                                  selected
+                                    ? "border-accent bg-accent text-accent-foreground"
+                                    : "border-border-strong bg-surface text-transparent hover:border-accent/55"
+                                } ${selectionDisabled ? "cursor-not-allowed opacity-55" : "cursor-pointer"}`}
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  toggleRelatedEntrySelection(entry);
+                                }}
+                              >
+                                <svg viewBox="0 0 16 16" className="h-3 w-3" aria-hidden="true">
+                                  <path
+                                    d="m3.5 8.25 2.5 2.5L12.5 4.5"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth="1.6"
+                                  />
+                                </svg>
+                              </button>
+                              <button
+                                type="button"
+                                className="flex min-w-0 flex-1 items-start gap-2 text-left"
+                                disabled={Boolean(revealingRelatedId)}
+                                title={entry.path}
+                                onClick={() => void revealRelatedPath(entry)}
+                              >
+                                <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border-muted bg-surface text-text-secondary">
+                                  <span className={`btn-icon text-[1rem] ${relatedEntryIconClass(entry)}`} aria-hidden="true" />
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate text-sm font-medium text-text-primary">{entry.name}</span>
+                                  <span className="mt-0.5 block break-all text-xs text-text-muted">{entry.path}</span>
+                                  {entry.readonlyReasonCode ? (
+                                    <span className="mt-0.5 block text-[11px] text-info">
+                                      {t(`readonly.${entry.readonlyReasonCode}`, { defaultValue: entry.readonlyReasonCode })}
+                                    </span>
+                                  ) : null}
+                                </span>
+                                <span className="shrink-0 pt-0.5 text-sm text-text-primary">
+                                  {revealing ? t("detail.revealing") : formatBytes(entry.sizeBytes)}
+                                </span>
+                              </button>
+                            </div>
+                          );
+                        })}
                       </div>
-                    ))}
-                    {!selectedDetail?.relatedRoots.length ? (
-                      <p className="m-0 text-xs text-text-muted">{t("detail.noRelatedRoots")}</p>
-                    ) : null}
+                    )}
                   </div>
                 </section>
 
@@ -482,10 +758,10 @@ export default function AppManagerPage() {
                       <Button
                         size="default"
                         variant="secondary"
-                        disabled={Boolean(scanLoadingById[selectedApp.id])}
+                        disabled={selectedScanLoading}
                         onClick={() => void scanResidue(selectedApp.id)}
                       >
-                        {scanLoadingById[selectedApp.id] ? t("cleanup.scanning") : t("cleanup.scan")}
+                        {selectedScanLoading ? t("cleanup.scanning") : t("cleanup.scan")}
                       </Button>
                       <Button
                         size="default"
@@ -520,9 +796,9 @@ export default function AppManagerPage() {
                       options={deleteModeOptions}
                       onChange={(event) => setDeleteMode(selectedApp.id, event.currentTarget.value as "trash" | "permanent")}
                     />
-                    <Checkbox
-                      size="default"
+                    <SwitchField
                       checked={selectedIncludeMainApp}
+                      controlPosition="end"
                       onChange={(event) => setIncludeMainApp(selectedApp.id, event.currentTarget.checked)}
                       label={<span className="text-sm text-text-primary">{t("cleanup.includeMainApp")}</span>}
                       description={<span className="leading-5">{t("cleanup.includeMainAppDesc")}</span>}
@@ -606,23 +882,52 @@ export default function AppManagerPage() {
                                 const checked = selectedResidueIds.includes(item.itemId);
                                 const disabled = item.readonly && item.readonlyReasonCode === "managed_by_policy";
                                 return (
-                                  <div key={item.itemId} className="rounded-md border border-border-muted bg-surface px-2 py-1.5">
+                                  <button
+                                    key={item.itemId}
+                                    type="button"
+                                    disabled={disabled}
+                                    aria-pressed={checked}
+                                    className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors ${
+                                      checked
+                                        ? "border-accent/55 bg-accent/10"
+                                        : "border-border-muted bg-surface hover:border-accent/35 hover:bg-surface-soft"
+                                    } ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
+                                    onClick={() => toggleResidueItem(selectedApp.id, item.itemId, !checked)}
+                                  >
                                     <div className="flex items-start gap-2">
-                                      <Checkbox
-                                        size="default"
-                                        checked={checked}
-                                        disabled={disabled}
-                                        onChange={(event) =>
-                                          toggleResidueItem(selectedApp.id, item.itemId, event.currentTarget.checked)
-                                        }
-                                      />
+                                      <span
+                                        className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                                          checked
+                                            ? "border-accent bg-accent/20 text-accent"
+                                            : "border-border-strong bg-surface-soft text-transparent"
+                                        }`}
+                                        aria-hidden="true"
+                                      >
+                                        {checked ? (
+                                          <svg viewBox="0 0 16 16" className="h-3 w-3" aria-hidden="true">
+                                            <path
+                                              d="m3.5 8.25 2.5 2.5L12.5 4.5"
+                                              fill="none"
+                                              stroke="currentColor"
+                                              strokeLinecap="round"
+                                              strokeLinejoin="round"
+                                              strokeWidth="1.6"
+                                            />
+                                          </svg>
+                                        ) : null}
+                                      </span>
                                       <div className="min-w-0 flex-1">
                                         <p className="m-0 break-all text-xs text-text-primary">{item.path}</p>
                                         <p className="m-0 mt-0.5 text-[11px] text-text-secondary">
                                           {t("cleanup.itemMeta", {
-                                            value: `${formatBytes(item.sizeBytes)} · ${item.scope} · ${item.kind}`,
+                                            value: `${formatBytes(item.sizeBytes)} · ${item.scope} · ${item.kind} · ${t(`cleanup.confidence.${item.confidence}`, { defaultValue: item.confidence })}`,
                                           })}
                                         </p>
+                                        {item.evidence.length > 0 ? (
+                                          <p className="m-0 mt-0.5 break-all text-[11px] text-text-muted">
+                                            {t("cleanup.evidence", { value: item.evidence.join(", ") })}
+                                          </p>
+                                        ) : null}
                                         {item.readonlyReasonCode ? (
                                           <p className="m-0 mt-0.5 text-[11px] text-info">
                                             {t(`readonly.${item.readonlyReasonCode}`, {
@@ -632,7 +937,7 @@ export default function AppManagerPage() {
                                         ) : null}
                                       </div>
                                     </div>
-                                  </div>
+                                  </button>
                                 );
                               })}
                             </div>

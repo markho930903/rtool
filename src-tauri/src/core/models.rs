@@ -80,6 +80,22 @@ impl Default for AppManagerQueryDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AppManagerCapabilitiesDto {
+    pub startup: bool,
+    pub uninstall: bool,
+    pub residue_scan: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppManagerIdentityDto {
+    pub primary_id: String,
+    pub aliases: Vec<String>,
+    pub identity_source: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ManagedAppDto {
     pub id: String,
     pub name: String,
@@ -103,6 +119,8 @@ pub struct ManagedAppDto {
     pub uninstall_supported: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub uninstall_kind: Option<String>,
+    pub capabilities: AppManagerCapabilitiesDto,
+    pub identity: AppManagerIdentityDto,
     pub risk_level: String,
     pub fingerprint: String,
 }
@@ -181,6 +199,8 @@ pub struct AppManagerResidueItemDto {
     pub scope: String,
     pub size_bytes: u64,
     pub match_reason: String,
+    pub confidence: String,
+    pub evidence: Vec<String>,
     pub risk_level: String,
     pub recommended: bool,
     pub readonly: bool,

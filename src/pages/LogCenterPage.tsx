@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Button, Checkbox, Input, Textarea } from "@/components/ui";
+import { Button, Input, Textarea } from "@/components/ui";
 import { useLoggingStore } from "@/stores/logging.store";
 import type { LogLevel } from "@/services/logging.service";
 
@@ -201,15 +201,21 @@ export default function LogCenterPage() {
           <div className="grid grid-cols-1 gap-2 rounded-lg border border-border-muted/70 bg-app/40 px-3 py-2 sm:grid-cols-[88px_minmax(0,1fr)] sm:items-center sm:gap-3">
             <div className="text-xs text-text-muted">{t("filters.level")}</div>
             <div className="overflow-x-auto">
-              <div className="flex min-w-max items-center gap-5 sm:justify-end">
+              <div className="flex min-w-max items-center gap-2 sm:justify-end">
                 {LEVEL_OPTIONS.map((option) => (
-                  <Checkbox
+                  <button
                     key={option.value}
-                    checked={filters.levels.includes(option.value)}
-                    onChange={(event) => toggleLevel(option.value, event.currentTarget.checked)}
-                    wrapperClassName="gap-1.5 whitespace-nowrap"
-                    label={option.label}
-                  />
+                    type="button"
+                    aria-pressed={filters.levels.includes(option.value)}
+                    className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                      filters.levels.includes(option.value)
+                        ? "border-accent/50 bg-accent/15 text-accent"
+                        : "border-border-muted bg-surface text-text-secondary hover:border-border-strong hover:bg-surface-soft"
+                    }`}
+                    onClick={() => toggleLevel(option.value, !filters.levels.includes(option.value))}
+                  >
+                    {option.label}
+                  </button>
                 ))}
               </div>
             </div>

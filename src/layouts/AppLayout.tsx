@@ -55,10 +55,16 @@ function getNextTheme(preference: ThemePreference): ThemePreference {
   return "system";
 }
 
-function MainContent({ isSettingsRoute }: { isSettingsRoute: boolean }) {
+function MainContent({ isFullHeightRoute }: { isFullHeightRoute: boolean }) {
   return (
-    <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
-      <main className={isSettingsRoute ? "h-full w-full" : "mx-auto w-full max-w-6xl px-4 py-5 md:px-5"}>
+    <div
+      className={
+        isFullHeightRoute
+          ? "min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-hidden"
+          : "min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto"
+      }
+    >
+      <main className={isFullHeightRoute ? "h-full w-full" : "mx-auto w-full max-w-6xl px-4 py-5 md:px-5"}>
         <Outlet />
       </main>
     </div>
@@ -161,6 +167,8 @@ export default function AppLayout() {
   const themeInitialized = useThemeStore((state) => state.initialized);
   const setWindowMode = useAppStore((state) => state.setWindowMode);
   const isSettingsRoute = useMemo(() => isRouteActiveById("settings", location.pathname), [location.pathname]);
+  const isAppManagerRoute = useMemo(() => isRouteActiveById("app_manager", location.pathname), [location.pathname]);
+  const isFullHeightRoute = isSettingsRoute || isAppManagerRoute;
   const currentNavItem = useMemo(() => resolveActiveMainMenuByPath(location.pathname), [location.pathname]);
   const currentLabel = t(currentNavItem.labelKey);
   const switchMenuLabel = t("titlebar.switchMenu", { current: currentLabel });
@@ -226,7 +234,7 @@ export default function AppLayout() {
     return (
       <div className="relative flex h-screen overflow-hidden bg-app text-text-primary">
         <SideBar />
-        <MainContent isSettingsRoute={isSettingsRoute} />
+        <MainContent isFullHeightRoute={isFullHeightRoute} />
         {bootMounted ? <BootOverlay variant="main" visible={bootVisible} /> : null}
       </div>
     );
@@ -295,7 +303,7 @@ export default function AppLayout() {
         </div>
       </header>
 
-      <MainContent isSettingsRoute={isSettingsRoute} />
+      <MainContent isFullHeightRoute={isFullHeightRoute} />
       {bootMounted ? <BootOverlay variant="main" visible={bootVisible} /> : null}
     </div>
   );

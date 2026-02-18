@@ -1,9 +1,9 @@
 import { forwardRef, useState, type InputHTMLAttributes, type ReactNode } from "react";
 
-import type { ChoiceOrientation } from "@/components/ui/types";
+import type { ChoiceOrientation, UiSize } from "@/components/ui/types";
 import { cx } from "@/components/ui/utils";
 
-type RadioSize = "sm" | "md";
+type RadioSize = Extract<UiSize, "sm" | "default" | "md">;
 
 export interface RadioProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "size"> {
   size?: RadioSize;
@@ -14,11 +14,12 @@ export interface RadioProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
 
 const sizeClassMap: Record<RadioSize, string> = {
   sm: "h-3.5 w-3.5",
-  md: "h-4 w-4",
+  default: "h-4 w-4",
+  md: "h-[18px] w-[18px]",
 };
 
 export const Radio = forwardRef<HTMLInputElement, RadioProps>(function Radio(props, ref) {
-  const { size = "md", label, description, wrapperClassName, className, disabled, children, ...rest } = props;
+  const { size = "default", label, description, wrapperClassName, className, disabled, children, ...rest } = props;
   const finalLabel = label ?? children;
   const inputClassName = cx(
     "m-0 shrink-0 rounded-full border border-border-strong bg-surface text-accent accent-accent",
@@ -33,7 +34,7 @@ export const Radio = forwardRef<HTMLInputElement, RadioProps>(function Radio(pro
   }
 
   return (
-    <label className={cx("inline-flex items-start gap-2 text-text-secondary", wrapperClassName)}>
+    <label className={cx("inline-flex items-start gap-2 text-sm text-text-secondary", wrapperClassName)}>
       <input {...rest} ref={ref} type="radio" disabled={disabled} className={inputClassName} />
       <span className="inline-flex flex-col gap-0.5">
         {finalLabel ? <span>{finalLabel}</span> : null}
@@ -76,7 +77,7 @@ export function RadioGroup(props: RadioGroupProps) {
     defaultValue,
     onValueChange,
     orientation = "vertical",
-    size = "md",
+    size = "default",
     disabled = false,
     className,
     optionClassName,

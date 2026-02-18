@@ -14,10 +14,10 @@ import {
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
-import type { SelectVariant } from "@/components/ui/types";
+import type { SelectVariant, UiSize } from "@/components/ui/types";
 import { cx } from "@/components/ui/utils";
 
-type SelectSize = "sm" | "md";
+type SelectSize = Extract<UiSize, "sm" | "default" | "md">;
 
 export interface SelectOptionInput {
   value: string;
@@ -50,10 +50,10 @@ const wrapperClassMap: Record<SelectVariant, string> = {
 
 const triggerClassMap: Record<SelectVariant, string> = {
   default:
-    "w-full min-h-[38px] rounded-md border border-border-muted bg-surface px-3 text-sm text-text-primary shadow-inset-soft outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong hover:bg-surface-soft",
-  tool: "min-h-[36px] rounded-md border border-border-muted bg-surface px-2.5 text-ui-sm leading-ui-sm text-text-primary shadow-inset-soft outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong hover:bg-surface-soft",
+    "w-full rounded-md border border-border-muted bg-surface px-3 text-sm text-text-primary shadow-inset-soft outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong hover:bg-surface-soft",
+  tool: "rounded-md border border-border-muted bg-surface px-2.5 text-ui-sm leading-ui-sm text-text-primary shadow-inset-soft outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong hover:bg-surface-soft",
   clipboard:
-    "min-h-[36px] rounded-md border border-border-muted bg-surface px-2.5 text-ui-sm leading-ui-sm text-text-primary shadow-inset-soft outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong hover:bg-surface-soft",
+    "rounded-md border border-border-muted bg-surface px-2.5 text-ui-sm leading-ui-sm text-text-primary shadow-inset-soft outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong hover:bg-surface-soft",
   theme:
     "h-8 rounded-lg border border-border-muted bg-surface px-2 text-xs text-text-secondary shadow-inset-soft outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong hover:bg-surface-soft",
 };
@@ -76,8 +76,9 @@ const optionClassMap: Record<SelectVariant, string> = {
 };
 
 const sizeClassMap: Record<SelectSize, string> = {
-  sm: "text-xs",
-  md: "",
+  sm: "min-h-[30px] text-xs",
+  default: "min-h-[34px] text-sm",
+  md: "min-h-[38px] text-sm",
 };
 
 function normalizeSelectValue(value: SelectHTMLAttributes<HTMLSelectElement>["value"]): string {
@@ -156,7 +157,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
   const { t } = useTranslation("common");
   const {
     variant = "default",
-    size = "md",
+    size = "default",
     invalid = false,
     className,
     disabled,
@@ -356,10 +357,12 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
     }
   };
 
+  const effectiveSizeClassName = variant === "theme" ? null : sizeClassMap[size];
+
   if (multiple) {
     const selectClassName = cx(
       triggerClassMap[variant],
-      sizeClassMap[size],
+      effectiveSizeClassName,
       invalid ? "border-danger focus-visible:border-danger focus-visible:ring-danger/25" : null,
       disabled ? "cursor-not-allowed opacity-60" : null,
       className,
@@ -383,7 +386,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
     "inline-flex w-full items-center justify-between gap-2",
     "focus-visible:border-accent focus-visible:ring-3 focus-visible:ring-accent/25",
     triggerClassMap[variant],
-    sizeClassMap[size],
+    effectiveSizeClassName,
     invalid ? "border-danger focus-visible:border-danger focus-visible:ring-danger/25" : null,
     disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer",
     className,

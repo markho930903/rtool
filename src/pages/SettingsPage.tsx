@@ -753,7 +753,7 @@ export default function SettingsPage() {
 
                   <div className="flex flex-wrap items-center gap-2">
                     <Button
-                      size="sm"
+                      size="default"
                       variant="primary"
                       disabled={importingLocaleFile || !importFileContent.trim()}
                       onClick={() => void handleImportLocaleFile()}
@@ -761,7 +761,7 @@ export default function SettingsPage() {
                       {importingLocaleFile ? t("general.import.importing") : t("general.import.import")}
                     </Button>
                     <Button
-                      size="sm"
+                      size="default"
                       variant="secondary"
                       disabled={localeCatalogLoading}
                       onClick={() => void handleReloadLocales()}
@@ -830,7 +830,7 @@ export default function SettingsPage() {
                         return (
                           <Button
                             key={presetValue}
-                            size="sm"
+                            size="default"
                             variant={active ? "primary" : "secondary"}
                             disabled={!sizeCleanupEnabled}
                             aria-pressed={active}
@@ -846,7 +846,7 @@ export default function SettingsPage() {
                         );
                       })}
                       <Button
-                        size="sm"
+                        size="default"
                         variant={sizeThresholdMode === "custom" ? "primary" : "secondary"}
                         disabled={!sizeCleanupEnabled}
                         aria-pressed={sizeThresholdMode === "custom"}
@@ -890,7 +890,7 @@ export default function SettingsPage() {
 
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
-                    size="sm"
+                    size="default"
                     variant="primary"
                     disabled={clipboardLoading || clipboardSaving || clipboardInvalid || clipboardUnchanged}
                     onClick={() => void handleSaveClipboard()}
@@ -979,7 +979,7 @@ export default function SettingsPage() {
 
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
-                    size="sm"
+                    size="default"
                     variant="primary"
                     disabled={transferLoading || transferSaving || transferDirInvalid || transferCleanupInvalid}
                     onClick={() => void handleSaveTransfer()}
@@ -1094,14 +1094,13 @@ export default function SettingsPage() {
 
                   <div className="rounded-lg border border-border-muted bg-surface-soft px-3 py-3">
                     <Checkbox
-                      size="sm"
-                      className="mt-0.5"
+                      size="default"
                       checked={logRealtimeEnabled}
                       onChange={(event) => {
                         setLogRealtimeEnabled(event.currentTarget.checked);
                         setLoggingSaveMessage(null);
                       }}
-                      wrapperClassName="items-start gap-2 text-sm text-text-primary"
+                      wrapperClassName="text-sm text-text-primary"
                       labelClassName="gap-1"
                       label={<span className="text-sm font-medium leading-5">{t("logging.realtime.label")}</span>}
                       description={<span className="leading-5">{t("logging.realtime.desc")}</span>}
@@ -1110,14 +1109,13 @@ export default function SettingsPage() {
 
                   <div className="rounded-lg border border-border-muted bg-surface-soft px-3 py-3">
                     <Checkbox
-                      size="sm"
-                      className="mt-0.5"
+                      size="default"
                       checked={logAllowRawView}
                       onChange={(event) => {
                         setLogAllowRawView(event.currentTarget.checked);
                         setLoggingSaveMessage(null);
                       }}
-                      wrapperClassName="items-start gap-2 text-sm text-text-primary"
+                      wrapperClassName="text-sm text-text-primary"
                       labelClassName="gap-1"
                       label={<span className="text-sm font-medium leading-5">{t("logging.raw.label")}</span>}
                       description={<span className="leading-5">{t("logging.raw.desc")}</span>}
@@ -1127,7 +1125,7 @@ export default function SettingsPage() {
 
                 <div className="flex flex-wrap items-center gap-2">
                   <Button
-                    size="sm"
+                    size="default"
                     variant="primary"
                     disabled={loggingInvalid || loggingUnchanged}
                     onClick={() => void handleSaveLogging()}

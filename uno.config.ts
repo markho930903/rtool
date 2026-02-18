@@ -14,6 +14,18 @@ import {
 import { icons as notoEmoji } from "@iconify-json/noto";
 
 export default defineConfig({
+  safelist: [
+    "i-noto:desktop-computer",
+    "i-noto:hammer-and-wrench",
+    "i-noto:outbox-tray",
+    "i-noto:scroll",
+    "i-noto:card-index-dividers",
+    "i-noto:gear",
+    "i-noto:clipboard",
+    "i-noto:input-symbols",
+    "i-noto:magnifying-glass-tilted-right",
+    "i-noto:mantelpiece-clock",
+  ],
   presets: [
     presetWind4(),
     presetIcons({

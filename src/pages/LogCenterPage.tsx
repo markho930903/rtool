@@ -142,14 +142,14 @@ export default function LogCenterPage() {
         </div>
         <p className="mt-2 max-w-4xl text-sm text-text-secondary">{t("header.subtitle")}</p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="secondary" onClick={() => void refresh()} disabled={loading}>
+          <Button size="default" variant="secondary" onClick={() => void refresh()} disabled={loading}>
             {t("action.refresh")}
           </Button>
-          <Button size="sm" variant="secondary" onClick={() => void handleExport()} disabled={exporting}>
+          <Button size="default" variant="secondary" onClick={() => void handleExport()} disabled={exporting}>
             {exporting ? t("action.exporting") : t("action.export")}
           </Button>
           <Button
-            size="sm"
+            size="default"
             variant="ghost"
             onClick={() => {
               resetFilters();
@@ -185,7 +185,7 @@ export default function LogCenterPage() {
               </p>
             </div>
             <Button
-              size="sm"
+              size="default"
               variant="ghost"
               onClick={() => setFiltersCollapsed((value) => !value)}
               className="shrink-0"
@@ -207,7 +207,7 @@ export default function LogCenterPage() {
                     key={option.value}
                     checked={filters.levels.includes(option.value)}
                     onChange={(event) => toggleLevel(option.value, event.currentTarget.checked)}
-                    wrapperClassName="items-center gap-1.5 whitespace-nowrap"
+                    wrapperClassName="gap-1.5 whitespace-nowrap"
                     label={option.label}
                   />
                 ))}
@@ -276,7 +276,7 @@ export default function LogCenterPage() {
           ) : null}
 
           <div className="flex justify-end">
-            <Button size="sm" variant="primary" onClick={() => void refresh()}>
+            <Button size="default" variant="primary" onClick={() => void refresh()}>
               {t("action.applyFilters")}
             </Button>
           </div>
@@ -333,7 +333,7 @@ export default function LogCenterPage() {
             <div className="mt-2 flex items-center justify-between gap-2">
               <div className="text-xs text-text-muted">{nextCursor ? t("list.hasMore") : t("list.end")}</div>
               <Button
-                size="sm"
+                size="default"
                 variant="secondary"
                 disabled={!nextCursor || loadingMore}
                 onClick={() => void loadMore()}

@@ -77,7 +77,7 @@ export default function TransferDropzone(props: TransferDropzoneProps) {
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button
           type="button"
-          size="sm"
+          size="default"
           variant="secondary"
           className="text-ui-xs"
           onClick={() => fileInputRef.current?.click()}
@@ -87,7 +87,7 @@ export default function TransferDropzone(props: TransferDropzoneProps) {
 
         <Button
           type="button"
-          size="sm"
+          size="default"
           variant="secondary"
           className="text-ui-xs"
           onClick={() => folderInputRef.current?.click()}
@@ -97,7 +97,7 @@ export default function TransferDropzone(props: TransferDropzoneProps) {
 
         <Button
           type="button"
-          size="sm"
+          size="default"
           variant="primary"
           className="text-ui-xs"
           onClick={() => {

@@ -76,7 +76,7 @@ export default function TransferPage() {
           <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
-              size="sm"
+              size="default"
               variant="secondary"
               className="text-ui-xs"
               onClick={() => {
@@ -87,7 +87,7 @@ export default function TransferPage() {
             </Button>
             <Button
               type="button"
-              size="sm"
+              size="default"
               variant="secondary"
               className="text-ui-xs"
               onClick={() => {
@@ -123,7 +123,7 @@ export default function TransferPage() {
             />
             <Button
               type="button"
-              size="sm"
+              size="default"
               variant="secondary"
               className="text-ui-xs"
               onClick={() => {

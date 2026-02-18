@@ -197,7 +197,7 @@ pub fn search_palette_legacy(app: &AppHandle, query: &str) -> Vec<LauncherItemDt
             shortcut: None,
             score: 0,
             icon_kind: "iconify".to_string(),
-            icon_value: "i-noto:house".to_string(),
+            icon_value: "i-noto:desktop-computer".to_string(),
             action: LauncherActionDto::OpenBuiltinRoute {
                 route: "/".to_string(),
             },
@@ -285,7 +285,7 @@ fn builtin_items(locale: &str) -> Vec<LauncherItemDto> {
             t(locale, "launcher.builtin.dashboard.title"),
             t(locale, "launcher.builtin.dashboard.subtitle"),
             "/",
-            "i-noto:house",
+            "i-noto:desktop-computer",
             None,
         ),
         build_builtin_route_item(

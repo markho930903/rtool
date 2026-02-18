@@ -40,9 +40,19 @@ type LinkButtonProps = BaseButtonProps & Omit<LinkProps, "className" | "children
 export type ButtonProps = NativeButtonProps | AnchorButtonProps | LinkButtonProps;
 
 const sizeClassMap: Record<UiSize, string> = {
-  xs: "rounded-sm px-2.5 py-1.5 text-xs",
-  sm: "rounded-md px-3 py-1.5 text-sm",
-  md: "rounded-xl px-4 py-2 text-sm font-medium",
+  xs: "rounded-sm px-2 py-1 text-xs",
+  sm: "rounded-sm px-2.5 py-1.5 text-xs",
+  default: "rounded-md px-3 py-1.5 text-sm",
+  md: "rounded-lg px-3.5 py-2 text-sm font-medium",
+  lg: "rounded-xl px-4 py-2.5 text-base font-medium",
+};
+
+const iconOnlySizeClassMap: Record<UiSize, string> = {
+  xs: "h-7 w-7",
+  sm: "h-8 w-8",
+  default: "h-9 w-9",
+  md: "h-10 w-10",
+  lg: "h-11 w-11",
 };
 
 const variantClassMap: Record<ButtonVariant, string> = {
@@ -70,7 +80,7 @@ function buildClassName(props: {
     "outline-none focus-visible:ring-2 focus-visible:ring-accent/55 focus-visible:ring-offset-1 focus-visible:ring-offset-app",
     sizeClassMap[props.size],
     variantClassMap[props.variant],
-    props.iconOnly ? "h-8 w-8 px-0 py-0" : null,
+    props.iconOnly ? cx(iconOnlySizeClassMap[props.size], "px-0 py-0") : null,
     props.block ? "w-full" : null,
     props.disabled ? "cursor-not-allowed opacity-60 pointer-events-none" : "cursor-pointer",
     props.className,
@@ -79,7 +89,7 @@ function buildClassName(props: {
 
 export const Button = forwardRef<HTMLButtonElement | HTMLAnchorElement, ButtonProps>(function Button(props, ref) {
   const variant = props.variant ?? "secondary";
-  const size = props.size ?? "md";
+  const size = props.size ?? "default";
   const disabled = props.disabled ?? false;
   const block = props.block ?? false;
   const iconOnly = props.iconOnly ?? false;

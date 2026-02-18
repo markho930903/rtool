@@ -1,4 +1,4 @@
-export type UiSize = "xs" | "sm" | "md";
+export type UiSize = "xs" | "sm" | "default" | "md" | "lg";
 
 export type InputVariant = "default" | "tool" | "clipboard" | "palette" | "theme";
 export type SelectVariant = "default" | "tool" | "clipboard" | "theme";

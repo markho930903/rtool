@@ -50,8 +50,8 @@ export default function ClipboardFilterBar(props: ClipboardFilterBarProps) {
         <Checkbox
           checked={props.onlyPinned}
           onChange={(event) => props.onOnlyPinnedChange(event.currentTarget.checked)}
-          size="sm"
-          wrapperClassName="inline-flex items-center gap-1.5 rounded-md border border-border-muted bg-surface px-2 py-1.5 text-[12px] text-text-secondary"
+          size="default"
+          wrapperClassName="inline-flex gap-1.5 rounded-md border border-border-muted bg-surface px-2 py-1.5 text-[12px] text-text-secondary"
         >
           {t("filter.onlyPinned")}
         </Checkbox>

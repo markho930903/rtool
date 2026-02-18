@@ -274,7 +274,7 @@ export default function AppManagerPage() {
               <p className="m-0 text-sm text-text-secondary">{t("desc")}</p>
             </div>
             <div className="flex items-center gap-2">
-              <Button size="sm" variant="secondary" disabled={refreshing || loading} onClick={() => void refreshIndex()}>
+              <Button size="default" variant="secondary" disabled={refreshing || loading} onClick={() => void refreshIndex()}>
                 {refreshing ? t("actions.refreshing") : t("actions.refresh")}
               </Button>
             </div>
@@ -288,7 +288,7 @@ export default function AppManagerPage() {
             />
             <Select value={category} options={categoryOptions} onChange={(event) => setCategory(event.currentTarget.value)} />
             <Checkbox
-              size="sm"
+              size="default"
               checked={startupOnly}
               onChange={(event) => setStartupOnly(event.currentTarget.checked)}
               label={<span className="text-sm text-text-primary">{t("filters.startupOnly")}</span>}
@@ -297,12 +297,11 @@ export default function AppManagerPage() {
 
           <div className="mt-3 rounded-lg border border-border-muted bg-surface-soft px-3 py-2">
             <Checkbox
-              size="sm"
+              size="default"
               checked={experimentalThirdPartyStartup}
               onChange={(event) => setExperimentalThirdPartyStartup(event.currentTarget.checked)}
               label={<span className="text-sm text-text-primary">{t("experimental.title")}</span>}
               description={<span className="leading-5">{t("experimental.desc")}</span>}
-              wrapperClassName="items-start gap-2"
             />
           </div>
 
@@ -388,7 +387,7 @@ export default function AppManagerPage() {
 
             {!loading && nextCursor ? (
               <div className="mt-3 flex justify-center">
-                <Button size="sm" variant="secondary" disabled={loadingMore} onClick={() => void loadMore()}>
+                <Button size="default" variant="secondary" disabled={loadingMore} onClick={() => void loadMore()}>
                   {loadingMore ? t("actions.loadingMore") : t("actions.loadMore")}
                 </Button>
               </div>
@@ -420,7 +419,7 @@ export default function AppManagerPage() {
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <Button
-                        size="sm"
+                        size="default"
                         variant={selectedApp.startupEnabled ? "secondary" : "primary"}
                         disabled={isStartupActionDisabled(selectedApp)}
                         onClick={() => void toggleStartup(selectedApp, !selectedApp.startupEnabled)}
@@ -431,10 +430,10 @@ export default function AppManagerPage() {
                             ? t("actions.disableStartup")
                             : t("actions.enableStartup")}
                       </Button>
-                      <Button size="sm" variant="secondary" onClick={() => void openUninstallHelp(selectedApp)}>
+                      <Button size="default" variant="secondary" onClick={() => void openUninstallHelp(selectedApp)}>
                         {t("actions.uninstallGuide")}
                       </Button>
-                      <Button size="sm" variant="danger" onClick={() => setConfirmTarget(selectedApp)}>
+                      <Button size="default" variant="danger" onClick={() => setConfirmTarget(selectedApp)}>
                         {t("actions.deepUninstall")}
                       </Button>
                     </div>
@@ -481,7 +480,7 @@ export default function AppManagerPage() {
                     <h3 className="m-0 text-sm font-semibold text-text-primary">{t("cleanup.title")}</h3>
                     <div className="flex flex-wrap items-center gap-2">
                       <Button
-                        size="sm"
+                        size="default"
                         variant="secondary"
                         disabled={Boolean(scanLoadingById[selectedApp.id])}
                         onClick={() => void scanResidue(selectedApp.id)}
@@ -489,7 +488,7 @@ export default function AppManagerPage() {
                         {scanLoadingById[selectedApp.id] ? t("cleanup.scanning") : t("cleanup.scan")}
                       </Button>
                       <Button
-                        size="sm"
+                        size="default"
                         variant="secondary"
                         disabled={!selectedScanResult}
                         onClick={() => selectRecommendedResidues(selectedApp.id)}
@@ -497,7 +496,7 @@ export default function AppManagerPage() {
                         {t("cleanup.selectRecommended")}
                       </Button>
                       <Button
-                        size="sm"
+                        size="default"
                         variant="ghost"
                         disabled={!selectedScanResult}
                         onClick={() => clearResidueSelection(selectedApp.id)}
@@ -505,7 +504,7 @@ export default function AppManagerPage() {
                         {t("cleanup.clearSelection")}
                       </Button>
                       <Button
-                        size="sm"
+                        size="default"
                         variant="ghost"
                         disabled={!selectedScanResult || Boolean(exportLoadingById[selectedApp.id])}
                         onClick={() => void exportScanResult()}
@@ -522,12 +521,11 @@ export default function AppManagerPage() {
                       onChange={(event) => setDeleteMode(selectedApp.id, event.currentTarget.value as "trash" | "permanent")}
                     />
                     <Checkbox
-                      size="sm"
+                      size="default"
                       checked={selectedIncludeMainApp}
                       onChange={(event) => setIncludeMainApp(selectedApp.id, event.currentTarget.checked)}
                       label={<span className="text-sm text-text-primary">{t("cleanup.includeMainApp")}</span>}
                       description={<span className="leading-5">{t("cleanup.includeMainAppDesc")}</span>}
-                      wrapperClassName="items-start gap-2"
                     />
                   </div>
 
@@ -611,7 +609,7 @@ export default function AppManagerPage() {
                                   <div key={item.itemId} className="rounded-md border border-border-muted bg-surface px-2 py-1.5">
                                     <div className="flex items-start gap-2">
                                       <Checkbox
-                                        size="sm"
+                                        size="default"
                                         checked={checked}
                                         disabled={disabled}
                                         onChange={(event) =>
@@ -651,7 +649,7 @@ export default function AppManagerPage() {
                       {t("cleanup.selectedCount", { count: selectedResidueIds.length })}
                     </span>
                     <Button
-                      size="sm"
+                      size="default"
                       variant="danger"
                       disabled={Boolean(cleanupLoadingById[selectedApp.id])}
                       onClick={() => void cleanupSelected(selectedApp.id)}
@@ -666,7 +664,7 @@ export default function AppManagerPage() {
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <h3 className="m-0 text-sm font-semibold text-text-primary">{t("result.title")}</h3>
                       <Button
-                        size="sm"
+                        size="default"
                         variant="secondary"
                         disabled={
                           Boolean(cleanupLoadingById[selectedApp.id]) ||
@@ -735,11 +733,11 @@ export default function AppManagerPage() {
             </div>
           ) : null}
           <div className="flex justify-end gap-2">
-            <Button size="sm" variant="secondary" disabled={confirmingDeepUninstall} onClick={() => setConfirmTarget(null)}>
+            <Button size="default" variant="secondary" disabled={confirmingDeepUninstall} onClick={() => setConfirmTarget(null)}>
               {t("uninstallDialog.cancel")}
             </Button>
             <Button
-              size="sm"
+              size="default"
               variant="danger"
               disabled={confirmingDeepUninstall || !confirmTarget}
               onClick={() => void onConfirmDeepUninstall()}

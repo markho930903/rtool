@@ -1,9 +1,9 @@
 import { forwardRef, type InputHTMLAttributes, type ReactNode } from "react";
 
-import type { InputVariant } from "@/components/ui/types";
+import type { InputVariant, UiSize } from "@/components/ui/types";
 import { cx } from "@/components/ui/utils";
 
-type InputSize = "sm" | "md";
+type InputSize = Extract<UiSize, "sm" | "default" | "md">;
 
 export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "size"> {
   variant?: InputVariant;
@@ -16,10 +16,10 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
 
 const variantClassMap: Record<InputVariant, string> = {
   default:
-    "w-full rounded-md border border-border-muted bg-surface px-3 py-2 text-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-accent",
-  tool: "w-full rounded-md border border-border-muted bg-surface px-2.5 py-2 text-ui-sm leading-ui-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-accent",
+    "w-full rounded-md border border-border-muted bg-surface px-3 py-1.5 text-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-accent",
+  tool: "w-full rounded-md border border-border-muted bg-surface px-2.5 py-1.5 text-ui-sm leading-ui-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-accent",
   clipboard:
-    "w-full rounded-md border border-border-muted bg-surface px-2.5 py-2 text-ui-sm leading-ui-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-accent",
+    "w-full rounded-md border border-border-muted bg-surface px-2.5 py-1.5 text-ui-sm leading-ui-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-accent",
   palette:
     "w-full border-none bg-transparent text-ui-md leading-ui-md text-text-primary outline-none placeholder:text-text-muted",
   theme:
@@ -27,14 +27,15 @@ const variantClassMap: Record<InputVariant, string> = {
 };
 
 const sizeClassMap: Record<InputSize, string> = {
-  sm: "text-xs",
-  md: "",
+  sm: "py-1 text-xs",
+  default: "",
+  md: "py-2 text-sm",
 };
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(function Input(props, ref) {
   const {
     variant = "default",
-    size = "md",
+    size = "default",
     invalid = false,
     leadingIcon,
     trailingSlot,

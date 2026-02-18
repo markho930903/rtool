@@ -1,7 +1,7 @@
 import type { RefObject } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Checkbox, Input, Select, type SelectOptionInput } from "@/components/ui";
+import { Input, Select, Switch, type SelectOptionInput } from "@/components/ui";
 
 interface ClipboardFilterBarProps {
   query: string;
@@ -47,14 +47,15 @@ export default function ClipboardFilterBar(props: ClipboardFilterBarProps) {
           onChange={(event) => props.onTypeChange(event.currentTarget.value)}
         />
 
-        <Checkbox
-          checked={props.onlyPinned}
-          onChange={(event) => props.onOnlyPinnedChange(event.currentTarget.checked)}
-          size="default"
-          wrapperClassName="inline-flex gap-1.5 rounded-md border border-border-muted bg-surface px-2 py-1.5 text-[12px] text-text-secondary"
-        >
-          {t("filter.onlyPinned")}
-        </Checkbox>
+        <label className="inline-flex items-center gap-2 rounded-md border border-border-muted bg-surface px-2 py-1.5 text-[12px] text-text-secondary">
+          <Switch
+            size="sm"
+            checked={props.onlyPinned}
+            onChange={(event) => props.onOnlyPinnedChange(event.currentTarget.checked)}
+            aria-label={t("filter.onlyPinned")}
+          />
+          <span>{t("filter.onlyPinned")}</span>
+        </label>
       </div>
     </div>
   );

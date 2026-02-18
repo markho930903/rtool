@@ -6,7 +6,7 @@ import { localeActions, useLocaleStore } from "@/i18n/store";
 import type { LocalePreference } from "@/i18n/types";
 import { useLayoutStore } from "@/layouts/layout.store";
 import type { LayoutPreference } from "@/layouts/layout.types";
-import { Button, Checkbox, Input, Select } from "@/components/ui";
+import { Button, Input, Select, SwitchField } from "@/components/ui";
 import type { SelectOptionInput } from "@/components/ui";
 import {
   importBackendLocaleFile,
@@ -812,10 +812,11 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="max-w-[560px] space-y-3 rounded-lg border border-border-muted bg-surface-soft px-3 py-3">
-                  <Checkbox
+                  <SwitchField
                     checked={sizeCleanupEnabled}
                     label={t("clipboard.sizeCleanupEnabled")}
                     description={t("clipboard.sizeCleanupEnabledDesc")}
+                    controlPosition="end"
                     onChange={(event) => {
                       setSizeCleanupEnabled(event.currentTarget.checked);
                       setSaveMessage(null);
@@ -951,25 +952,28 @@ export default function SettingsPage() {
                     />
                   </div>
 
-                  <Checkbox
+                  <SwitchField
                     checked={transferResumeEnabled}
                     label={t("transfer.resumeEnabled")}
+                    controlPosition="end"
                     onChange={(event) => {
                       setTransferResumeEnabled(event.currentTarget.checked);
                       setTransferSaveMessage(null);
                     }}
                   />
-                  <Checkbox
+                  <SwitchField
                     checked={transferDiscoveryEnabled}
                     label={t("transfer.discoveryEnabled")}
+                    controlPosition="end"
                     onChange={(event) => {
                       setTransferDiscoveryEnabled(event.currentTarget.checked);
                       setTransferSaveMessage(null);
                     }}
                   />
-                  <Checkbox
+                  <SwitchField
                     checked={transferPairingRequired}
                     label={t("transfer.pairingRequired")}
+                    controlPosition="end"
                     onChange={(event) => {
                       setTransferPairingRequired(event.currentTarget.checked);
                       setTransferSaveMessage(null);
@@ -1093,9 +1097,9 @@ export default function SettingsPage() {
                   </div>
 
                   <div className="rounded-lg border border-border-muted bg-surface-soft px-3 py-3">
-                    <Checkbox
-                      size="default"
+                    <SwitchField
                       checked={logRealtimeEnabled}
+                      controlPosition="end"
                       onChange={(event) => {
                         setLogRealtimeEnabled(event.currentTarget.checked);
                         setLoggingSaveMessage(null);
@@ -1108,9 +1112,9 @@ export default function SettingsPage() {
                   </div>
 
                   <div className="rounded-lg border border-border-muted bg-surface-soft px-3 py-3">
-                    <Checkbox
-                      size="default"
+                    <SwitchField
                       checked={logAllowRawView}
+                      controlPosition="end"
                       onChange={(event) => {
                         setLogAllowRawView(event.currentTarget.checked);
                         setLoggingSaveMessage(null);

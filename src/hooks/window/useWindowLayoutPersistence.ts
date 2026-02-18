@@ -76,15 +76,12 @@ export function useWindowLayoutPersistence(options: UseWindowLayoutPersistenceOp
         return;
       }
 
-      const boundsResult = await runRecoverable(
-        () => resolveBounds(stored),
-        {
-          scope,
-          action: "resolve_window_bounds",
-          message: "resolve window bounds failed",
-          metadata: { storageKey },
-        },
-      );
+      const boundsResult = await runRecoverable(() => resolveBounds(stored), {
+        scope,
+        action: "resolve_window_bounds",
+        message: "resolve window bounds failed",
+        metadata: { storageKey },
+      });
 
       if (!boundsResult.ok || !boundsResult.data) {
         return;

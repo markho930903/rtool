@@ -50,9 +50,7 @@ export default function TransferHistoryPanel(props: TransferHistoryPanelProps) {
       </div>
 
       <div className="mt-3 max-h-[28rem] space-y-2 overflow-auto">
-        {props.history.length === 0 ? (
-          <p className="text-xs text-text-secondary">{t("history.empty")}</p>
-        ) : null}
+        {props.history.length === 0 ? <p className="text-xs text-text-secondary">{t("history.empty")}</p> : null}
 
         {props.history.map((item) => (
           <article key={item.id} className="rounded-3 border border-border-muted p-2">

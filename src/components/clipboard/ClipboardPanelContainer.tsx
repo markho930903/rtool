@@ -180,10 +180,13 @@ export default function ClipboardPanelContainer(props: ClipboardPanelProps) {
     [handleCopyFilePaths],
   );
 
-  const handlePreviewItem = useCallback((item: ClipboardItem) => {
-    setActionFeedback(null);
-    setPreviewItem(item);
-  }, [setActionFeedback]);
+  const handlePreviewItem = useCallback(
+    (item: ClipboardItem) => {
+      setActionFeedback(null);
+      setPreviewItem(item);
+    },
+    [setActionFeedback],
+  );
 
   useClipboardHotkeys({
     visibleItems,

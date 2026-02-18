@@ -1,5 +1,6 @@
 import { create } from "zustand";
 
+import { getHomeModuleRouteConfig, type AppRouteId } from "@/routers/routes.config";
 import { fetchDashboardSnapshot, type DashboardSnapshot } from "@/services/dashboard.service";
 
 const POLLING_INTERVAL_MS = 3000;
@@ -14,6 +15,13 @@ export interface DashboardHistoryPoint {
   systemUsedMemoryBytes: number | null;
 }
 
+export interface DashboardModuleStatusItem {
+  id: AppRouteId;
+  nameKey: string;
+  detailKey: string;
+  state: "online";
+}
+
 interface DashboardState {
   snapshot: DashboardSnapshot | null;
   history: DashboardHistoryPoint[];
@@ -26,6 +34,7 @@ interface DashboardActions {
   refresh: () => Promise<void>;
   startPolling: () => void;
   stopPolling: () => void;
+  getModuleStatusItems: () => DashboardModuleStatusItem[];
 }
 
 type DashboardStore = DashboardState & DashboardActions;
@@ -100,5 +109,13 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
 
     window.clearInterval(pollingTimer);
     pollingTimer = null;
+  },
+  getModuleStatusItems() {
+    return getHomeModuleRouteConfig().map((item) => ({
+      id: item.id,
+      nameKey: item.nameKey,
+      detailKey: item.detailKey,
+      state: item.state,
+    }));
   },
 }));

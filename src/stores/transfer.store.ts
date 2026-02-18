@@ -136,7 +136,7 @@ export const useTransferStore = create<TransferStore>((set, get) => ({
         selectedPeerId:
           state.selectedPeerId && peers.some((peer) => peer.deviceId === state.selectedPeerId)
             ? state.selectedPeerId
-            : peers[0]?.deviceId ?? "",
+            : (peers[0]?.deviceId ?? ""),
       }));
     } catch (error) {
       set({ error: error instanceof Error ? error.message : String(error) });
@@ -285,7 +285,7 @@ export const useTransferStore = create<TransferStore>((set, get) => ({
       selectedPeerId:
         state.selectedPeerId && peers.some((peer) => peer.deviceId === state.selectedPeerId)
           ? state.selectedPeerId
-          : peers[0]?.deviceId ?? "",
+          : (peers[0]?.deviceId ?? ""),
     }));
   },
 

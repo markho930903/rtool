@@ -2,6 +2,7 @@ import { useEffect, useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui";
+import { getRoutePathById } from "@/routers/routes.config";
 import { useAppStore } from "@/stores/app.store";
 import { useDashboardStore, type DashboardHistoryPoint } from "@/stores/dashboard.store";
 
@@ -22,13 +23,8 @@ interface TerminalPanelProps {
   subtitle: string;
   children: ReactNode;
 }
-
-const MODULE_STATUS = [
-  { nameKey: "module.mainWindow.name", detailKey: "module.mainWindow.detail", state: "online" },
-  { nameKey: "module.launcher.name", detailKey: "module.launcher.detail", state: "online" },
-  { nameKey: "module.clipboard.name", detailKey: "module.clipboard.detail", state: "online" },
-  { nameKey: "module.tools.name", detailKey: "module.tools.detail", state: "online" },
-] as const;
+const TOOLS_ROUTE_PATH = getRoutePathById("tools");
+const APP_MANAGER_ROUTE_PATH = getRoutePathById("app_manager");
 
 function formatBytes(bytes: number | null): string {
   if (bytes === null || !Number.isFinite(bytes) || bytes < 0) {
@@ -177,7 +173,7 @@ function MemorySparkline(props: {
 }
 
 export default function HomePage() {
-  const { t, i18n } = useTranslation("home");
+  const { t, i18n } = useTranslation(["home", "layout", "app_manager"]);
   const emptyToken = t("common:status.empty");
   const locale = i18n.resolvedLanguage ?? i18n.language;
 
@@ -189,6 +185,7 @@ export default function HomePage() {
   const refresh = useDashboardStore((state) => state.refresh);
   const startPolling = useDashboardStore((state) => state.startPolling);
   const stopPolling = useDashboardStore((state) => state.stopPolling);
+  const getModuleStatusItems = useDashboardStore((state) => state.getModuleStatusItems);
   const windowMode = useAppStore((state) => state.windowMode);
 
   useEffect(() => {
@@ -209,8 +206,8 @@ export default function HomePage() {
   const sampledAt = snapshot?.sampledAt ?? null;
 
   const moduleStatus = useMemo(
-    () => MODULE_STATUS.map((item) => ({ ...item, name: t(item.nameKey), detail: t(item.detailKey) })),
-    [t],
+    () => getModuleStatusItems().map((item) => ({ ...item, name: t(item.nameKey), detail: t(item.detailKey) })),
+    [getModuleStatusItems, t],
   );
 
   return (
@@ -235,9 +232,13 @@ export default function HomePage() {
               />
               <span>{t("action.refreshNow")}</span>
             </Button>
-            <Button as="link" to="/tools" variant="primary">
+            <Button as="link" to={TOOLS_ROUTE_PATH} variant="primary">
               <span className="btn-icon i-noto:hammer-and-wrench" aria-hidden="true" />
               <span>{t("action.openTools")}</span>
+            </Button>
+            <Button as="link" to={APP_MANAGER_ROUTE_PATH} variant="secondary">
+              <span className="btn-icon i-noto:card-index-dividers" aria-hidden="true" />
+              <span>{t("layout:nav.appManager")}</span>
             </Button>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-text-muted">
@@ -314,7 +315,7 @@ export default function HomePage() {
           <div className="space-y-2">
             {moduleStatus.map((item) => (
               <article
-                key={item.name}
+                key={item.id}
                 className="flex items-start justify-between gap-3 rounded-lg border border-border-muted/70 bg-app/55 px-3 py-2"
               >
                 <div>

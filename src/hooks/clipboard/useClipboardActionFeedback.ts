@@ -24,7 +24,10 @@ function resolveCopyBackErrorMessage(item: ClipboardItem, message: string, t: Tr
     return message;
   }
 
-  if (message.includes("clipboard_set_files_verify_failed") || message.includes("clipboard_set_files_unsupported_target")) {
+  if (
+    message.includes("clipboard_set_files_verify_failed") ||
+    message.includes("clipboard_set_files_unsupported_target")
+  ) {
     return t("panel.copyMessageFileFailedUnsupported");
   }
 
@@ -66,15 +69,12 @@ export function useClipboardActionFeedback(
 
   const handleCopyPreviewImage = useCallback(
     async (id: string) => {
-      const result = await runRecoverable(
-        () => copyImageBack(id),
-        {
-          scope: "clipboard-panel",
-          action: "copy_preview_image",
-          message: "copy image failed",
-          metadata: { id },
-        },
-      );
+      const result = await runRecoverable(() => copyImageBack(id), {
+        scope: "clipboard-panel",
+        action: "copy_preview_image",
+        message: "copy image failed",
+        metadata: { id },
+      });
 
       if (!result.ok) {
         setActionFeedback(toActionFeedback("error", result.message));
@@ -151,14 +151,11 @@ export function useClipboardActionFeedback(
       setClearAllError(null);
       callbacks?.before?.();
 
-      const result = await runRecoverable(
-        () => clearAllItems(),
-        {
-          scope: "clipboard-panel",
-          action: "clear_all",
-          message: "clear all failed",
-        },
-      );
+      const result = await runRecoverable(() => clearAllItems(), {
+        scope: "clipboard-panel",
+        action: "clear_all",
+        message: "clear all failed",
+      });
 
       if (!result.ok) {
         setClearAllError(t("panel.clearAllFailed", { message: result.message }));

@@ -1,3 +1,4 @@
+pub mod app_manager;
 pub mod clipboard;
 pub mod dashboard;
 pub mod i18n_import;

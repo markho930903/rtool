@@ -130,9 +130,7 @@ export default function ClipboardItemCard(props: ClipboardItemCardProps) {
     const rowClassName = [
       "rounded-md border border-transparent px-2.5 py-2.25 text-left transition-colors duration-[140ms] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
       isSelected ? "border-accent bg-accent-soft" : "hover:bg-surface-soft",
-      props.onSelect
-        ? "cursor-pointer"
-        : "",
+      props.onSelect ? "cursor-pointer" : "",
     ]
       .filter(Boolean)
       .join(" ");

@@ -61,8 +61,8 @@ const BUILTIN_BUNDLES: &[BuiltinBundle] = &[
     },
     BuiltinBundle {
         locale: "zh-CN",
-        namespace: "notFound",
-        content: include_str!("../../../i18n/source/zh-CN/notFound.json"),
+        namespace: "not_found",
+        content: include_str!("../../../i18n/source/zh-CN/not_found.json"),
     },
     BuiltinBundle {
         locale: "zh-CN",
@@ -116,8 +116,8 @@ const BUILTIN_BUNDLES: &[BuiltinBundle] = &[
     },
     BuiltinBundle {
         locale: "en-US",
-        namespace: "notFound",
-        content: include_str!("../../../i18n/source/en-US/notFound.json"),
+        namespace: "not_found",
+        content: include_str!("../../../i18n/source/en-US/not_found.json"),
     },
     BuiltinBundle {
         locale: "en-US",

@@ -57,6 +57,227 @@ pub struct LauncherItemDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct AppManagerQueryDto {
+    pub keyword: Option<String>,
+    pub category: Option<String>,
+    pub startup_only: Option<bool>,
+    pub limit: Option<u32>,
+    pub cursor: Option<String>,
+}
+
+impl Default for AppManagerQueryDto {
+    fn default() -> Self {
+        Self {
+            keyword: None,
+            category: None,
+            startup_only: Some(false),
+            limit: Some(100),
+            cursor: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedAppDto {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bundle_or_app_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub version: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub publisher: Option<String>,
+    pub platform: String,
+    pub source: String,
+    pub icon_kind: String,
+    pub icon_value: String,
+    pub estimated_size_bytes: Option<u64>,
+    pub startup_enabled: bool,
+    pub startup_scope: String,
+    pub startup_editable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub readonly_reason_code: Option<String>,
+    pub uninstall_supported: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uninstall_kind: Option<String>,
+    pub risk_level: String,
+    pub fingerprint: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppManagerPageDto {
+    pub items: Vec<ManagedAppDto>,
+    pub next_cursor: Option<String>,
+    pub indexed_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppManagerStartupUpdateInputDto {
+    pub app_id: String,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppManagerUninstallInputDto {
+    pub app_id: String,
+    pub confirmed_fingerprint: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppManagerDetailQueryDto {
+    pub app_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppRelatedRootDto {
+    pub id: String,
+    pub label: String,
+    pub path: String,
+    pub scope: String,
+    pub kind: String,
+    pub exists: bool,
+    pub readonly: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub readonly_reason_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppSizeSummaryDto {
+    pub app_bytes: Option<u64>,
+    pub residue_bytes: Option<u64>,
+    pub total_bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagedAppDetailDto {
+    pub app: ManagedAppDto,
+    pub install_path: String,
+    pub related_roots: Vec<AppRelatedRootDto>,
+    pub size_summary: AppSizeSummaryDto,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppManagerResidueScanInputDto {
+    pub app_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppManagerResidueItemDto {
+    pub item_id: String,
+    pub path: String,
+    pub kind: String,
+    pub scope: String,
+    pub size_bytes: u64,
+    pub match_reason: String,
+    pub risk_level: String,
+    pub recommended: bool,
+    pub readonly: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub readonly_reason_code: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppManagerResidueGroupDto {
+    pub group_id: String,
+    pub label: String,
+    pub scope: String,
+    pub kind: String,
+    pub total_size_bytes: u64,
+    pub items: Vec<AppManagerResidueItemDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppManagerScanWarningDto {
+    pub code: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppManagerResidueScanResultDto {
+    pub app_id: String,
+    pub total_size_bytes: u64,
+    pub groups: Vec<AppManagerResidueGroupDto>,
+    pub warnings: Vec<AppManagerScanWarningDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppManagerCleanupInputDto {
+    pub app_id: String,
+    pub selected_item_ids: Vec<String>,
+    pub delete_mode: String,
+    pub include_main_app: bool,
+    pub skip_on_error: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confirmed_fingerprint: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppManagerCleanupItemResultDto {
+    pub item_id: String,
+    pub path: String,
+    pub kind: String,
+    pub status: String,
+    pub reason_code: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size_bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppManagerCleanupResultDto {
+    pub app_id: String,
+    pub delete_mode: String,
+    pub released_size_bytes: u64,
+    pub deleted: Vec<AppManagerCleanupItemResultDto>,
+    pub skipped: Vec<AppManagerCleanupItemResultDto>,
+    pub failed: Vec<AppManagerCleanupItemResultDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppManagerExportScanInputDto {
+    pub app_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppManagerExportScanResultDto {
+    pub app_id: String,
+    pub file_path: String,
+    pub directory_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppManagerActionResultDto {
+    pub ok: bool,
+    pub code: String,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClipboardFilterDto {
     pub query: Option<String>,

@@ -155,11 +155,7 @@ export default function TransferPage() {
         />
 
         <div className="space-y-3">
-          <TransferDropzone
-            pendingFiles={pendingFiles}
-            onChangeFiles={setPendingFiles}
-            onSend={sendPendingFiles}
-          />
+          <TransferDropzone pendingFiles={pendingFiles} onChangeFiles={setPendingFiles} onSend={sendPendingFiles} />
           <TransferSessionList
             sessions={sessions}
             onPause={pauseSession}

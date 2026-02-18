@@ -6,8 +6,13 @@ import { BootOverlay, useBootState } from "@/components/loading";
 import { Button } from "@/components/ui";
 import { useLocaleStore } from "@/i18n/store";
 import { useLayoutStore } from "@/layouts/layout.store";
+import {
+  getMainMenuRouteConfig,
+  isRouteActiveById,
+  resolveActiveMainMenuByPath,
+  resolveWindowModeByPath,
+} from "@/routers/routes.config";
 import { useAppStore } from "@/stores/app.store";
-import type { WindowMode } from "@/stores/types";
 import { useThemeStore } from "@/theme/store";
 import type { ThemePreference } from "@/theme/types";
 
@@ -17,15 +22,7 @@ const THEME_ICON_MAP: Record<ThemePreference, string> = {
   light: "i-noto:sun",
 };
 
-const NAV_ITEMS = [
-  { to: "/", labelKey: "nav.dashboard", icon: "i-noto:house", end: true },
-  { to: "/tools", labelKey: "nav.tools", icon: "i-noto:hammer-and-wrench", end: false },
-  { to: "/transfer", labelKey: "nav.transfer", icon: "i-noto:outbox-tray", end: false },
-  { to: "/logs", labelKey: "nav.logs", icon: "i-noto:scroll", end: false },
-  { to: "/settings", labelKey: "nav.settings", icon: "i-noto:gear", end: false },
-] as const;
-
-type NavItem = (typeof NAV_ITEMS)[number];
+const NAV_ITEMS = getMainMenuRouteConfig();
 
 const SIDEBAR_ITEM_BASE_CLASS =
   "relative inline-flex h-14 w-14 select-none flex-col items-center justify-center gap-0.5 overflow-hidden rounded-3 text-text-secondary transition-[background-color,color,box-shadow,transform] duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 [&_.sidebar-item-icon]:transition-transform [&_.sidebar-item-icon]:duration-200 [&_.sidebar-item-label]:transition-colors [&_.sidebar-item-label]:duration-200";
@@ -40,11 +37,11 @@ const TITLEBAR_ICON_BUTTON_CLASS =
   "inline-flex h-9 w-9 select-none items-center justify-center rounded-3 text-text-secondary transition-[background-color,color,transform] duration-200 ease-out hover:bg-sidebar-item-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 active:scale-[0.97]";
 
 const TITLEBAR_MENU_ITEM_BASE_CLASS =
-  "flex items-center gap-2 rounded-2 px-2.5 py-2 text-text-secondary transition-colors duration-150 ease-out";
+  "flex items-center gap-2.5 rounded-md border px-2.5 py-2 text-text-secondary transition-[border-color,background-color,color] duration-[140ms]";
 
-const TITLEBAR_MENU_ITEM_ACTIVE_CLASS = "bg-sidebar-item-active text-text-primary";
+const TITLEBAR_MENU_ITEM_ACTIVE_CLASS = "border-accent/45 bg-accent-soft text-text-primary shadow-inset-soft";
 
-const TITLEBAR_MENU_ITEM_IDLE_CLASS = "hover:bg-sidebar-item-hover hover:text-text-primary";
+const TITLEBAR_MENU_ITEM_IDLE_CLASS = "border-transparent hover:border-border-muted/70 hover:bg-surface-soft hover:text-text-primary";
 
 function getNextTheme(preference: ThemePreference): ThemePreference {
   if (preference === "system") {
@@ -56,42 +53,6 @@ function getNextTheme(preference: ThemePreference): ThemePreference {
   }
 
   return "system";
-}
-
-function resolveWindowMode(pathname: string): WindowMode {
-  if (pathname.startsWith("/tools")) {
-    return "tools";
-  }
-
-  if (pathname.startsWith("/transfer")) {
-    return "transfer";
-  }
-
-  if (pathname.startsWith("/logs")) {
-    return "logs";
-  }
-
-  return "dashboard";
-}
-
-function resolveActiveNavItem(pathname: string): NavItem {
-  if (pathname.startsWith("/tools")) {
-    return NAV_ITEMS[1];
-  }
-
-  if (pathname.startsWith("/transfer")) {
-    return NAV_ITEMS[2];
-  }
-
-  if (pathname.startsWith("/logs")) {
-    return NAV_ITEMS[3];
-  }
-
-  if (pathname.startsWith("/settings")) {
-    return NAV_ITEMS[4];
-  }
-
-  return NAV_ITEMS[0];
 }
 
 function MainContent({ isSettingsRoute }: { isSettingsRoute: boolean }) {
@@ -199,8 +160,8 @@ export default function AppLayout() {
   const localeInitialized = useLocaleStore((state) => state.initialized);
   const themeInitialized = useThemeStore((state) => state.initialized);
   const setWindowMode = useAppStore((state) => state.setWindowMode);
-  const isSettingsRoute = location.pathname.startsWith("/settings");
-  const currentNavItem = useMemo(() => resolveActiveNavItem(location.pathname), [location.pathname]);
+  const isSettingsRoute = useMemo(() => isRouteActiveById("settings", location.pathname), [location.pathname]);
+  const currentNavItem = useMemo(() => resolveActiveMainMenuByPath(location.pathname), [location.pathname]);
   const currentLabel = t(currentNavItem.labelKey);
   const switchMenuLabel = t("titlebar.switchMenu", { current: currentLabel });
 
@@ -218,7 +179,7 @@ export default function AppLayout() {
   });
 
   useEffect(() => {
-    setWindowMode(resolveWindowMode(location.pathname));
+    setWindowMode(resolveWindowModeByPath(location.pathname));
   }, [location.pathname, setWindowMode]);
 
   useEffect(() => {
@@ -293,7 +254,7 @@ export default function AppLayout() {
             {menuOpen ? (
               <div
                 ref={menuRef}
-                className="absolute left-0 top-[calc(100%+0.45rem)] z-50 min-w-[180px] rounded-overlay border border-border-muted bg-surface-popover p-2 shadow-popover ring-1 ring-inset ring-popover-highlight backdrop-blur-md backdrop-saturate-130"
+                className="absolute left-0 top-[calc(100%+0.45rem)] z-50 min-w-[220px] rounded-md border border-border-muted/85 bg-surface-overlay p-2 shadow-overlay backdrop-blur-[24px] backdrop-saturate-140"
                 role="menu"
                 aria-label={t("titlebar.menuAria")}
               >
@@ -316,7 +277,7 @@ export default function AppLayout() {
                           ].join(" ")
                         }
                       >
-                        <span className={`btn-icon text-[1.05rem] ${item.icon}`} aria-hidden="true" />
+                        <span className={`btn-icon shrink-0 text-[1.1rem] ${item.icon}`} aria-hidden="true" />
                         <span className="truncate text-xs font-medium">{label}</span>
                       </NavLink>
                     );

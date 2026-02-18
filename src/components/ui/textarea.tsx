@@ -14,8 +14,7 @@ export interface TextareaProps extends TextareaHTMLAttributes<HTMLTextAreaElemen
 const variantClassMap: Record<TextareaVariant, string> = {
   default:
     "w-full rounded-md border border-border-muted bg-surface px-3 py-2 text-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-accent",
-  tool:
-    "min-h-[110px] w-full rounded-md border border-border-muted bg-surface px-2.5 py-2 text-ui-sm leading-ui-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-accent",
+  tool: "min-h-[110px] w-full rounded-md border border-border-muted bg-surface px-2.5 py-2 text-ui-sm leading-ui-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-accent",
 };
 
 const resizeClassMap: Record<ResizeMode, string> = {

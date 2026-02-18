@@ -10,15 +10,12 @@ export function parseStoredWindowLayout(raw: string | null): StoredWindowLayout 
     return null;
   }
 
-  const parsed = runRecoverableSync(
-    () => JSON.parse(raw) as Partial<StoredWindowLayout>,
-    {
-      scope: "window-layout",
-      action: "parse_stored_layout",
-      message: "invalid stored layout",
-      silent: true,
-    },
-  );
+  const parsed = runRecoverableSync(() => JSON.parse(raw) as Partial<StoredWindowLayout>, {
+    scope: "window-layout",
+    action: "parse_stored_layout",
+    message: "invalid stored layout",
+    silent: true,
+  });
 
   if (!parsed.ok) {
     return null;
@@ -42,10 +39,7 @@ export function parseStoredWindowLayout(raw: string | null): StoredWindowLayout 
   };
 }
 
-export function clampStoredWindowLayout(
-  layout: StoredWindowLayout,
-  bounds: WindowLayoutBounds,
-): StoredWindowLayout {
+export function clampStoredWindowLayout(layout: StoredWindowLayout, bounds: WindowLayoutBounds): StoredWindowLayout {
   const width = Math.min(Math.max(layout.width, bounds.minWidth), bounds.monitorWidth);
   const height = Math.min(Math.max(layout.height, bounds.minHeight), bounds.monitorHeight);
   const maxX = Math.max(0, bounds.monitorWidth - width);

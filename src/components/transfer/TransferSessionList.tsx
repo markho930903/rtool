@@ -42,15 +42,14 @@ export default function TransferSessionList(props: TransferSessionListProps) {
       <h2 className="text-sm font-semibold text-text-primary">{t("session.title")}</h2>
 
       <div className="mt-3 max-h-[28rem] space-y-2 overflow-auto">
-        {props.sessions.length === 0 ? (
-          <p className="text-xs text-text-secondary">{t("session.empty")}</p>
-        ) : null}
+        {props.sessions.length === 0 ? <p className="text-xs text-text-secondary">{t("session.empty")}</p> : null}
 
         {props.sessions.map((session) => {
           const percent = progressPercent(session);
           const isRunning = session.status === "running" || session.status === "queued";
           const isPaused = session.status === "paused";
-          const canRetry = session.status === "failed" || session.status === "interrupted" || session.status === "canceled";
+          const canRetry =
+            session.status === "failed" || session.status === "interrupted" || session.status === "canceled";
 
           return (
             <article key={session.id} className="rounded-3 border border-border-muted p-3">
@@ -65,7 +64,10 @@ export default function TransferSessionList(props: TransferSessionListProps) {
               </div>
 
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-border-muted">
-                <div className="h-full rounded-full bg-accent transition-all duration-200" style={{ width: `${percent}%` }} />
+                <div
+                  className="h-full rounded-full bg-accent transition-all duration-200"
+                  style={{ width: `${percent}%` }}
+                />
               </div>
 
               <div className="mt-2 flex flex-wrap gap-1">
@@ -97,7 +99,7 @@ export default function TransferSessionList(props: TransferSessionListProps) {
                   </Button>
                 ) : null}
 
-                {(isRunning || isPaused) ? (
+                {isRunning || isPaused ? (
                   <Button
                     type="button"
                     size="xs"
@@ -126,9 +128,7 @@ export default function TransferSessionList(props: TransferSessionListProps) {
                 ) : null}
               </div>
 
-              {session.errorMessage ? (
-                <div className="mt-2 text-[11px] text-danger">{session.errorMessage}</div>
-              ) : null}
+              {session.errorMessage ? <div className="mt-2 text-[11px] text-danger">{session.errorMessage}</div> : null}
             </article>
           );
         })}

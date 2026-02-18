@@ -49,15 +49,12 @@ export function useClipboardDeleteUndo(options: UseClipboardDeleteUndoOptions): 
         setPendingDeleteIds((prev) => prev.filter((value) => value !== item.id));
         setUndoItem((current) => (current?.id === item.id ? null : current));
 
-        void runRecoverable(
-          () => commitDelete(item.id),
-          {
-            scope: "clipboard-panel",
-            action: "commit_delete",
-            message: "delete item failed",
-            metadata: { id: item.id },
-          },
-        ).then((result) => {
+        void runRecoverable(() => commitDelete(item.id), {
+          scope: "clipboard-panel",
+          action: "commit_delete",
+          message: "delete item failed",
+          metadata: { id: item.id },
+        }).then((result) => {
           if (!result.ok) {
             onDeleteError?.(result.message);
           }

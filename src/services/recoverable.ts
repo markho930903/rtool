@@ -27,15 +27,11 @@ function logRecoverableError(context: RecoverableContext, message: string, error
     return;
   }
 
-  logWarn(
-    context.scope,
-    `${context.action}_recoverable_failed`,
-    {
-      ...(context.metadata ?? {}),
-      error: message,
-      rawError: error instanceof Error ? error.name : String(error),
-    },
-  );
+  logWarn(context.scope, `${context.action}_recoverable_failed`, {
+    ...(context.metadata ?? {}),
+    error: message,
+    rawError: error instanceof Error ? error.name : String(error),
+  });
 }
 
 export async function runRecoverable<T>(
@@ -55,10 +51,7 @@ export async function runRecoverable<T>(
   }
 }
 
-export function runRecoverableSync<T>(
-  task: () => T,
-  context: RecoverableContext,
-): RecoverableResult<T> {
+export function runRecoverableSync<T>(task: () => T, context: RecoverableContext): RecoverableResult<T> {
   try {
     const data = task();
     return { ok: true, data };

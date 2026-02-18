@@ -1,3 +1,4 @@
+pub mod app_manager_service;
 pub mod clipboard_service;
 pub mod icon_service;
 pub mod launcher_service;

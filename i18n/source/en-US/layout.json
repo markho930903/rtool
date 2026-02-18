@@ -9,6 +9,7 @@
   "nav.tools": "Tools",
   "nav.transfer": "Transfer",
   "nav.logs": "Logs",
+  "nav.appManager": "Apps",
   "nav.settings": "Settings",
   "titlebar.menuAria": "Title bar menu switcher",
   "titlebar.switchMenu": "Current menu: {current} (click to switch)"

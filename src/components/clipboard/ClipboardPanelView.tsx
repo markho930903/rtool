@@ -146,15 +146,16 @@ export default function ClipboardPanelView(props: ClipboardPanelViewProps) {
       {props.error ? <div className="mt-2 text-[12px] text-text-muted text-danger">{props.error}</div> : null}
       {props.actionFeedback ? (
         <div
-          className={[
-            "mt-2 text-[12px]",
-            props.actionFeedback.kind === "error" ? "text-danger" : "text-info",
-          ].join(" ")}
+          className={["mt-2 text-[12px]", props.actionFeedback.kind === "error" ? "text-danger" : "text-info"].join(
+            " ",
+          )}
         >
           {props.actionFeedback.message}
         </div>
       ) : null}
-      {props.clearAllError ? <div className="mt-2 text-[12px] text-text-muted text-danger">{props.clearAllError}</div> : null}
+      {props.clearAllError ? (
+        <div className="mt-2 text-[12px] text-text-muted text-danger">{props.clearAllError}</div>
+      ) : null}
 
       <div
         className={

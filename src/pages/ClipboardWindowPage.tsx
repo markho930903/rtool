@@ -42,14 +42,11 @@ export default function ClipboardWindowPage() {
   const enabled = appWindow.label === CLIPBOARD_WINDOW_LABEL;
 
   const resolveScaleFactor = useCallback(async () => {
-    const result = await runRecoverable(
-      () => appWindow.scaleFactor(),
-      {
-        scope: "clipboard-window",
-        action: "resolve_scale_factor",
-        message: "resolve scale factor failed",
-      },
-    );
+    const result = await runRecoverable(() => appWindow.scaleFactor(), {
+      scope: "clipboard-window",
+      action: "resolve_scale_factor",
+      message: "resolve scale factor failed",
+    });
 
     if (!result.ok) {
       return 1;
@@ -62,14 +59,11 @@ export default function ClipboardWindowPage() {
     const compactWidthPx = Math.max(1, Math.round(COMPACT_WIDTH_LOGICAL * scaleFactor));
     const minHeightPx = Math.max(1, Math.round(MIN_HEIGHT_LOGICAL * scaleFactor));
 
-    const monitorResult = await runRecoverable(
-      () => currentMonitor(),
-      {
-        scope: "clipboard-window",
-        action: "read_current_monitor",
-        message: "read monitor failed",
-      },
-    );
+    const monitorResult = await runRecoverable(() => currentMonitor(), {
+      scope: "clipboard-window",
+      action: "read_current_monitor",
+      message: "read monitor failed",
+    });
 
     if (!monitorResult.ok) {
       return null;
@@ -117,14 +111,11 @@ export default function ClipboardWindowPage() {
     }
 
     let disposed = false;
-    void runRecoverable(
-      () => appWindow.isAlwaysOnTop(),
-      {
-        scope: "clipboard-window",
-        action: "read_always_on_top",
-        message: "read always-on-top failed",
-      },
-    ).then((result) => {
+    void runRecoverable(() => appWindow.isAlwaysOnTop(), {
+      scope: "clipboard-window",
+      action: "read_always_on_top",
+      message: "read always-on-top failed",
+    }).then((result) => {
       if (disposed || !result.ok) {
         return;
       }
@@ -253,15 +244,12 @@ export default function ClipboardWindowPage() {
 
   const handleAlwaysOnTopToggle = useCallback(() => {
     const next = !alwaysOnTop;
-    void runRecoverable(
-      () => appWindow.setAlwaysOnTop(next),
-      {
-        scope: "clipboard-window",
-        action: "toggle_always_on_top",
-        message: "toggle always-on-top failed",
-        metadata: { next },
-      },
-    ).then((result) => {
+    void runRecoverable(() => appWindow.setAlwaysOnTop(next), {
+      scope: "clipboard-window",
+      action: "toggle_always_on_top",
+      message: "toggle always-on-top failed",
+      metadata: { next },
+    }).then((result) => {
       if (!result.ok) {
         return;
       }
@@ -338,14 +326,7 @@ export default function ClipboardWindowPage() {
         modeResizeTimerRef.current = null;
       }
     };
-  }, [
-    appWindow,
-    applyModeSize,
-    cancelScheduledHide,
-    enabled,
-    syncFromStorage,
-    syncLocaleFromBackend,
-  ]);
+  }, [appWindow, applyModeSize, cancelScheduledHide, enabled, syncFromStorage, syncLocaleFromBackend]);
 
   const handleDrag = (event: MouseEvent<HTMLElement>) => {
     if (event.button !== 0) {

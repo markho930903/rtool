@@ -131,13 +131,13 @@ body {
 
 html[data-window-label="launcher"] body {
   background: transparent;
-  border-radius: var(--radius-overlay);
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 
 html[data-window-label="launcher"] #root {
   background: transparent;
-  border-radius: var(--radius-overlay);
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 

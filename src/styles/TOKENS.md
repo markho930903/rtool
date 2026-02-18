@@ -11,27 +11,27 @@
 ## 2. 分层模型
 
 1. Primitive（原子值）：
-`--primitive-*`，只存储原始设计值（颜色、字号、间距、圆角）。
+   `--primitive-*`，只存储原始设计值（颜色、字号、间距、圆角）。
 2. Semantic（语义值）：
-`--color-*`、`--font-size-*`、`--space-*`、`--radius-*`，描述用途，不描述视觉名字。
+   `--color-*`、`--font-size-*`、`--space-*`、`--radius-*`，描述用途，不描述视觉名字。
 3. Component（组件值）：
-`--shadow-*`、局部高阶语义 token，用于具体组件态（浮层、侧栏选中态等）。
+   `--shadow-*`、局部高阶语义 token，用于具体组件态（浮层、侧栏选中态等）。
 
 ## 3. 命名约束
 
 1. 颜色语义：
-`color-bg-*`、`color-surface-*`、`color-text-*`、`color-border-*`、`color-accent`、`color-danger`。
+   `color-bg-*`、`color-surface-*`、`color-text-*`、`color-border-*`、`color-accent`、`color-danger`。
 2. 尺寸语义：
-`font-size-ui-*`、`line-height-ui-*`、`space-*`、`radius-*`。
+   `font-size-ui-*`、`line-height-ui-*`、`space-*`、`radius-*`。
 3. 状态语义：
-使用 `accent` / `danger` / `info`，避免直接引用调色板色名。
+   使用 `accent` / `danger` / `info`，避免直接引用调色板色名。
 
 ## 4. 业务层禁止项
 
 1. 禁止使用非主题色类名：
-`text-red-*`、`bg-blue-*`、`text-white` 等。
+   `text-red-*`、`bg-blue-*`、`text-white` 等。
 2. 禁止直接写颜色函数：
-`rgb(...)`、`rgba(...)`、`hsl(...)`、`hsla(...)`。
+   `rgb(...)`、`rgba(...)`、`hsl(...)`、`hsla(...)`。
 3. 禁止在业务组件中使用 `[...]` 直接读取 `var(--color-*)` / `var(--shadow-*)` / `var(--radius-*)`。
 4. 禁止在 `shadow-[...]` 中直接拼接颜色函数。
 

@@ -92,8 +92,7 @@
   --shadow-inset-soft: inset 0 1px 0 rgb(var(--primitive-color-white) / 2%);
   --shadow-inset-divider: inset -1px 0 0 rgb(var(--primitive-color-white) / 2%);
   --shadow-sidebar-item-active:
-    0 4px 10px rgb(var(--primitive-color-black) / 6%),
-    inset 0 1px 0 rgb(var(--primitive-color-white) / 6%);
+    0 4px 10px rgb(var(--primitive-color-black) / 6%), inset 0 1px 0 rgb(var(--primitive-color-white) / 6%);
   --shadow-sidebar-item-hover: 0 2px 6px rgb(var(--primitive-color-black) / 4%);
 
   /* semantic: radius */
@@ -167,8 +166,7 @@ html[data-theme="light"] {
   --shadow-inset-soft: inset 0 1px 0 rgb(var(--primitive-color-white) / 24%);
   --shadow-inset-divider: inset -1px 0 0 rgb(var(--primitive-color-ink-light) / 8%);
   --shadow-sidebar-item-active:
-    0 4px 10px rgb(var(--primitive-color-ink-light) / 8%),
-    inset 0 1px 0 rgb(var(--primitive-color-white) / 32%);
+    0 4px 10px rgb(var(--primitive-color-ink-light) / 8%), inset 0 1px 0 rgb(var(--primitive-color-white) / 32%);
   --shadow-sidebar-item-hover: 0 2px 6px rgb(var(--primitive-color-ink-light) / 6%);
 }
 

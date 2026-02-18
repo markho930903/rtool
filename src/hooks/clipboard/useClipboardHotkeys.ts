@@ -34,15 +34,7 @@ interface UseClipboardHotkeysOptions {
 }
 
 export function useClipboardHotkeys(options: UseClipboardHotkeysOptions) {
-  const {
-    enabled = true,
-    visibleItems,
-    selectedItem,
-    onSelectItemId,
-    onCopyBack,
-    onPinToggle,
-    onDelete,
-  } = options;
+  const { enabled = true, visibleItems, selectedItem, onSelectItemId, onCopyBack, onPinToggle, onDelete } = options;
 
   useEffect(() => {
     if (!enabled) {

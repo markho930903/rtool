@@ -64,9 +64,7 @@ export default function TransferPeerPanel(props: TransferPeerPanelProps) {
       </div>
 
       <div className="mt-4 max-h-60 overflow-auto space-y-1 rounded-2 border border-border-muted p-2">
-        {props.peers.length === 0 ? (
-          <p className="text-xs text-text-secondary">{t("peer.empty")}</p>
-        ) : null}
+        {props.peers.length === 0 ? <p className="text-xs text-text-secondary">{t("peer.empty")}</p> : null}
         {props.peers.map((peer) => (
           <div key={peer.deviceId} className="rounded-2 px-2 py-1.5 text-xs text-text-secondary">
             <div className="font-medium text-text-primary">{peer.displayName}</div>

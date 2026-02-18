@@ -141,9 +141,7 @@ export default function TransferDropzone(props: TransferDropzoneProps) {
       />
 
       <div className="mt-3 max-h-44 overflow-auto rounded-2 border border-border-muted p-2">
-        {props.pendingFiles.length === 0 ? (
-          <p className="text-xs text-text-secondary">{t("dropzone.empty")}</p>
-        ) : null}
+        {props.pendingFiles.length === 0 ? <p className="text-xs text-text-secondary">{t("dropzone.empty")}</p> : null}
         {props.pendingFiles.map((item) => (
           <div key={item.path} className="truncate py-1 text-xs text-text-primary">
             {item.relativePath ?? item.path}

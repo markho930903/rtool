@@ -305,8 +305,8 @@ export default function LauncherWindowPage() {
   }
 
   return (
-    <div className="relative h-screen w-screen overflow-hidden rounded-overlay bg-transparent p-0">
-      <section className="flex h-full w-full overflow-hidden rounded-overlay border border-border-muted/85 bg-surface-overlay shadow-overlay backdrop-blur-[24px] backdrop-saturate-140">
+    <div className="relative h-screen w-screen overflow-hidden rounded-md bg-transparent p-0">
+      <section className="flex h-full w-full overflow-hidden rounded-md border border-border-muted/85 bg-surface-overlay shadow-overlay backdrop-blur-[24px] backdrop-saturate-140">
         <div className="flex min-w-0 flex-[1.4] flex-col border-r border-border-muted/85">
           <PaletteInput query={query} loading={loading} onQueryChange={setQuery} inputRef={inputRef} />
 

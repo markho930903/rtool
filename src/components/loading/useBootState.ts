@@ -51,55 +51,61 @@ export function useBootState(options: UseBootStateOptions): UseBootStateResult {
     clearTimer(exitTimerRef);
   }, []);
 
-  const startExit = useCallback((cycleId: number) => {
-    if (cycleIdRef.current !== cycleId || phaseRef.current !== "visible") {
-      return;
-    }
+  const startExit = useCallback(
+    (cycleId: number) => {
+      if (cycleIdRef.current !== cycleId || phaseRef.current !== "visible") {
+        return;
+      }
 
-    phaseRef.current = "exiting";
-    setVisible(false);
+      phaseRef.current = "exiting";
+      setVisible(false);
 
-    exitTimerRef.current = window.setTimeout(() => {
+      exitTimerRef.current = window.setTimeout(() => {
+        if (cycleIdRef.current !== cycleId) {
+          return;
+        }
+
+        phaseRef.current = "done";
+        setMounted(false);
+      }, exitMs);
+    },
+    [exitMs],
+  );
+
+  const completeCycle = useCallback(
+    (cycleId: number) => {
       if (cycleIdRef.current !== cycleId) {
         return;
       }
 
-      phaseRef.current = "done";
-      setMounted(false);
-    }, exitMs);
-  }, [exitMs]);
+      if (phaseRef.current === "done" || phaseRef.current === "exiting") {
+        return;
+      }
 
-  const completeCycle = useCallback((cycleId: number) => {
-    if (cycleIdRef.current !== cycleId) {
-      return;
-    }
+      clearTimer(delayTimerRef);
+      clearTimer(maxWaitTimerRef);
 
-    if (phaseRef.current === "done" || phaseRef.current === "exiting") {
-      return;
-    }
+      if (phaseRef.current === "pending") {
+        phaseRef.current = "done";
+        setVisible(false);
+        setMounted(false);
+        return;
+      }
 
-    clearTimer(delayTimerRef);
-    clearTimer(maxWaitTimerRef);
+      const elapsed = Date.now() - shownAtRef.current;
+      const remain = Math.max(0, minVisibleMs - elapsed);
 
-    if (phaseRef.current === "pending") {
-      phaseRef.current = "done";
-      setVisible(false);
-      setMounted(false);
-      return;
-    }
+      if (remain === 0) {
+        startExit(cycleId);
+        return;
+      }
 
-    const elapsed = Date.now() - shownAtRef.current;
-    const remain = Math.max(0, minVisibleMs - elapsed);
-
-    if (remain === 0) {
-      startExit(cycleId);
-      return;
-    }
-
-    minVisibleTimerRef.current = window.setTimeout(() => {
-      startExit(cycleId);
-    }, remain);
-  }, [minVisibleMs, startExit]);
+      minVisibleTimerRef.current = window.setTimeout(() => {
+        startExit(cycleId);
+      }, remain);
+    },
+    [minVisibleMs, startExit],
+  );
 
   useEffect(() => {
     readyRef.current = options.ready;

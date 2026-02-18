@@ -284,12 +284,7 @@ export default function PalettePreview(props: PalettePreviewProps) {
     }
 
     if (item.iconKind === "iconify" && isValidIconifyIcon(item.iconValue)) {
-      return (
-        <span
-          className={`btn-icon h-8 w-8 text-[1.4rem] text-text-muted ${item.iconValue}`}
-          aria-hidden="true"
-        />
-      );
+      return <span className={`btn-icon h-8 w-8 text-[1.4rem] text-text-muted ${item.iconValue}`} aria-hidden="true" />;
     }
 
     const fallbackIcon = resolveLauncherFallbackIcon(item);
@@ -300,9 +295,7 @@ export default function PalettePreview(props: PalettePreviewProps) {
     <div className="flex h-full flex-col bg-gradient-to-b from-surface-soft/40 to-transparent p-4 text-text-secondary">
       <div className="text-[11px] uppercase text-text-muted">{t("preview.title")}</div>
       <div className="mt-2 flex items-center gap-2.5">
-        <span className="inline-flex h-9 w-9 items-center justify-center">
-          {icon}
-        </span>
+        <span className="inline-flex h-9 w-9 items-center justify-center">{icon}</span>
         <h3 className="text-base font-semibold text-text-primary text-pretty">{item.title}</h3>
       </div>
       <p className="mt-2 break-words text-[13px] text-text-secondary">{item.subtitle}</p>

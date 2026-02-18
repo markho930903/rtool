@@ -948,6 +948,15 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            commands::app_manager::app_manager_list,
+            commands::app_manager::app_manager_get_detail,
+            commands::app_manager::app_manager_scan_residue,
+            commands::app_manager::app_manager_cleanup,
+            commands::app_manager::app_manager_export_scan_result,
+            commands::app_manager::app_manager_refresh_index,
+            commands::app_manager::app_manager_set_startup,
+            commands::app_manager::app_manager_uninstall,
+            commands::app_manager::app_manager_open_uninstall_help,
             commands::launcher::launcher_search,
             commands::launcher::launcher_execute,
             commands::palette::palette_search,

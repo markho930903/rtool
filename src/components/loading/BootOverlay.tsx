@@ -11,6 +11,7 @@ export interface BootOverlayProps {
 
 interface VariantConfig {
   panelClassName: string;
+  radiusClassName: string;
   subtitleKey: string;
   skeletonWidths: string[];
 }
@@ -18,16 +19,19 @@ interface VariantConfig {
 const VARIANT_CONFIG: Record<BootOverlayVariant, VariantConfig> = {
   main: {
     panelClassName: "w-[min(560px,86vw)]",
+    radiusClassName: "rounded-overlay",
     subtitleKey: "status.preparingMain",
     skeletonWidths: ["68%", "54%", "74%"],
   },
   launcher: {
     panelClassName: "w-[min(440px,84vw)]",
+    radiusClassName: "rounded-md",
     subtitleKey: "status.preparingLauncher",
     skeletonWidths: ["66%", "58%"],
   },
   clipboard: {
     panelClassName: "w-[min(520px,84vw)]",
+    radiusClassName: "rounded-overlay",
     subtitleKey: "status.preparingClipboard",
     skeletonWidths: ["72%", "62%", "55%"],
   },
@@ -53,9 +57,10 @@ export default function BootOverlay(props: BootOverlayProps) {
 
       <div
         className={[
-          "relative rounded-overlay border border-border-muted bg-surface-overlay/96 p-5 shadow-overlay",
+          "relative border border-border-muted bg-surface-overlay/96 p-5 shadow-overlay",
           "backdrop-blur-[20px] backdrop-saturate-140",
           config.panelClassName,
+          config.radiusClassName,
         ].join(" ")}
       >
         <div className="flex items-center gap-3.5">

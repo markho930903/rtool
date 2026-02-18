@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui";
 
 export default function NotFoundPage() {
-  const { t } = useTranslation("notFound");
+  const { t } = useTranslation("not_found");
 
   return (
     <div className="space-y-3">

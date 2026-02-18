@@ -51,8 +51,7 @@ const wrapperClassMap: Record<SelectVariant, string> = {
 const triggerClassMap: Record<SelectVariant, string> = {
   default:
     "w-full min-h-[38px] rounded-md border border-border-muted bg-surface px-3 text-sm text-text-primary shadow-inset-soft outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong hover:bg-surface-soft",
-  tool:
-    "min-h-[36px] rounded-md border border-border-muted bg-surface px-2.5 text-ui-sm leading-ui-sm text-text-primary shadow-inset-soft outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong hover:bg-surface-soft",
+  tool: "min-h-[36px] rounded-md border border-border-muted bg-surface px-2.5 text-ui-sm leading-ui-sm text-text-primary shadow-inset-soft outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong hover:bg-surface-soft",
   clipboard:
     "min-h-[36px] rounded-md border border-border-muted bg-surface px-2.5 text-ui-sm leading-ui-sm text-text-primary shadow-inset-soft outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong hover:bg-surface-soft",
   theme:

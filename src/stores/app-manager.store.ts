@@ -72,7 +72,6 @@ interface AppManagerState {
   exportLoadingById: Record<string, boolean>;
   openExportDirLoadingById: Record<string, boolean>;
   keyword: string;
-  startupOnly: boolean;
   category: string;
   nextCursor: string | null;
   indexedAt: number | null;
@@ -95,7 +94,6 @@ interface AppManagerState {
 
 interface AppManagerActions {
   setKeyword: (keyword: string) => void;
-  setStartupOnly: (startupOnly: boolean) => void;
   setCategory: (category: string) => void;
   setExperimentalThirdPartyStartup: (enabled: boolean) => void;
   selectApp: (appId: string) => Promise<void>;
@@ -134,7 +132,6 @@ export const useAppManagerStore = create<AppManagerStore>((set, get) => ({
   exportLoadingById: {},
   openExportDirLoadingById: {},
   keyword: "",
-  startupOnly: false,
   category: "all",
   nextCursor: null,
   indexedAt: null,
@@ -158,10 +155,6 @@ export const useAppManagerStore = create<AppManagerStore>((set, get) => ({
     set({ keyword });
   },
 
-  setStartupOnly(startupOnly) {
-    set({ startupOnly });
-  },
-
   setCategory(category) {
     set({ category });
   },
@@ -181,12 +174,11 @@ export const useAppManagerStore = create<AppManagerStore>((set, get) => ({
   },
 
   async loadFirstPage() {
-    const { keyword, startupOnly, category, selectedAppId } = get();
+    const { keyword, category, selectedAppId } = get();
     set({ loading: true, error: null });
     try {
       const page = await appManagerList({
         keyword: keyword.trim() || undefined,
-        startupOnly,
         category: category === "all" ? undefined : category,
       });
       const fallbackSelected = page.items[0]?.id ?? null;
@@ -209,7 +201,7 @@ export const useAppManagerStore = create<AppManagerStore>((set, get) => ({
   },
 
   async loadMore() {
-    const { loadingMore, nextCursor, keyword, startupOnly, category } = get();
+    const { loadingMore, nextCursor, keyword, category } = get();
     if (loadingMore || !nextCursor) {
       return;
     }
@@ -217,7 +209,6 @@ export const useAppManagerStore = create<AppManagerStore>((set, get) => ({
     try {
       const page = await appManagerList({
         keyword: keyword.trim() || undefined,
-        startupOnly,
         category: category === "all" ? undefined : category,
         cursor: nextCursor,
       });

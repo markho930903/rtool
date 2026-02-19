@@ -487,6 +487,32 @@ fn handle_tray_menu(app: &tauri::AppHandle, menu_id: &str) {
     }
 }
 
+fn focus_main_window(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window("main") else {
+        tracing::warn!(
+            event = "window_focus_failed",
+            window = "main",
+            error = "window_not_found"
+        );
+        return;
+    };
+
+    if let Err(error) = window.show() {
+        tracing::warn!(
+            event = "window_show_failed",
+            window = "main",
+            error = error.to_string()
+        );
+    }
+    if let Err(error) = window.set_focus() {
+        tracing::warn!(
+            event = "window_focus_failed",
+            window = "main",
+            error = error.to_string()
+        );
+    }
+}
+
 fn handle_tray_icon_event(app: &tauri::AppHandle, event: TrayIconEvent) {
     if let TrayIconEvent::Click {
         button: MouseButton::Left,
@@ -494,7 +520,7 @@ fn handle_tray_icon_event(app: &tauri::AppHandle, event: TrayIconEvent) {
         ..
     } = event
     {
-        handle_tray_menu(app, TRAY_MENU_ID_DASHBOARD);
+        focus_main_window(app);
     }
 }
 

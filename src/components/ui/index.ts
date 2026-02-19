@@ -22,4 +22,7 @@ export type { SwitchFieldProps, SwitchProps } from "@/components/ui/switch";
 export { Dialog } from "@/components/ui/dialog";
 export type { DialogProps } from "@/components/ui/dialog";
 
+export { Tooltip } from "@/components/ui/tooltip";
+export type { TooltipProps } from "@/components/ui/tooltip";
+
 export type { ChoiceOrientation, InputVariant, SelectVariant, TextareaVariant, UiSize } from "@/components/ui/types";

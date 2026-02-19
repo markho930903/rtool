@@ -3,6 +3,7 @@ import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { AppEntityIcon } from "@/components/icons/AppEntityIcon";
 import { BootOverlay, useBootState } from "@/components/loading";
 import { Button } from "@/components/ui";
 import PaletteInput from "@/components/palette/PaletteInput";
@@ -103,21 +104,14 @@ function groupItems(
 }
 
 function LauncherItemIcon({ item }: { item: PaletteItem }) {
-  if (item.iconKind === "raster" && item.iconValue) {
-    return (
-      <img
-        src={item.iconValue}
-        alt=""
-        className="h-5 w-5 shrink-0 rounded-sm object-cover"
-        loading="lazy"
-        decoding="async"
-      />
-    );
-  }
-
-  const iconClass = item.iconValue || "i-noto:card-index-dividers";
   return (
-    <span className={`btn-icon h-5 w-5 shrink-0 text-[1.05rem] text-text-muted ${iconClass}`} aria-hidden="true" />
+    <AppEntityIcon
+      iconKind={item.iconKind}
+      iconValue={item.iconValue}
+      fallbackIcon="i-noto:card-index-dividers"
+      imgClassName="h-5 w-5 shrink-0 rounded-sm object-cover"
+      iconClassName="h-5 w-5 shrink-0 text-[1.05rem] text-text-muted"
+    />
   );
 }
 

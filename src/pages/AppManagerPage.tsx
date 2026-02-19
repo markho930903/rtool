@@ -7,7 +7,9 @@ import type {
   AppManagerResidueItem,
   ManagedApp,
 } from "@/components/app-manager/types";
-import { Button, Dialog, Input, Select, SwitchField } from "@/components/ui";
+import { AppEntityIcon } from "@/components/icons/AppEntityIcon";
+import { resolvePathIcon } from "@/components/icons/pathIcon";
+import { Button, Dialog, Input, RadioGroup, Select, SwitchField, Tooltip } from "@/components/ui";
 import { appManagerRevealPath } from "@/services/app-manager.service";
 import { useAppManagerStore } from "@/stores/app-manager.store";
 
@@ -38,6 +40,7 @@ interface RelatedLocationEntry {
   path: string;
   name: string;
   sizeBytes?: number | null;
+  pathType?: "file" | "directory" | "unknown" | string;
   readonlyReasonCode?: string;
   source: "main" | "scan";
 }
@@ -72,41 +75,45 @@ function getPathName(path: string): string {
   return segments[segments.length - 1] ?? normalized;
 }
 
-function isLikelyFilePath(path: string): boolean {
-  const name = getPathName(path);
-  if (!name) {
-    return false;
-  }
-  if (name.toLowerCase().endsWith(".app")) {
-    return false;
-  }
-  return /\.[^./\\]+$/.test(name);
+function isAppBundlePath(path: string): boolean {
+  return normalizePathKey(path).replace(/\/+$/, "").endsWith(".app");
 }
 
-function relatedEntryIconClass(entry: RelatedLocationEntry): string {
-  if (entry.source === "main") {
-    return "i-noto:mobile-phone-with-arrow";
+function resolveRelatedEntryIcon(entry: RelatedLocationEntry, selectedApp: ManagedApp | null): {
+  iconKind?: string;
+  iconValue?: string;
+  fallbackIcon: string;
+} {
+  if (entry.source === "main" || isAppBundlePath(entry.path)) {
+    return {
+      iconKind: selectedApp?.iconKind,
+      iconValue: selectedApp?.iconValue,
+      fallbackIcon: "i-noto:desktop-computer",
+    };
   }
-  return isLikelyFilePath(entry.path) ? "i-noto:document" : "i-noto:open-file-folder";
+
+  return {
+    fallbackIcon: resolvePathIcon(entry.path, entry.pathType),
+  };
 }
 
-function AppIcon({ app }: { app: ManagedApp }) {
-  if (app.iconKind === "raster" && app.iconValue) {
-    return (
-      <img
-        src={app.iconValue}
-        alt=""
-        className="h-8 w-8 rounded-md border border-border-muted bg-surface object-cover"
-        loading="lazy"
-      />
-    );
-  }
-
-  const iconClass = app.iconValue || "i-noto:desktop-computer";
+function AppIcon({
+  app,
+  sizeClassName = "h-8 w-8",
+  iconSizeClassName = "text-[1.05rem]",
+}: {
+  app: ManagedApp;
+  sizeClassName?: string;
+  iconSizeClassName?: string;
+}) {
   return (
-    <span className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border-muted bg-surface-soft text-text-secondary">
-      <span className={`btn-icon text-[1.05rem] ${iconClass}`} aria-hidden="true" />
-    </span>
+    <AppEntityIcon
+      iconKind={app.iconKind}
+      iconValue={app.iconValue}
+      fallbackIcon="i-noto:desktop-computer"
+      imgClassName={`${sizeClassName} shrink-0 rounded-md object-cover`}
+      iconClassName={`${sizeClassName} shrink-0 ${iconSizeClassName} text-text-secondary`}
+    />
   );
 }
 
@@ -152,7 +159,6 @@ export default function AppManagerPage() {
   const exportLoadingById = useAppManagerStore((state) => state.exportLoadingById);
   const openExportDirLoadingById = useAppManagerStore((state) => state.openExportDirLoadingById);
   const keyword = useAppManagerStore((state) => state.keyword);
-  const startupOnly = useAppManagerStore((state) => state.startupOnly);
   const category = useAppManagerStore((state) => state.category);
   const nextCursor = useAppManagerStore((state) => state.nextCursor);
   const indexedAt = useAppManagerStore((state) => state.indexedAt);
@@ -173,7 +179,6 @@ export default function AppManagerPage() {
   const experimentalThirdPartyStartup = useAppManagerStore((state) => state.experimentalThirdPartyStartup);
 
   const setKeyword = useAppManagerStore((state) => state.setKeyword);
-  const setStartupOnly = useAppManagerStore((state) => state.setStartupOnly);
   const setCategory = useAppManagerStore((state) => state.setCategory);
   const setExperimentalThirdPartyStartup = useAppManagerStore((state) => state.setExperimentalThirdPartyStartup);
   const clearLastActionResult = useAppManagerStore((state) => state.clearLastActionResult);
@@ -209,7 +214,7 @@ export default function AppManagerPage() {
     return () => {
       window.clearTimeout(timer);
     };
-  }, [keyword, startupOnly, category, loadFirstPage]);
+  }, [keyword, category, loadFirstPage]);
 
   useEffect(() => {
     setCopyPathFeedback(null);
@@ -247,7 +252,6 @@ export default function AppManagerPage() {
     () => [
       { value: "all", label: t("filters.category.all") },
       { value: "application", label: t("filters.category.application") },
-      { value: "rtool", label: t("filters.category.rtool") },
       { value: "startup", label: t("filters.category.startup") },
     ],
     [t],
@@ -332,6 +336,7 @@ export default function AppManagerPage() {
       path: selectedDetail?.installPath ?? selectedApp.path,
       name: getPathName(selectedDetail?.installPath ?? selectedApp.path),
       sizeBytes: selectedApp.estimatedSizeBytes,
+      pathType: "directory",
       source: "main",
     });
 
@@ -348,6 +353,7 @@ export default function AppManagerPage() {
           path: item.path,
           name: getPathName(item.path),
           sizeBytes: item.sizeBytes,
+          pathType: item.pathType,
           readonlyReasonCode: item.readonlyReasonCode,
           source: "scan",
         });
@@ -364,7 +370,7 @@ export default function AppManagerPage() {
       }
       return left.path.localeCompare(right.path);
     });
-  }, [selectedApp, selectedDetail?.installPath, selectedDetail?.relatedRoots, selectedScanResult]);
+  }, [selectedApp, selectedDetail, selectedScanResult]);
 
   useEffect(() => {
     if (!selectedApp || selectedScanResult || selectedScanLoading) {
@@ -458,10 +464,10 @@ export default function AppManagerPage() {
   };
 
   return (
-    <section className="h-full min-h-0">
+    <section className="h-full min-h-0 p-5">
       <div className="grid h-full min-h-0 gap-4 md:grid-cols-[360px_minmax(0,1fr)]">
         <aside className="flex h-full min-h-0 flex-col rounded-xl border border-border-muted bg-surface-card shadow-surface">
-          <div className="shrink-0 space-y-3 border-b border-border-muted px-3 py-3">
+          <div className="shrink-0 space-y-2 border-b border-border-muted px-3 py-2.5">
             <div className="flex items-start justify-between gap-2">
               <div className="space-y-0.5">
                 <h1 className="m-0 text-base font-semibold text-text-primary">{t("title")}</h1>
@@ -477,20 +483,33 @@ export default function AppManagerPage() {
               placeholder={t("filters.keywordPlaceholder")}
               onChange={(event) => setKeyword(event.currentTarget.value)}
             />
-            <Select value={category} options={categoryOptions} onChange={(event) => setCategory(event.currentTarget.value)} />
-            <SwitchField
-              checked={startupOnly}
-              wrapperClassName="w-auto items-center"
-              onChange={(event) => setStartupOnly(event.currentTarget.checked)}
-              label={<span className="text-xs text-text-primary">{t("filters.startupOnly")}</span>}
+            <RadioGroup
+              name="app-manager-category"
+              options={categoryOptions}
+              value={category}
+              orientation="horizontal"
+              size="sm"
+              className="gap-3"
+              optionClassName="items-center text-xs text-text-primary"
+              onValueChange={(value) => setCategory(value)}
             />
-            <div className="rounded-lg border border-border-muted bg-surface-soft px-2.5 py-2">
+            <div className="rounded-lg border border-border-muted bg-surface-soft px-2.5 py-1.5">
               <SwitchField
                 checked={experimentalThirdPartyStartup}
                 controlPosition="end"
                 onChange={(event) => setExperimentalThirdPartyStartup(event.currentTarget.checked)}
-                label={<span className="text-xs text-text-primary">{t("experimental.title")}</span>}
-                description={<span className="leading-5">{t("experimental.desc")}</span>}
+                label={
+                  <span className="inline-flex items-center gap-1 text-xs text-text-primary">
+                    <span>{t("experimental.title")}</span>
+                    <Tooltip
+                      content={<span className="leading-5">{t("experimental.desc")}</span>}
+                      ariaLabel={t("experimental.desc")}
+                      triggerClassName="rounded-sm text-text-muted hover:text-text-secondary"
+                    >
+                      <span className="i-noto:light-bulb text-sm" aria-hidden="true" />
+                    </Tooltip>
+                  </span>
+                }
               />
             </div>
 
@@ -544,7 +563,7 @@ export default function AppManagerPage() {
                     onClick={() => void selectApp(app.id)}
                   >
                     <div className="flex items-start gap-2">
-                      <AppIcon app={app} />
+                      <AppIcon app={app} sizeClassName="h-9 w-9" iconSizeClassName="text-[1.15rem]" />
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-sm font-medium text-text-primary">{app.name}</div>
                         <div className="mt-0.5 truncate text-xs text-text-muted">{app.path}</div>
@@ -687,6 +706,7 @@ export default function AppManagerPage() {
                           const revealing = revealingRelatedId === entry.id;
                           const selected = isRelatedEntrySelected(entry);
                           const selectionDisabled = isRelatedEntrySelectionDisabled(entry);
+                          const relatedIcon = resolveRelatedEntryIcon(entry, selectedApp);
                           return (
                             <div
                               key={entry.path}
@@ -727,9 +747,13 @@ export default function AppManagerPage() {
                                 title={entry.path}
                                 onClick={() => void revealRelatedPath(entry)}
                               >
-                                <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border-muted bg-surface text-text-secondary">
-                                  <span className={`btn-icon text-[1rem] ${relatedEntryIconClass(entry)}`} aria-hidden="true" />
-                                </span>
+                                <AppEntityIcon
+                                  iconKind={relatedIcon.iconKind}
+                                  iconValue={relatedIcon.iconValue}
+                                  fallbackIcon={relatedIcon.fallbackIcon}
+                                  imgClassName="h-8 w-8 shrink-0 rounded-md object-cover"
+                                  iconClassName="h-8 w-8 shrink-0 text-[1rem] text-text-secondary"
+                                />
                                 <span className="min-w-0 flex-1">
                                   <span className="block truncate text-sm font-medium text-text-primary">{entry.name}</span>
                                   <span className="mt-0.5 block break-all text-xs text-text-muted">{entry.path}</span>

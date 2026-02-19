@@ -4,7 +4,6 @@ use crate::app::app_manager_service::{
     list_managed_apps, open_uninstall_help, refresh_managed_apps_index, scan_managed_app_residue,
     set_managed_app_startup, uninstall_managed_app,
 };
-use crate::core::{AppError, AppResult};
 use crate::core::models::{
     AppManagerActionResultDto, AppManagerCleanupInputDto, AppManagerCleanupResultDto,
     AppManagerDetailQueryDto, AppManagerExportScanInputDto, AppManagerExportScanResultDto,
@@ -12,17 +11,17 @@ use crate::core::models::{
     AppManagerResidueScanResultDto, AppManagerStartupUpdateInputDto, AppManagerUninstallInputDto,
     ManagedAppDetailDto,
 };
+use crate::core::{AppError, AppResult};
 use crate::infrastructure::runtime::blocking::run_blocking;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn reveal_path(path: &Path) -> AppResult<()> {
     if !path.exists() {
-        return Err(AppError::new(
-            "app_manager_reveal_not_found",
-            "定位失败：目标路径不存在",
-        )
-        .with_detail(path.to_string_lossy().to_string()));
+        return Err(
+            AppError::new("app_manager_reveal_not_found", "定位失败：目标路径不存在")
+                .with_detail(path.to_string_lossy().to_string()),
+        );
     }
 
     let target = path.to_path_buf();
@@ -45,17 +44,21 @@ fn reveal_path(path: &Path) -> AppResult<()> {
     };
 
     let status = command_result.map_err(|error| {
-        AppError::new("app_manager_reveal_failed", "定位失败：无法启动系统文件管理器")
-            .with_detail(error.to_string())
+        AppError::new(
+            "app_manager_reveal_failed",
+            "定位失败：无法启动系统文件管理器",
+        )
+        .with_detail(error.to_string())
     })?;
 
     if status.success() {
         Ok(())
     } else {
-        Err(
-            AppError::new("app_manager_reveal_failed", "定位失败：系统文件管理器调用异常")
-                .with_detail(format!("status={status}")),
+        Err(AppError::new(
+            "app_manager_reveal_failed",
+            "定位失败：系统文件管理器调用异常",
         )
+        .with_detail(format!("status={status}")))
     }
 }
 
@@ -295,12 +298,7 @@ pub fn app_manager_reveal_path(
     let trimmed = path.trim();
     if trimmed.is_empty() {
         let error = AppError::new("app_manager_reveal_invalid", "定位失败：路径不能为空");
-        command_end_error(
-            "app_manager_reveal_path",
-            &request_id,
-            started_at,
-            &error,
-        );
+        command_end_error("app_manager_reveal_path", &request_id, started_at, &error);
         return Err(error);
     }
 

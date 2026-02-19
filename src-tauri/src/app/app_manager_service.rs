@@ -1,11 +1,10 @@
 use crate::app::icon_service::{resolve_application_icon, resolve_builtin_icon};
 use crate::core::models::{
-    AppManagerActionResultDto, AppManagerCleanupInputDto, AppManagerCleanupItemResultDto,
-    AppManagerCapabilitiesDto, AppManagerIdentityDto,
-    AppManagerCleanupResultDto, AppManagerDetailQueryDto, AppManagerExportScanInputDto,
-    AppManagerExportScanResultDto, AppManagerPageDto, AppManagerQueryDto,
-    AppManagerResidueGroupDto, AppManagerResidueItemDto, AppManagerResidueScanInputDto,
-    AppManagerResidueScanResultDto, AppManagerStartupUpdateInputDto,
+    AppManagerActionResultDto, AppManagerCapabilitiesDto, AppManagerCleanupInputDto,
+    AppManagerCleanupItemResultDto, AppManagerCleanupResultDto, AppManagerDetailQueryDto,
+    AppManagerExportScanInputDto, AppManagerExportScanResultDto, AppManagerIdentityDto,
+    AppManagerPageDto, AppManagerQueryDto, AppManagerResidueGroupDto, AppManagerResidueItemDto,
+    AppManagerResidueScanInputDto, AppManagerResidueScanResultDto, AppManagerStartupUpdateInputDto,
     AppManagerUninstallInputDto, AppRelatedRootDto, AppSizeSummaryDto, ManagedAppDetailDto,
     ManagedAppDto,
 };
@@ -168,6 +167,161 @@ fn normalize_path_key(path: &str) -> String {
     }
 }
 
+#[derive(Debug, Clone)]
+struct DisplayNameCandidate {
+    value: String,
+    confidence: u8,
+}
+
+fn normalize_display_name(value: &str) -> Option<String> {
+    let normalized = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() {
+        return None;
+    }
+    Some(normalized)
+}
+
+fn path_stem_string(path: &Path) -> Option<String> {
+    path.file_stem()
+        .and_then(|value| value.to_str())
+        .and_then(normalize_display_name)
+}
+
+fn normalize_name_key(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| {
+            if ch.is_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                ' '
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn split_name_tokens(value: &str) -> Vec<String> {
+    normalize_name_key(value)
+        .split_whitespace()
+        .map(ToString::to_string)
+        .collect()
+}
+
+fn push_display_name_candidate(
+    candidates: &mut Vec<DisplayNameCandidate>,
+    value: Option<String>,
+    confidence: u8,
+) {
+    let Some(value) = value.as_deref().and_then(normalize_display_name) else {
+        return;
+    };
+    candidates.push(DisplayNameCandidate { value, confidence });
+}
+
+fn score_display_name_candidate(
+    candidate: &DisplayNameCandidate,
+    stem_key: &str,
+    stem_tokens: &[String],
+) -> i32 {
+    let mut score = i32::from(candidate.confidence) * 10;
+    let candidate_key = normalize_name_key(candidate.value.as_str());
+    let candidate_tokens = candidate_key
+        .split_whitespace()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+
+    if candidate_tokens.len() >= 2 {
+        score += 30;
+    }
+    if candidate.value.chars().count() >= 8 {
+        score += 15;
+    }
+
+    if !stem_key.is_empty() && !candidate_key.is_empty() {
+        if candidate_key == stem_key {
+            score += 80;
+        } else {
+            if stem_key.contains(candidate_key.as_str()) {
+                score += 35;
+            }
+            if candidate_key.contains(stem_key) {
+                score += 20;
+            }
+            let shared = candidate_tokens
+                .iter()
+                .filter(|token| stem_tokens.iter().any(|stem| stem == *token))
+                .count();
+            score += (shared as i32) * 18;
+        }
+    }
+
+    if candidate_tokens.len() == 1 {
+        let len = candidate.value.chars().count();
+        let stem_word_count = stem_tokens.len();
+        if len <= 4 && stem_word_count >= 2 {
+            score -= 90;
+        } else if len <= 5 && stem_word_count >= 2 {
+            score -= 40;
+        }
+    }
+
+    if matches!(candidate_key.as_str(), "app" | "application" | "program") {
+        score -= 60;
+    }
+
+    score
+}
+
+fn resolve_application_display_name(
+    path: &Path,
+    path_fallback: &str,
+    candidates: Vec<DisplayNameCandidate>,
+) -> String {
+    let mut dedup = HashMap::<String, DisplayNameCandidate>::new();
+    for candidate in candidates {
+        let key = candidate.value.to_ascii_lowercase();
+        match dedup.entry(key) {
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                if candidate.confidence > entry.get().confidence {
+                    entry.insert(candidate);
+                }
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(candidate);
+            }
+        }
+    }
+
+    let mut dedup_candidates = dedup.into_values().collect::<Vec<_>>();
+    if dedup_candidates.is_empty() {
+        return path_stem_string(path).unwrap_or_else(|| path_fallback.to_string());
+    }
+
+    let stem = path_stem_string(path).unwrap_or_else(|| path_fallback.to_string());
+    let stem_key = normalize_name_key(stem.as_str());
+    let stem_tokens = split_name_tokens(stem.as_str());
+
+    dedup_candidates.sort_by(|left, right| {
+        let left_score =
+            score_display_name_candidate(left, stem_key.as_str(), stem_tokens.as_slice());
+        let right_score =
+            score_display_name_candidate(right, stem_key.as_str(), stem_tokens.as_slice());
+        right_score
+            .cmp(&left_score)
+            .then_with(|| right.value.chars().count().cmp(&left.value.chars().count()))
+            .then_with(|| left.value.cmp(&right.value))
+    });
+
+    dedup_candidates
+        .into_iter()
+        .next()
+        .map(|candidate| candidate.value)
+        .unwrap_or_else(|| stem)
+}
+
 fn startup_label(app_id: &str) -> String {
     let short = stable_hash(app_id).chars().take(12).collect::<String>();
     format!("{STARTUP_LABEL_PREFIX}.{short}")
@@ -308,7 +462,6 @@ pub fn list_managed_apps(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(|value| value.to_ascii_lowercase());
-    let startup_only = query.startup_only.unwrap_or(false);
     let limit = query
         .limit
         .map(|value| value as usize)
@@ -324,9 +477,6 @@ pub fn list_managed_apps(
         .items
         .iter()
         .filter(|item| {
-            if startup_only && !item.startup_enabled {
-                return false;
-            }
             if let Some(category) = normalized_category.as_deref() {
                 if category == "rtool" && item.source != "rtool" {
                     return false;
@@ -677,7 +827,11 @@ fn app_install_root(item: &ManagedAppDto) -> PathBuf {
     path
 }
 
-fn build_app_capabilities(startup: bool, uninstall: bool, residue_scan: bool) -> AppManagerCapabilitiesDto {
+fn build_app_capabilities(
+    startup: bool,
+    uninstall: bool,
+    residue_scan: bool,
+) -> AppManagerCapabilitiesDto {
     AppManagerCapabilitiesDto {
         startup,
         uninstall,
@@ -697,13 +851,15 @@ fn build_app_identity(
     }
 }
 
-fn collect_app_path_aliases_from_parts(name: &str, path: &str, bundle_or_app_id: Option<&str>) -> Vec<String> {
+fn collect_app_path_aliases_from_parts(
+    name: &str,
+    path: &str,
+    bundle_or_app_id: Option<&str>,
+) -> Vec<String> {
     let mut aliases = Vec::new();
     let mut seen = HashSet::new();
     let mut push_alias = |value: &str| {
-        let normalized = value
-            .trim()
-            .trim_matches(|ch| matches!(ch, '"' | '\''));
+        let normalized = value.trim().trim_matches(|ch| matches!(ch, '"' | '\''));
         if normalized.len() < 2
             || matches!(normalized, "." | "..")
             || normalized.contains('/')
@@ -818,7 +974,8 @@ fn collect_related_root_specs(item: &ManagedAppDto) -> Vec<RelatedRootSpec> {
                 push_related_root(
                     &mut roots,
                     "用户偏好设置",
-                    home.join("Library/Preferences").join(format!("{alias}.plist")),
+                    home.join("Library/Preferences")
+                        .join(format!("{alias}.plist")),
                     "user",
                     "preferences",
                 );
@@ -935,6 +1092,16 @@ fn collect_related_root_specs(item: &ManagedAppDto) -> Vec<RelatedRootSpec> {
         .collect()
 }
 
+fn detect_path_type(path: &Path) -> &'static str {
+    if path.is_dir() {
+        return "directory";
+    }
+    if path.is_file() {
+        return "file";
+    }
+    "unknown"
+}
+
 fn build_app_detail(app: ManagedAppDto) -> ManagedAppDetailDto {
     let related_roots = collect_related_root_specs(&app)
         .into_iter()
@@ -959,6 +1126,7 @@ fn build_app_detail(app: ManagedAppDto) -> ManagedAppDetailDto {
                 ),
                 label: root.label,
                 path: root.path.to_string_lossy().to_string(),
+                path_type: detect_path_type(root.path.as_path()).to_string(),
                 scope: root.scope,
                 kind: root.kind,
                 exists,
@@ -1346,6 +1514,7 @@ fn build_residue_scan_result(item: &ManagedAppDto) -> AppManagerResidueScanResul
         group.items.push(AppManagerResidueItemDto {
             item_id,
             path,
+            path_type: detect_path_type(candidate.path.as_path()).to_string(),
             kind: candidate.kind,
             scope: candidate.scope,
             size_bytes,
@@ -1758,13 +1927,12 @@ fn build_self_item(app: &AppHandle) -> Option<ManagedAppDto> {
         startup_readonly_reason_code(startup_scope.as_str(), startup_editable);
     let icon = resolve_builtin_icon("i-noto:rocket");
     let bundle_or_app_id = Some(app.package_info().name.to_string());
-    let aliases =
-        collect_app_path_aliases_from_parts(app_name.as_str(), app_path.as_str(), bundle_or_app_id.as_deref());
-    let identity = build_app_identity(
-        normalize_path_key(app_path.as_str()),
-        aliases,
-        "path",
+    let aliases = collect_app_path_aliases_from_parts(
+        app_name.as_str(),
+        app_path.as_str(),
+        bundle_or_app_id.as_deref(),
     );
+    let identity = build_app_identity(normalize_path_key(app_path.as_str()), aliases, "path");
 
     let mut item = ManagedAppDto {
         id,
@@ -1915,23 +2083,19 @@ fn build_macos_app_item(app: &AppHandle, app_path: &Path) -> Option<ManagedAppDt
     let bundle = info.bundle_id.clone();
     let version = info.version.clone();
     let publisher = info.publisher.clone();
-    let name = info
-        .display_name
-        .clone()
-        .or_else(|| {
-            app_path
-                .file_stem()
-                .map(|value| value.to_string_lossy().to_string())
-        })
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| path_str.clone());
+    let mut name_candidates = Vec::new();
+    push_display_name_candidate(&mut name_candidates, info.bundle_display_name.clone(), 90);
+    push_display_name_candidate(&mut name_candidates, info.bundle_name.clone(), 70);
+    push_display_name_candidate(&mut name_candidates, path_stem_string(app_path), 85);
+    let name = resolve_application_display_name(app_path, path_str.as_str(), name_candidates);
     let id = stable_app_id("application", path_str.as_str());
     let icon = resolve_application_icon(app, app_path);
     let (startup_enabled, startup_scope, startup_editable) =
         platform_detect_startup_state(id.as_str(), app_path);
     let readonly_reason_code =
         startup_readonly_reason_code(startup_scope.as_str(), startup_editable);
-    let aliases = collect_app_path_aliases_from_parts(name.as_str(), path_str.as_str(), bundle.as_deref());
+    let aliases =
+        collect_app_path_aliases_from_parts(name.as_str(), path_str.as_str(), bundle.as_deref());
     let identity = if let Some(bundle_id) = bundle.as_deref() {
         build_app_identity(bundle_id, aliases, "bundle_id")
     } else {
@@ -1966,7 +2130,8 @@ fn build_macos_app_item(app: &AppHandle, app_path: &Path) -> Option<ManagedAppDt
 
 #[cfg(target_os = "macos")]
 struct MacAppInfo {
-    display_name: Option<String>,
+    bundle_display_name: Option<String>,
+    bundle_name: Option<String>,
     bundle_id: Option<String>,
     version: Option<String>,
     publisher: Option<String>,
@@ -1978,7 +2143,8 @@ fn parse_macos_info_plist(path: &Path) -> MacAppInfo {
         Ok(content) => content,
         Err(_) => {
             return MacAppInfo {
-                display_name: None,
+                bundle_display_name: None,
+                bundle_name: None,
                 bundle_id: None,
                 version: None,
                 publisher: None,
@@ -1986,8 +2152,8 @@ fn parse_macos_info_plist(path: &Path) -> MacAppInfo {
         }
     };
 
-    let display_name = plist_value(content.as_str(), "CFBundleDisplayName")
-        .or_else(|| plist_value(content.as_str(), "CFBundleName"));
+    let bundle_display_name = plist_value(content.as_str(), "CFBundleDisplayName");
+    let bundle_name = plist_value(content.as_str(), "CFBundleName");
     let bundle_id = plist_value(content.as_str(), "CFBundleIdentifier");
     let version = plist_value(content.as_str(), "CFBundleShortVersionString")
         .or_else(|| plist_value(content.as_str(), "CFBundleVersion"));
@@ -1998,7 +2164,8 @@ fn parse_macos_info_plist(path: &Path) -> MacAppInfo {
         .filter(|value| !value.is_empty());
 
     MacAppInfo {
-        display_name,
+        bundle_display_name,
+        bundle_name,
         bundle_id,
         version,
         publisher,
@@ -2059,7 +2226,10 @@ fn windows_is_generic_uninstall_binary(path: &Path) -> bool {
         .and_then(|value| value.to_str())
         .map(|value| value.to_ascii_lowercase())
         .unwrap_or_default();
-    matches!(file_name.as_str(), "msiexec.exe" | "rundll32.exe" | "cmd.exe")
+    matches!(
+        file_name.as_str(),
+        "msiexec.exe" | "rundll32.exe" | "cmd.exe"
+    )
 }
 
 #[cfg(target_os = "windows")]
@@ -2157,16 +2327,34 @@ fn windows_build_item_from_uninstall_entry(
     path: &Path,
 ) -> ManagedAppDto {
     let path_str = path.to_string_lossy().to_string();
+    let parent_stem = path
+        .parent()
+        .and_then(|parent| parent.file_name())
+        .and_then(|value| value.to_str())
+        .map(ToString::to_string);
+    let mut name_candidates = Vec::new();
+    push_display_name_candidate(&mut name_candidates, Some(entry.display_name.clone()), 90);
+    push_display_name_candidate(
+        &mut name_candidates,
+        path.file_stem()
+            .and_then(|value| value.to_str())
+            .map(ToString::to_string),
+        80,
+    );
+    push_display_name_candidate(&mut name_candidates, parent_stem, 45);
+    let name = resolve_application_display_name(path, path_str.as_str(), name_candidates);
+
     let id = stable_app_id("application", path_str.as_str());
     let icon = resolve_application_icon(app, path);
     let (startup_enabled, startup_scope, startup_editable) =
         platform_detect_startup_state(id.as_str(), path);
-    let readonly_reason_code = startup_readonly_reason_code(startup_scope.as_str(), startup_editable);
-    let aliases = collect_app_path_aliases_from_parts(entry.display_name.as_str(), path_str.as_str(), None);
+    let readonly_reason_code =
+        startup_readonly_reason_code(startup_scope.as_str(), startup_editable);
+    let aliases = collect_app_path_aliases_from_parts(name.as_str(), path_str.as_str(), None);
 
     let mut item = ManagedAppDto {
         id,
-        name: entry.display_name.clone(),
+        name,
         path: path_str,
         bundle_or_app_id: None,
         version: entry.display_version.clone(),
@@ -2214,7 +2402,11 @@ fn windows_collect_apps_from_uninstall_entries(
         if !seen_identity_keys.insert(identity_key) {
             continue;
         }
-        items.push(windows_build_item_from_uninstall_entry(app, entry, path.as_path()));
+        items.push(windows_build_item_from_uninstall_entry(
+            app,
+            entry,
+            path.as_path(),
+        ));
     }
     items
 }
@@ -2286,7 +2478,8 @@ fn scan_windows_root(
                 continue;
             }
 
-            let identity_key = windows_normalize_registry_key(uninstall_match.registry_key.as_str());
+            let identity_key =
+                windows_normalize_registry_key(uninstall_match.registry_key.as_str());
             if seen_identity_keys.contains(identity_key.as_str()) {
                 continue;
             }
@@ -2294,7 +2487,8 @@ fn scan_windows_root(
             if path_key.is_empty() || seen_path_keys.contains(path_key.as_str()) {
                 continue;
             }
-            let item = windows_build_item_from_uninstall_entry(app, &uninstall_match, path.as_path());
+            let item =
+                windows_build_item_from_uninstall_entry(app, &uninstall_match, path.as_path());
             seen_identity_keys.insert(identity_key);
             seen_path_keys.insert(path_key);
             items.push(item);
@@ -2539,7 +2733,9 @@ fn windows_find_best_uninstall_entry(
             }
         }
 
-        if score > best_score || (score == best_score && has_path_evidence && !best_has_path_evidence) {
+        if score > best_score
+            || (score == best_score && has_path_evidence && !best_has_path_evidence)
+        {
             best_score = score;
             best_has_path_evidence = has_path_evidence;
             best = Some(entry);
@@ -3119,6 +3315,45 @@ mod residue_tests {
     }
 }
 
+#[cfg(test)]
+mod display_name_tests {
+    use super::*;
+
+    #[test]
+    fn resolve_display_name_prefers_readable_stem_over_short_alias() {
+        let path = Path::new("/Applications/Visual Studio Code.app");
+        let mut candidates = Vec::new();
+        push_display_name_candidate(&mut candidates, Some("Code".to_string()), 90);
+        push_display_name_candidate(&mut candidates, Some("Visual Studio Code".to_string()), 85);
+
+        let name = resolve_application_display_name(
+            path,
+            "/Applications/Visual Studio Code.app",
+            candidates,
+        );
+        assert_eq!(name, "Visual Studio Code");
+    }
+
+    #[test]
+    fn resolve_display_name_keeps_short_name_when_stem_is_also_short() {
+        let path = Path::new("/Applications/Code.app");
+        let mut candidates = Vec::new();
+        push_display_name_candidate(&mut candidates, Some("Code".to_string()), 90);
+        let name = resolve_application_display_name(path, "/Applications/Code.app", candidates);
+        assert_eq!(name, "Code");
+    }
+
+    #[test]
+    fn resolve_display_name_prefers_windows_registry_display_name() {
+        let path = Path::new("/Program Files/Foo/foo.exe");
+        let mut candidates = Vec::new();
+        push_display_name_candidate(&mut candidates, Some("Foo Enterprise".to_string()), 90);
+        push_display_name_candidate(&mut candidates, Some("foo".to_string()), 80);
+        let name = resolve_application_display_name(path, "/Program Files/Foo/foo.exe", candidates);
+        assert_eq!(name, "Foo Enterprise");
+    }
+}
+
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
@@ -3145,7 +3380,10 @@ mod tests {
             capabilities: build_app_capabilities(true, true, true),
             identity: build_app_identity(
                 bundle_or_app_id.unwrap_or("net.freemacsoft.AppCleaner"),
-                vec!["AppCleaner".to_string(), "net.freemacsoft.AppCleaner".to_string()],
+                vec![
+                    "AppCleaner".to_string(),
+                    "net.freemacsoft.AppCleaner".to_string(),
+                ],
                 "bundle_id",
             ),
             risk_level: "low".to_string(),
@@ -3155,9 +3393,9 @@ mod tests {
 
     fn has_root_path(roots: &[RelatedRootSpec], expected: &Path) -> bool {
         let expected_key = normalize_path_key(expected.to_string_lossy().as_ref());
-        roots.iter().any(|root| {
-            normalize_path_key(root.path.to_string_lossy().as_ref()) == expected_key
-        })
+        roots
+            .iter()
+            .any(|root| normalize_path_key(root.path.to_string_lossy().as_ref()) == expected_key)
     }
 
     #[test]

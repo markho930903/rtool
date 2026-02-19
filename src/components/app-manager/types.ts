@@ -44,7 +44,6 @@ export interface ManagedApp {
 export interface AppManagerQuery {
   keyword?: string;
   category?: string;
-  startupOnly?: boolean;
   limit?: number;
   cursor?: string;
 }
@@ -76,6 +75,7 @@ export interface AppRelatedRoot {
   id: string;
   label: string;
   path: string;
+  pathType?: "file" | "directory" | "unknown" | string;
   scope: "user" | "system" | string;
   kind: string;
   exists: boolean;
@@ -99,6 +99,7 @@ export interface ManagedAppDetail {
 export interface AppManagerResidueItem {
   itemId: string;
   path: string;
+  pathType?: "file" | "directory" | "unknown" | string;
   kind: string;
   scope: "user" | "system" | string;
   sizeBytes: number;

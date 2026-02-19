@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { getFileExtension, resolveFileIconByExtension } from "@/components/icons/pathIcon";
 import type { PaletteItem } from "@/components/palette/types";
 
 interface PalettePreviewProps {
@@ -10,7 +11,6 @@ interface PalettePreviewProps {
 
 type ItemKind = "file" | "application" | "builtin" | "action" | "other";
 
-const FILE_FALLBACK_ICON = "i-noto:page-facing-up";
 const APPLICATION_FALLBACK_ICON = "i-noto:desktop-computer";
 const BUILTIN_FALLBACK_ICON = "i-noto:hammer-and-wrench";
 const ACTION_OR_OTHER_FALLBACK_ICON = "i-noto:card-index-dividers";
@@ -94,108 +94,6 @@ function inferItemKind(item: PaletteItem): ItemKind {
   }
 
   return "other";
-}
-
-function getFileExtension(path: string | undefined): string | null {
-  if (!path) {
-    return null;
-  }
-
-  const normalized = path.replace(/\\/g, "/");
-  const parts = normalized.split("/");
-  const fileName = parts.length > 0 ? parts[parts.length - 1] : "";
-  if (!fileName || fileName === "." || fileName === "..") {
-    return null;
-  }
-
-  const dotIndex = fileName.lastIndexOf(".");
-  if (dotIndex <= 0 || dotIndex === fileName.length - 1) {
-    return null;
-  }
-
-  return fileName.slice(dotIndex + 1).toLowerCase();
-}
-
-function resolveFileIconByExtension(ext: string | null): string {
-  if (!ext) {
-    return FILE_FALLBACK_ICON;
-  }
-
-  if (ext === "pdf") {
-    return "i-noto:page-facing-up";
-  }
-
-  if (ext === "doc" || ext === "docx" || ext === "rtf") {
-    return "i-noto:memo";
-  }
-
-  if (ext === "xls" || ext === "xlsx" || ext === "csv") {
-    return "i-noto:bar-chart";
-  }
-
-  if (ext === "ppt" || ext === "pptx") {
-    return "i-noto:rolled-up-newspaper";
-  }
-
-  if (
-    ext === "png" ||
-    ext === "jpg" ||
-    ext === "jpeg" ||
-    ext === "webp" ||
-    ext === "gif" ||
-    ext === "bmp" ||
-    ext === "svg"
-  ) {
-    return "i-noto:framed-picture";
-  }
-
-  if (ext === "mp4" || ext === "mov" || ext === "mkv" || ext === "avi" || ext === "webm") {
-    return "i-noto:film-projector";
-  }
-
-  if (ext === "mp3" || ext === "wav" || ext === "flac" || ext === "aac" || ext === "ogg") {
-    return "i-noto:musical-notes";
-  }
-
-  if (ext === "zip" || ext === "rar" || ext === "7z" || ext === "tar" || ext === "gz") {
-    return "i-noto:file-folder";
-  }
-
-  if (
-    ext === "json" ||
-    ext === "yaml" ||
-    ext === "yml" ||
-    ext === "toml" ||
-    ext === "xml" ||
-    ext === "ini" ||
-    ext === "md" ||
-    ext === "txt"
-  ) {
-    return "i-noto:scroll";
-  }
-
-  if (
-    ext === "rs" ||
-    ext === "ts" ||
-    ext === "tsx" ||
-    ext === "js" ||
-    ext === "jsx" ||
-    ext === "py" ||
-    ext === "go" ||
-    ext === "java" ||
-    ext === "c" ||
-    ext === "cpp" ||
-    ext === "h" ||
-    ext === "hpp"
-  ) {
-    return "i-noto:desktop-computer";
-  }
-
-  if (ext === "sql") {
-    return "i-noto:floppy-disk";
-  }
-
-  return FILE_FALLBACK_ICON;
 }
 
 function resolveLauncherFallbackIcon(item: PaletteItem): string {

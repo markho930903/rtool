@@ -1,8 +1,7 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { HashRouter, useRoutes } from "react-router";
-import { useEffect, useLayoutEffect } from "react";
+import { HashRouter, useLocation, useNavigate, useRoutes } from "react-router";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useNavigate } from "react-router";
 
 import type { ClipboardSyncPayload } from "@/components/clipboard/types";
 import type { TransferPeer, TransferProgressSnapshot } from "@/components/transfer/types";
@@ -14,11 +13,17 @@ import { useTransferStore } from "@/stores/transfer.store";
 import { useThemeStore } from "@/theme/store";
 
 function AppEventBridge() {
+  const location = useLocation();
   const navigate = useNavigate();
+  const currentRouteRef = useRef("/");
   const applySync = useClipboardStore((state) => state.applySync);
   const applyTransferPeerSync = useTransferStore((state) => state.applyPeerSync);
   const applyTransferSessionSync = useTransferStore((state) => state.applySessionSync);
   const refreshTransferHistory = useTransferStore((state) => state.refreshHistory);
+
+  useEffect(() => {
+    currentRouteRef.current = `${location.pathname}${location.search}`;
+  }, [location.pathname, location.search]);
 
   useEffect(() => {
     let unlistenClipboardSync: UnlistenFn | undefined;
@@ -39,6 +44,10 @@ function AppEventBridge() {
         }
 
         if (!event.payload?.route) {
+          return;
+        }
+
+        if (event.payload.route === currentRouteRef.current) {
           return;
         }
 

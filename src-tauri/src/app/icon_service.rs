@@ -1,6 +1,10 @@
 use base64::Engine as _;
+#[cfg(target_os = "macos")]
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+#[cfg(target_os = "macos")]
+use std::collections::HashSet;
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
@@ -10,7 +14,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 
 const APP_ICON_TTL: Duration = Duration::from_secs(60 * 60 * 24);
+const APP_ICON_FALLBACK_TTL: Duration = Duration::from_secs(60 * 10);
 const FILE_ICON_TTL: Duration = Duration::from_secs(60 * 60 * 24 * 30);
+const APP_ICON_CACHE_VERSION: &str = "v2";
 
 const FALLBACK_APP_ICON: &str = "i-noto:desktop-computer";
 const FALLBACK_FILE_ICON: &str = "i-noto:page-facing-up";
@@ -19,6 +25,13 @@ const FALLBACK_FILE_ICON: &str = "i-noto:page-facing-up";
 pub struct IconPayload {
     pub kind: String,
     pub value: String,
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Debug, Clone)]
+struct MacIconSource {
+    icon_path: PathBuf,
+    signature: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,18 +55,41 @@ pub fn resolve_builtin_icon(icon: &str) -> IconPayload {
 }
 
 pub fn resolve_application_icon(app: &AppHandle, app_path: &Path) -> IconPayload {
-    let key = format!("app:{}", app_path.to_string_lossy());
+    let app_path_key = app_path.to_string_lossy();
 
-    if let Some(payload) = read_cached_icon(app, &key, APP_ICON_TTL) {
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(source) = resolve_macos_icon_source(app_path) {
+            let key = format!(
+                "app:{APP_ICON_CACHE_VERSION}:{app_path_key}:{}",
+                source.signature
+            );
+            if let Some(payload) = read_cached_icon(app, &key, APP_ICON_TTL) {
+                return payload;
+            }
+            if let Some(payload) = render_macos_icon_payload(app, &source) {
+                write_cached_icon(app, &key, &payload);
+                return payload;
+            }
+            tracing::debug!(
+                event = "app_icon_extract_failed",
+                app_path = %app_path.to_string_lossy(),
+                icon_path = %source.icon_path.to_string_lossy()
+            );
+        }
+    }
+
+    let fallback_key = format!("app:{APP_ICON_CACHE_VERSION}:{app_path_key}:fallback");
+    if let Some(payload) = read_cached_icon(app, &fallback_key, APP_ICON_FALLBACK_TTL) {
         return payload;
     }
 
-    let generated = try_extract_application_icon(app, app_path).unwrap_or_else(|| IconPayload {
+    let generated = IconPayload {
         kind: "iconify".to_string(),
         value: FALLBACK_APP_ICON.to_string(),
-    });
+    };
 
-    write_cached_icon(app, &key, &generated);
+    write_cached_icon(app, &fallback_key, &generated);
     generated
 }
 
@@ -168,28 +204,43 @@ fn stable_hash(input: &str) -> String {
 }
 
 #[cfg(target_os = "macos")]
-fn try_extract_application_icon(app: &AppHandle, app_path: &Path) -> Option<IconPayload> {
+fn resolve_macos_icon_source(app_path: &Path) -> Option<MacIconSource> {
     let extension = app_path.extension()?.to_str()?.to_ascii_lowercase();
     if extension != "app" {
         return None;
     }
 
     let resources = app_path.join("Contents").join("Resources");
-    let icon_file = pick_icns_file(&resources)?;
+    if !resources.exists() {
+        return None;
+    }
 
+    let preferred_names = macos_preferred_icns_names(app_path);
+    let icon_path = match_preferred_icns(&resources, preferred_names.as_slice())
+        .or_else(|| pick_icns_file(&resources, app_path))?;
+    let signature = signature_for_file(icon_path.as_path());
+
+    Some(MacIconSource {
+        icon_path,
+        signature,
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn render_macos_icon_payload(app: &AppHandle, source: &MacIconSource) -> Option<IconPayload> {
     let output_png = app
         .path()
         .app_data_dir()
         .unwrap_or_else(|_| std::env::temp_dir())
         .join("launcher_icon_cache")
-        .join(format!("{}.png", stable_hash(&icon_file.to_string_lossy())));
+        .join(format!("{}.png", stable_hash(source.signature.as_str())));
 
     if !output_png.exists() {
         if let Some(parent) = output_png.parent() {
             if let Err(error) = fs::create_dir_all(parent) {
                 tracing::debug!(
                     event = "icon_png_cache_dir_create_failed",
-                    app_path = %app_path.to_string_lossy(),
+                    icon_path = %source.icon_path.to_string_lossy(),
                     error = error.to_string()
                 );
                 return None;
@@ -200,7 +251,7 @@ fn try_extract_application_icon(app: &AppHandle, app_path: &Path) -> Option<Icon
             .arg("-s")
             .arg("format")
             .arg("png")
-            .arg(&icon_file)
+            .arg(&source.icon_path)
             .arg("--resampleHeightWidth")
             .arg("64")
             .arg("64")
@@ -210,6 +261,11 @@ fn try_extract_application_icon(app: &AppHandle, app_path: &Path) -> Option<Icon
             .ok()?;
 
         if !status.success() {
+            tracing::debug!(
+                event = "icon_sips_convert_failed",
+                icon_path = %source.icon_path.to_string_lossy(),
+                status = format!("{status}")
+            );
             return None;
         }
     }
@@ -223,41 +279,279 @@ fn try_extract_application_icon(app: &AppHandle, app_path: &Path) -> Option<Icon
 }
 
 #[cfg(target_os = "macos")]
-fn pick_icns_file(resources_dir: &Path) -> Option<PathBuf> {
-    let entries = fs::read_dir(resources_dir).ok()?;
-    let mut candidates = Vec::new();
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let extension = path.extension().and_then(|value| value.to_str());
-        if !matches!(extension, Some(ext) if ext.eq_ignore_ascii_case("icns")) {
-            continue;
+fn signature_for_file(path: &Path) -> String {
+    match fs::metadata(path) {
+        Ok(meta) => {
+            let modified_secs = meta
+                .modified()
+                .ok()
+                .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+                .map(|duration| duration.as_secs())
+                .unwrap_or(0);
+            let content = format!("{}|{}|{modified_secs}", path.to_string_lossy(), meta.len());
+            stable_hash(content.as_str())
         }
+        Err(_) => stable_hash(path.to_string_lossy().as_ref()),
+    }
+}
 
-        let name = path
+#[cfg(target_os = "macos")]
+fn macos_preferred_icns_names(app_path: &Path) -> Vec<String> {
+    let info_plist = app_path.join("Contents").join("Info.plist");
+    let content = match fs::read_to_string(&info_plist) {
+        Ok(value) => value,
+        Err(_) => return Vec::new(),
+    };
+
+    let mut candidates = Vec::new();
+    candidates.extend(plist_string_values(content.as_str(), "CFBundleIconFile"));
+    candidates.extend(plist_string_values(content.as_str(), "CFBundleIconName"));
+    candidates.extend(plist_array_string_values(
+        content.as_str(),
+        "CFBundleIconFiles",
+    ));
+
+    let mut seen = HashSet::new();
+    let mut names = Vec::new();
+    for candidate in candidates {
+        let Some(name) = normalize_icns_name(candidate.as_str()) else {
+            continue;
+        };
+        if seen.insert(name.clone()) {
+            names.push(name);
+        }
+    }
+    names
+}
+
+#[cfg(target_os = "macos")]
+fn plist_string_values(content: &str, key: &str) -> Vec<String> {
+    let pattern = format!(
+        r"<key>{}</key>\s*<string>([^<]+)</string>",
+        regex::escape(key)
+    );
+    let regex = match Regex::new(pattern.as_str()) {
+        Ok(value) => value,
+        Err(_) => return Vec::new(),
+    };
+    regex
+        .captures_iter(content)
+        .filter_map(|captures| captures.get(1))
+        .map(|capture| capture.as_str().trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect()
+}
+
+#[cfg(target_os = "macos")]
+fn plist_array_string_values(content: &str, key: &str) -> Vec<String> {
+    let pattern = format!(
+        r"(?s)<key>{}</key>\s*<array>(.*?)</array>",
+        regex::escape(key)
+    );
+    let array_regex = match Regex::new(pattern.as_str()) {
+        Ok(value) => value,
+        Err(_) => return Vec::new(),
+    };
+    let string_regex = match Regex::new(r"<string>([^<]+)</string>") {
+        Ok(value) => value,
+        Err(_) => return Vec::new(),
+    };
+    let mut values = Vec::new();
+    for captures in array_regex.captures_iter(content) {
+        let Some(body) = captures.get(1) else {
+            continue;
+        };
+        for string_capture in string_regex.captures_iter(body.as_str()) {
+            let Some(value) = string_capture.get(1) else {
+                continue;
+            };
+            let normalized = value.as_str().trim();
+            if !normalized.is_empty() {
+                values.push(normalized.to_string());
+            }
+        }
+    }
+    values
+}
+
+#[cfg(target_os = "macos")]
+fn normalize_icns_name(value: &str) -> Option<String> {
+    let file_name = Path::new(value)
+        .file_name()
+        .and_then(|path| path.to_str())
+        .map(str::trim)?;
+    if file_name.is_empty() {
+        return None;
+    }
+    let lower = file_name.to_ascii_lowercase();
+    if lower.ends_with(".icns") {
+        Some(lower)
+    } else {
+        Some(format!("{lower}.icns"))
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn collect_icns_files(resources_dir: &Path) -> Vec<PathBuf> {
+    let entries = match fs::read_dir(resources_dir) {
+        Ok(entries) => entries,
+        Err(_) => return Vec::new(),
+    };
+    let mut files = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
+                .and_then(|value| value.to_str())
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("icns"))
+        })
+        .collect::<Vec<_>>();
+    files.sort_by(|left, right| {
+        let left_name = left
             .file_name()
             .and_then(|value| value.to_str())
             .map(|value| value.to_ascii_lowercase())
             .unwrap_or_default();
-
-        let weight = if name.contains("appicon") {
-            4
-        } else if name.contains("icon") {
-            3
-        } else {
-            1
-        };
-
-        candidates.push((weight, path));
-    }
-
-    candidates.sort_by(|left, right| right.0.cmp(&left.0));
-    candidates.into_iter().next().map(|(_, path)| path)
+        let right_name = right
+            .file_name()
+            .and_then(|value| value.to_str())
+            .map(|value| value.to_ascii_lowercase())
+            .unwrap_or_default();
+        left_name.cmp(&right_name)
+    });
+    files
 }
 
-#[cfg(not(target_os = "macos"))]
-fn try_extract_application_icon(_app: &AppHandle, _app_path: &Path) -> Option<IconPayload> {
+#[cfg(target_os = "macos")]
+fn match_preferred_icns(resources_dir: &Path, preferred_names: &[String]) -> Option<PathBuf> {
+    if preferred_names.is_empty() {
+        return None;
+    }
+    let files = collect_icns_files(resources_dir);
+    if files.is_empty() {
+        return None;
+    }
+    for preferred in preferred_names {
+        let preferred_lower = preferred.to_ascii_lowercase();
+        if let Some(found) = files.iter().find(|path| {
+            path.file_name()
+                .and_then(|value| value.to_str())
+                .is_some_and(|value| value.to_ascii_lowercase() == preferred_lower)
+        }) {
+            return Some(found.clone());
+        }
+    }
     None
+}
+
+#[cfg(target_os = "macos")]
+fn split_identifier_tokens(value: &str) -> Vec<String> {
+    value
+        .chars()
+        .map(|ch| {
+            if ch.is_alphanumeric() {
+                ch.to_ascii_lowercase()
+            } else {
+                ' '
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .map(ToString::to_string)
+        .collect()
+}
+
+#[cfg(target_os = "macos")]
+fn is_language_token(token: &str) -> bool {
+    matches!(
+        token,
+        "javascript"
+            | "typescript"
+            | "python"
+            | "ruby"
+            | "java"
+            | "go"
+            | "c"
+            | "cpp"
+            | "csharp"
+            | "html"
+            | "css"
+            | "json"
+            | "xml"
+            | "yaml"
+            | "shell"
+            | "sql"
+            | "markdown"
+            | "default"
+    )
+}
+
+#[cfg(target_os = "macos")]
+fn icns_candidate_score(name: &str, app_tokens: &[String]) -> i32 {
+    let stem = name.strip_suffix(".icns").unwrap_or(name);
+    let tokens = split_identifier_tokens(stem);
+    let mut score = 100;
+
+    if stem.contains("appicon") {
+        score += 320;
+    } else if stem.contains("icon") {
+        score += 130;
+    }
+
+    let shared = tokens
+        .iter()
+        .filter(|token| app_tokens.iter().any(|app| app == *token))
+        .count();
+    score += (shared as i32) * 90;
+
+    if tokens.iter().any(|token| {
+        matches!(
+            token.as_str(),
+            "document" | "default" | "template" | "file" | "doc"
+        )
+    }) {
+        score -= 160;
+    }
+    if tokens.len() == 1
+        && tokens
+            .first()
+            .is_some_and(|token| is_language_token(token.as_str()))
+    {
+        score -= 120;
+    }
+    if matches!(stem, "icon" | "app") {
+        score -= 40;
+    }
+
+    score
+}
+
+#[cfg(target_os = "macos")]
+fn pick_icns_file(resources_dir: &Path, app_path: &Path) -> Option<PathBuf> {
+    let files = collect_icns_files(resources_dir);
+    if files.is_empty() {
+        return None;
+    }
+    let app_tokens = app_path
+        .file_stem()
+        .and_then(|value| value.to_str())
+        .map(split_identifier_tokens)
+        .unwrap_or_default();
+
+    let mut candidates = files
+        .into_iter()
+        .map(|path| {
+            let lower_name = path
+                .file_name()
+                .and_then(|value| value.to_str())
+                .map(|value| value.to_ascii_lowercase())
+                .unwrap_or_default();
+            let score = icns_candidate_score(lower_name.as_str(), app_tokens.as_slice());
+            (score, lower_name, path)
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
+    candidates.into_iter().next().map(|(_, _, path)| path)
 }
 
 fn file_extension_icon(ext: &str) -> &'static str {
@@ -282,6 +576,8 @@ fn file_extension_icon(ext: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(target_os = "macos")]
+    use std::time::{SystemTime, UNIX_EPOCH};
 
     #[test]
     fn should_map_common_file_extensions() {
@@ -289,5 +585,82 @@ mod tests {
         assert_eq!(file_extension_icon("rs"), "i-noto:desktop-computer");
         assert_eq!(file_extension_icon("zip"), "i-noto:file-folder");
         assert_eq!(file_extension_icon("unknown"), FALLBACK_FILE_ICON);
+    }
+
+    #[cfg(target_os = "macos")]
+    fn create_temp_app_dir(app_name: &str) -> PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|value| value.as_nanos())
+            .unwrap_or(0);
+        let root = std::env::temp_dir().join(format!("rtool-icon-test-{app_name}-{nonce}"));
+        let app_dir = root.join(format!("{app_name}.app"));
+        fs::create_dir_all(app_dir.join("Contents").join("Resources"))
+            .expect("failed to create app resources dir");
+        app_dir
+    }
+
+    #[cfg(target_os = "macos")]
+    fn write_info_plist(app_dir: &Path, content: &str) {
+        let info_plist = app_dir.join("Contents").join("Info.plist");
+        fs::write(info_plist, content).expect("failed to write Info.plist");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn resolve_macos_icon_source_prefers_plist_declared_icon() {
+        let app_dir = create_temp_app_dir("Visual Studio Code");
+        let resources = app_dir.join("Contents").join("Resources");
+        fs::write(resources.join("Code.icns"), b"code").expect("failed to write Code.icns");
+        fs::write(resources.join("javascript.icns"), b"javascript")
+            .expect("failed to write javascript.icns");
+        write_info_plist(
+            app_dir.as_path(),
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+  <key>CFBundleIconFile</key>
+  <string>Code.icns</string>
+</dict>
+</plist>"#,
+        );
+
+        let source = resolve_macos_icon_source(app_dir.as_path()).expect("source should exist");
+        let icon_name = source
+            .icon_path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default();
+        assert_eq!(icon_name, "Code.icns");
+
+        let parent = app_dir
+            .parent()
+            .expect("app dir parent should exist")
+            .to_path_buf();
+        fs::remove_dir_all(parent).expect("failed to cleanup temp dir");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn resolve_macos_icon_source_fallback_prefers_app_icon_over_document() {
+        let app_dir = create_temp_app_dir("Zed");
+        let resources = app_dir.join("Contents").join("Resources");
+        fs::write(resources.join("Document.icns"), b"document")
+            .expect("failed to write Document.icns");
+        fs::write(resources.join("Zed.icns"), b"zed").expect("failed to write Zed.icns");
+
+        let source = resolve_macos_icon_source(app_dir.as_path()).expect("source should exist");
+        let icon_name = source
+            .icon_path
+            .file_name()
+            .and_then(|value| value.to_str())
+            .unwrap_or_default();
+        assert_eq!(icon_name, "Zed.icns");
+
+        let parent = app_dir
+            .parent()
+            .expect("app dir parent should exist")
+            .to_path_buf();
+        fs::remove_dir_all(parent).expect("failed to cleanup temp dir");
     }
 }

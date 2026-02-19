@@ -61,7 +61,6 @@ pub struct LauncherItemDto {
 pub struct AppManagerQueryDto {
     pub keyword: Option<String>,
     pub category: Option<String>,
-    pub startup_only: Option<bool>,
     pub limit: Option<u32>,
     pub cursor: Option<String>,
 }
@@ -71,7 +70,6 @@ impl Default for AppManagerQueryDto {
         Self {
             keyword: None,
             category: None,
-            startup_only: Some(false),
             limit: Some(100),
             cursor: None,
         }
@@ -159,6 +157,7 @@ pub struct AppRelatedRootDto {
     pub id: String,
     pub label: String,
     pub path: String,
+    pub path_type: String,
     pub scope: String,
     pub kind: String,
     pub exists: bool,
@@ -195,6 +194,7 @@ pub struct AppManagerResidueScanInputDto {
 pub struct AppManagerResidueItemDto {
     pub item_id: String,
     pub path: String,
+    pub path_type: String,
     pub kind: String,
     pub scope: String,
     pub size_bytes: u64,

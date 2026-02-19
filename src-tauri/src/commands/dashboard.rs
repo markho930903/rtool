@@ -1,6 +1,6 @@
 use super::{command_end_ok, command_end_status, command_start, normalize_request_id};
 use crate::app::state::AppState;
-use crate::core::AppResult;
+use crate::core::InvokeError;
 use crate::core::models::{AppRuntimeInfoDto, DashboardSnapshotDto, SystemInfoDto};
 use crate::infrastructure::runtime::blocking::run_blocking;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -29,7 +29,7 @@ pub async fn dashboard_snapshot(
     state: State<'_, AppState>,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> AppResult<DashboardSnapshotDto> {
+) -> Result<DashboardSnapshotDto, InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start("dashboard_snapshot", &request_id, window_label.as_deref());
     let uptime_seconds = state.started_at.elapsed().as_secs();

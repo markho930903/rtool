@@ -122,6 +122,8 @@ export default function LauncherWindowPage() {
   const launcherItemRefs = useRef<Map<string, HTMLLIElement>>(new Map());
   const [openCycle, setOpenCycle] = useState(1);
   const [hasSearchedOnce, setHasSearchedOnce] = useState(false);
+  const [alwaysOnTop, setAlwaysOnTop] = useState(false);
+  const alwaysOnTopRef = useRef(false);
 
   const query = useLauncherStore((state) => state.query);
   const items = useLauncherStore((state) => state.items);
@@ -179,14 +181,56 @@ export default function LauncherWindowPage() {
     resolveBounds: resolveLayoutBounds,
   });
 
+  const shouldSkipHide = useCallback(() => alwaysOnTopRef.current, []);
+
   const { cancelScheduledHide } = useWindowFocusAutoHide({
     appWindow,
     enabled,
+    shouldSkipHide,
     onFocus: () => {
       syncFromStorage();
       void syncLocaleFromBackend();
     },
   });
+
+  const syncAlwaysOnTopState = useCallback(() => {
+    void appWindow
+      .isAlwaysOnTop()
+      .then((result) => {
+        alwaysOnTopRef.current = result;
+        setAlwaysOnTop(result);
+      })
+      .catch((error: unknown) => {
+        console.warn("[launcher-window] read always-on-top failed", { error });
+      });
+  }, [appWindow]);
+
+  const handleAlwaysOnTopToggle = useCallback(() => {
+    const next = !alwaysOnTop;
+    void appWindow
+      .setAlwaysOnTop(next)
+      .then(() => {
+        if (next) {
+          cancelScheduledHide();
+        }
+        alwaysOnTopRef.current = next;
+        setAlwaysOnTop(next);
+      })
+      .catch((error: unknown) => {
+        console.warn("[launcher-window] toggle always-on-top failed", { next, error });
+      });
+  }, [alwaysOnTop, appWindow, cancelScheduledHide]);
+
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+    syncAlwaysOnTopState();
+  }, [enabled, syncAlwaysOnTopState]);
+
+  useEffect(() => {
+    alwaysOnTopRef.current = alwaysOnTop;
+  }, [alwaysOnTop]);
 
   useEffect(() => {
     if (!selectedItem?.id) {
@@ -205,6 +249,7 @@ export default function LauncherWindowPage() {
     const setup = async () => {
       const unlistenOpened = await listen("rtool://launcher/opened", () => {
         cancelScheduledHide();
+        syncAlwaysOnTopState();
 
         setOpenCycle((value) => value + 1);
         setHasSearchedOnce(false);
@@ -278,6 +323,7 @@ export default function LauncherWindowPage() {
     moveSelection,
     reset,
     searchWithBootMark,
+    syncAlwaysOnTopState,
     syncFromStorage,
     syncLocaleFromBackend,
   ]);
@@ -298,11 +344,36 @@ export default function LauncherWindowPage() {
     return null;
   }
 
+  const alwaysOnTopLabel = alwaysOnTop ? t("launcher.pinWindowOff") : t("launcher.pinWindowOn");
+
   return (
     <div className="relative h-screen w-screen overflow-hidden rounded-md bg-transparent p-0">
       <section className="flex h-full w-full overflow-hidden rounded-md border border-border-muted/85 bg-surface-overlay shadow-overlay backdrop-blur-[24px] backdrop-saturate-140">
         <div className="flex min-w-0 flex-[1.4] flex-col border-r border-border-muted/85">
-          <PaletteInput query={query} loading={loading} onQueryChange={setQuery} inputRef={inputRef} />
+          <PaletteInput
+            query={query}
+            loading={loading}
+            onQueryChange={setQuery}
+            inputRef={inputRef}
+            trailingActions={
+              <Button
+                size="xs"
+                variant={alwaysOnTop ? "secondary" : "ghost"}
+                iconOnly
+                title={alwaysOnTopLabel}
+                aria-label={alwaysOnTopLabel}
+                onClick={handleAlwaysOnTopToggle}
+              >
+                <span
+                  className={[
+                    "inline-block leading-none text-[1.35rem]",
+                    alwaysOnTop ? "i-noto:pushpin" : "i-noto:round-pushpin",
+                  ].join(" ")}
+                  aria-hidden="true"
+                />
+              </Button>
+            }
+          />
 
           {error ? <div className="px-4 py-3 text-[13px] text-danger">{error}</div> : null}
 
@@ -334,73 +405,73 @@ export default function LauncherWindowPage() {
               <div className="p-3 text-[13px] text-text-muted">{t("launcher.noResults")}</div>
             ) : null}
 
-            {!loading || items.length > 0 ? (
-              groupedItems.map((group) => (
-                <div key={group.key} className="mb-1 last:mb-0">
-                  <div className="px-2 py-1 text-[11px] uppercase tracking-wide text-text-muted">{group.label}</div>
-                  <ul
-                    className="m-0 list-none p-0"
-                    role="list"
-                    aria-label={t("launcher.groupAria", { label: group.label })}
-                  >
-                    {group.items.map(({ item, index }) => {
-                      const isSelected = selectedIndex === index;
-                      return (
-                        <li
-                          key={item.id}
-                          className="mb-[3px] last:mb-0"
-                          ref={(node) => {
-                            if (node) {
-                              launcherItemRefs.current.set(item.id, node);
-                              return;
-                            }
-                            launcherItemRefs.current.delete(item.id);
-                          }}
-                        >
-                          <Button
-                            unstyled
-                            type="button"
-                            className={
-                              isSelected
-                                ? "w-full rounded-md border border-accent bg-accent-soft px-2.5 py-2.25 text-left transition-colors duration-[140ms] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                                : "w-full rounded-md border border-transparent px-2.5 py-2.25 text-left transition-colors duration-[140ms] hover:bg-surface-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                            }
-                            onMouseEnter={() => setSelectedIndex(index)}
-                            onFocus={() => setSelectedIndex(index)}
-                            onClick={() => {
-                              setSelectedIndex(index);
-                              void executeSelected().then((result) => {
-                                if (result?.ok) {
-                                  void appWindow.hide();
-                                }
-                              });
+            {!loading || items.length > 0
+              ? groupedItems.map((group) => (
+                  <div key={group.key} className="mb-1 last:mb-0">
+                    <div className="px-2 py-1 text-[11px] uppercase tracking-wide text-text-muted">{group.label}</div>
+                    <ul
+                      className="m-0 list-none p-0"
+                      role="list"
+                      aria-label={t("launcher.groupAria", { label: group.label })}
+                    >
+                      {group.items.map(({ item, index }) => {
+                        const isSelected = selectedIndex === index;
+                        return (
+                          <li
+                            key={item.id}
+                            className="mb-[3px] last:mb-0"
+                            ref={(node) => {
+                              if (node) {
+                                launcherItemRefs.current.set(item.id, node);
+                                return;
+                              }
+                              launcherItemRefs.current.delete(item.id);
                             }}
-                            aria-current={isSelected ? "true" : undefined}
                           >
-                            <div className="flex items-start gap-2.5">
-                              <LauncherItemIcon item={item} />
-                              <div className="min-w-0">
-                                <div className="truncate text-sm font-semibold text-text-primary">
-                                  {renderHighlightedText(item.title, query)}
-                                </div>
-                                <div className="mt-[3px] truncate text-xs text-text-secondary">
-                                  {renderHighlightedText(item.subtitle, query)}
-                                </div>
-                                {item.shortcut ? (
-                                  <div className="mt-1 text-[11px] text-text-muted">
-                                    {t("launcher.shortcut", { value: item.shortcut })}
+                            <Button
+                              unstyled
+                              type="button"
+                              className={
+                                isSelected
+                                  ? "w-full rounded-md border border-accent bg-accent-soft px-2.5 py-2.25 text-left transition-colors duration-[140ms] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                  : "w-full rounded-md border border-transparent px-2.5 py-2.25 text-left transition-colors duration-[140ms] hover:bg-surface-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                              }
+                              onMouseEnter={() => setSelectedIndex(index)}
+                              onFocus={() => setSelectedIndex(index)}
+                              onClick={() => {
+                                setSelectedIndex(index);
+                                void executeSelected().then((result) => {
+                                  if (result?.ok) {
+                                    void appWindow.hide();
+                                  }
+                                });
+                              }}
+                              aria-current={isSelected ? "true" : undefined}
+                            >
+                              <div className="flex items-start gap-2.5">
+                                <LauncherItemIcon item={item} />
+                                <div className="min-w-0">
+                                  <div className="truncate text-sm font-semibold text-text-primary">
+                                    {renderHighlightedText(item.title, query)}
                                   </div>
-                                ) : null}
+                                  <div className="mt-[3px] truncate text-xs text-text-secondary">
+                                    {renderHighlightedText(item.subtitle, query)}
+                                  </div>
+                                  {item.shortcut ? (
+                                    <div className="mt-1 text-[11px] text-text-muted">
+                                      {t("launcher.shortcut", { value: item.shortcut })}
+                                    </div>
+                                  ) : null}
+                                </div>
                               </div>
-                            </div>
-                          </Button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              ))
-            ) : null}
+                            </Button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </div>
+                ))
+              : null}
           </div>
 
           <footer className="flex gap-4 border-t border-border-muted/85 px-3 py-2 text-[11px] text-text-muted">

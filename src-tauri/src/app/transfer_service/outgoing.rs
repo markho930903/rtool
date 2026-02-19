@@ -25,10 +25,12 @@ impl TransferService {
         }
 
         let settings = self.get_settings();
-        let mut stream = TcpStream::connect(peer_address).await.map_err(|error| {
-            AppError::new("transfer_peer_connect_failed", "连接目标设备失败")
-                .with_detail(format!("{peer_address}: {error}"))
-        })?;
+        let mut stream = TcpStream::connect(peer_address)
+            .await
+            .with_context(|| format!("连接目标设备失败: {peer_address}"))
+            .with_code("transfer_peer_connect_failed", "连接目标设备失败")
+            .with_ctx("peerAddress", peer_address.to_string())
+            .with_ctx("sessionId", session_id.to_string())?;
 
         let local_capabilities = vec![
             CAPABILITY_CODEC_BIN_V2.to_string(),
@@ -53,14 +55,19 @@ impl TransferService {
         let server_nonce = match challenge {
             TransferFrame::AuthChallenge { nonce, .. } => nonce,
             TransferFrame::Error { code, message } => {
-                return Err(AppError::new(code, "目标设备拒绝连接").with_detail(message));
+                return Err(AppError::new(code, "目标设备拒绝连接")
+                    .with_cause(message)
+                    .with_context("sessionId", session_id.to_string())
+                    .with_context("peerAddress", peer_address.to_string()));
             }
             other => {
                 return Err(AppError::new(
                     "transfer_protocol_challenge_invalid",
                     "握手挑战帧不合法",
                 )
-                .with_detail(format!("unexpected frame: {other:?}")));
+                .with_context("sessionId", session_id.to_string())
+                .with_context("peerAddress", peer_address.to_string())
+                .with_context("unexpectedFrame", format!("{other:?}")));
             }
         };
 
@@ -86,12 +93,17 @@ impl TransferService {
                 capabilities.unwrap_or_default(),
             ),
             TransferFrame::Error { code, message } => {
-                return Err(AppError::new(code, "认证失败").with_detail(message));
+                return Err(AppError::new(code, "认证失败")
+                    .with_cause(message)
+                    .with_context("sessionId", session_id.to_string())
+                    .with_context("peerAddress", peer_address.to_string()));
             }
             other => {
                 return Err(
                     AppError::new("transfer_protocol_auth_invalid", "认证响应帧不合法")
-                        .with_detail(format!("unexpected frame: {other:?}")),
+                        .with_context("sessionId", session_id.to_string())
+                        .with_context("peerAddress", peer_address.to_string())
+                        .with_context("unexpectedFrame", format!("{other:?}")),
                 );
             }
         };
@@ -166,14 +178,19 @@ impl TransferService {
                 }
             }
             TransferFrame::Error { code, message } => {
-                return Err(AppError::new(code, "接收端拒绝文件清单").with_detail(message));
+                return Err(AppError::new(code, "接收端拒绝文件清单")
+                    .with_cause(message)
+                    .with_context("sessionId", session.id.clone())
+                    .with_context("peerAddress", peer_address.to_string()));
             }
             other => {
                 return Err(AppError::new(
                     "transfer_protocol_manifest_ack_invalid",
                     "MANIFEST_ACK 帧不合法",
                 )
-                .with_detail(format!("unexpected frame: {other:?}")));
+                .with_context("sessionId", session.id.clone())
+                .with_context("peerAddress", peer_address.to_string())
+                .with_context("unexpectedFrame", format!("{other:?}")));
             }
         }
 
@@ -339,9 +356,10 @@ impl TransferService {
                             ack_items.extend(items);
                         }
                         TransferFrame::Error { code, message } => {
-                            return Err(
-                                AppError::new(code, "目标设备返回错误").with_detail(message)
-                            );
+                            return Err(AppError::new(code, "目标设备返回错误")
+                                .with_cause(message)
+                                .with_context("sessionId", session.id.clone())
+                                .with_context("peerAddress", peer_address.to_string()));
                         }
                         TransferFrame::Ping { .. } => {}
                         _ => {}
@@ -429,10 +447,11 @@ impl TransferService {
                                     "transfer_chunk_retry_exhausted",
                                     "分块重试次数已耗尽",
                                 )
-                                .with_detail(format!(
-                                    "file_idx={}, chunk_index={}",
-                                    inflight_chunk.file_idx, inflight_chunk.chunk_index
-                                )));
+                                .with_context("sessionId", session.id.clone())
+                                .with_context("fileId", ack.file_id.clone())
+                                .with_context("fileIdx", inflight_chunk.file_idx.to_string())
+                                .with_context("chunkIndex", inflight_chunk.chunk_index.to_string())
+                                .with_context("peerAddress", peer_address.to_string()));
                             }
                             retransmit_chunks = retransmit_chunks.saturating_add(1);
                             tracing::warn!(
@@ -465,7 +484,10 @@ impl TransferService {
                             "transfer_chunk_ack_timeout",
                             "分块确认超时且超过重试上限",
                         )
-                        .with_detail(format!("file_idx={}, chunk_index={}", key.0, key.1)));
+                        .with_context("sessionId", session.id.clone())
+                        .with_context("fileIdx", key.0.to_string())
+                        .with_context("chunkIndex", key.1.to_string())
+                        .with_context("peerAddress", peer_address.to_string()));
                     }
                     retransmit_chunks = retransmit_chunks.saturating_add(1);
                     tracing::warn!(

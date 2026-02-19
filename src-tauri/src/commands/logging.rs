@@ -1,6 +1,6 @@
 use super::{command_end_error, command_end_ok, command_start, normalize_request_id};
 use crate::core::models::{LogConfigDto, LogPageDto, LogQueryDto};
-use crate::core::{AppError, AppResult};
+use crate::core::{AppError, InvokeError};
 use crate::infrastructure::logging::{
     RecordLogInput, export_log_entries, get_log_config, record_log_event, sanitize_for_log,
     sanitize_json_value, update_log_config,
@@ -45,10 +45,10 @@ pub async fn client_log(
     scope: String,
     message: String,
     metadata: Option<Value>,
-) -> AppResult<()> {
+) -> Result<(), InvokeError> {
     let level = normalize_level(&level).ok_or_else(|| {
         AppError::new("invalid_log_level", "日志级别非法")
-            .with_detail(format!("unsupported level: {}", sanitize_for_log(&level)))
+            .with_context("level", sanitize_for_log(&level))
     })?;
 
     let scope = sanitize_for_log(&scope);
@@ -73,7 +73,7 @@ pub async fn client_log(
                 event = "client_log_record_failed",
                 request_id = %request_id_for_record,
                 error_code = error.code,
-                error_detail = error.detail.unwrap_or_default()
+                error_detail = error.causes.first().map(String::as_str).unwrap_or_default()
             );
         }
         Ok(())
@@ -127,7 +127,7 @@ pub async fn logging_query(
     query: Option<LogQueryDto>,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> AppResult<LogPageDto> {
+) -> Result<LogPageDto, InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start("logging_query", &request_id, window_label.as_deref());
 
@@ -140,14 +140,14 @@ pub async fn logging_query(
         Ok(_) => command_end_ok("logging_query", &request_id, started_at),
         Err(error) => command_end_error("logging_query", &request_id, started_at, error),
     }
-    result
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
 pub async fn logging_get_config(
     request_id: Option<String>,
     window_label: Option<String>,
-) -> AppResult<LogConfigDto> {
+) -> Result<LogConfigDto, InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start("logging_get_config", &request_id, window_label.as_deref());
 
@@ -156,7 +156,7 @@ pub async fn logging_get_config(
         Ok(_) => command_end_ok("logging_get_config", &request_id, started_at),
         Err(error) => command_end_error("logging_get_config", &request_id, started_at, error),
     }
-    result
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -164,7 +164,7 @@ pub async fn logging_update_config(
     config: LogConfigDto,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> AppResult<LogConfigDto> {
+) -> Result<LogConfigDto, InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start(
         "logging_update_config",
@@ -177,7 +177,7 @@ pub async fn logging_update_config(
         Ok(_) => command_end_ok("logging_update_config", &request_id, started_at),
         Err(error) => command_end_error("logging_update_config", &request_id, started_at, error),
     }
-    result
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -186,7 +186,7 @@ pub async fn logging_export_jsonl(
     output_path: Option<String>,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> AppResult<String> {
+) -> Result<String, InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start("logging_export_jsonl", &request_id, window_label.as_deref());
 
@@ -199,28 +199,9 @@ pub async fn logging_export_jsonl(
         Ok(_) => command_end_ok("logging_export_jsonl", &request_id, started_at),
         Err(error) => command_end_error("logging_export_jsonl", &request_id, started_at, error),
     }
-    result
+    result.map_err(Into::into)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn should_reject_invalid_level() {
-        let result = client_log(
-            "invalid".to_string(),
-            Some("req".to_string()),
-            "ui".to_string(),
-            "message".to_string(),
-            None,
-        )
-        .await;
-
-        assert!(result.is_err());
-        assert_eq!(
-            result.expect_err("expected error").code,
-            "invalid_log_level"
-        );
-    }
-}
+#[path = "../../tests/commands/logging_tests.rs"]
+mod tests;

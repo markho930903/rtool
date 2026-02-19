@@ -24,6 +24,7 @@ pub(super) fn build_self_item(app: &AppHandle) -> Option<ManagedAppDto> {
     let executable = std::env::current_exe().ok()?;
     let app_name = app.package_info().name.to_string();
     let app_path = executable.to_string_lossy().to_string();
+    let size_path = resolve_app_size_path(executable.as_path());
     let id = stable_app_id("rtool", app_path.as_str());
     let (startup_enabled, startup_scope, startup_editable) =
         platform_detect_startup_state(id.as_str(), executable.as_path());
@@ -49,7 +50,7 @@ pub(super) fn build_self_item(app: &AppHandle) -> Option<ManagedAppDto> {
         source: "rtool".to_string(),
         icon_kind: icon.kind,
         icon_value: icon.value,
-        estimated_size_bytes: try_get_path_size_bytes(executable.as_path()),
+        estimated_size_bytes: try_get_path_size_bytes(size_path.as_path()),
         startup_enabled,
         startup_scope,
         startup_editable,
@@ -183,6 +184,7 @@ pub(super) fn mac_application_roots() -> Vec<PathBuf> {
 #[cfg(target_os = "macos")]
 pub(super) fn build_macos_app_item(app: &AppHandle, app_path: &Path) -> Option<ManagedAppDto> {
     let path_str = app_path.to_string_lossy().to_string();
+    let size_path = resolve_app_size_path(app_path);
     let info = parse_macos_info_plist(app_path.join("Contents").join("Info.plist").as_path());
     let bundle = info.bundle_id.clone();
     let version = info.version.clone();
@@ -216,7 +218,7 @@ pub(super) fn build_macos_app_item(app: &AppHandle, app_path: &Path) -> Option<M
         source: "application".to_string(),
         icon_kind: icon.kind,
         icon_value: icon.value,
-        estimated_size_bytes: try_get_path_size_bytes(app_path),
+        estimated_size_bytes: try_get_path_size_bytes(size_path.as_path()),
         startup_enabled,
         startup_scope,
         startup_editable,
@@ -387,6 +389,17 @@ pub(super) fn windows_discovery_path_from_uninstall_entry(
 }
 
 #[cfg(target_os = "windows")]
+fn windows_size_measurement_path(entry: &WindowsUninstallEntry, fallback_path: &Path) -> PathBuf {
+    if let Some(location) = entry.install_location.as_deref() {
+        let location = location.trim().trim_matches('"');
+        if !location.is_empty() {
+            return PathBuf::from(location);
+        }
+    }
+    resolve_app_size_path(fallback_path)
+}
+
+#[cfg(target_os = "windows")]
 pub(super) fn windows_uninstall_entry_matches_path(
     entry: &WindowsUninstallEntry,
     app_path: &Path,
@@ -436,6 +449,7 @@ pub(super) fn windows_build_item_from_uninstall_entry(
     path: &Path,
 ) -> ManagedAppDto {
     let path_str = path.to_string_lossy().to_string();
+    let size_path = windows_size_measurement_path(entry, path);
     let parent_stem = path
         .parent()
         .and_then(|parent| parent.file_name())
@@ -472,7 +486,7 @@ pub(super) fn windows_build_item_from_uninstall_entry(
         source: "application".to_string(),
         icon_kind: icon.kind,
         icon_value: icon.value,
-        estimated_size_bytes: try_get_path_size_bytes(path),
+        estimated_size_bytes: try_get_path_size_bytes(size_path.as_path()),
         startup_enabled,
         startup_scope,
         startup_editable,

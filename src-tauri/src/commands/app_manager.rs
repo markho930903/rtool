@@ -11,8 +11,9 @@ use crate::core::models::{
     AppManagerResidueScanResultDto, AppManagerStartupUpdateInputDto, AppManagerUninstallInputDto,
     ManagedAppDetailDto,
 };
-use crate::core::{AppError, AppResult};
+use crate::core::{AppError, AppResult, InvokeError, ResultExt};
 use crate::infrastructure::runtime::blocking::run_blocking;
+use anyhow::Context;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -20,7 +21,7 @@ fn reveal_path(path: &Path) -> AppResult<()> {
     if !path.exists() {
         return Err(
             AppError::new("app_manager_reveal_not_found", "定位失败：目标路径不存在")
-                .with_detail(path.to_string_lossy().to_string()),
+                .with_context("path", path.to_string_lossy().to_string()),
         );
     }
 
@@ -33,7 +34,7 @@ fn reveal_path(path: &Path) -> AppResult<()> {
             .status()
     } else {
         let fallback = if target.is_dir() {
-            target
+            target.clone()
         } else {
             target
                 .parent()
@@ -43,13 +44,17 @@ fn reveal_path(path: &Path) -> AppResult<()> {
         Command::new("xdg-open").arg(fallback).status()
     };
 
-    let status = command_result.map_err(|error| {
-        AppError::new(
+    let status = command_result
+        .with_context(|| {
+            format!(
+                "failed to launch file manager for {}",
+                target.to_string_lossy()
+            )
+        })
+        .with_code(
             "app_manager_reveal_failed",
             "定位失败：无法启动系统文件管理器",
-        )
-        .with_detail(error.to_string())
-    })?;
+        )?;
 
     if status.success() {
         Ok(())
@@ -58,7 +63,8 @@ fn reveal_path(path: &Path) -> AppResult<()> {
             "app_manager_reveal_failed",
             "定位失败：系统文件管理器调用异常",
         )
-        .with_detail(format!("status={status}")))
+        .with_context("path", target.to_string_lossy().to_string())
+        .with_context("status", status.to_string()))
     }
 }
 
@@ -68,7 +74,7 @@ pub async fn app_manager_list(
     query: Option<AppManagerQueryDto>,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> Result<AppManagerPageDto, crate::core::AppError> {
+) -> Result<AppManagerPageDto, InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start("app_manager_list", &request_id, window_label.as_deref());
     let input_query = query.unwrap_or_default();
@@ -80,7 +86,7 @@ pub async fn app_manager_list(
         Ok(_) => command_end_ok("app_manager_list", &request_id, started_at),
         Err(error) => command_end_error("app_manager_list", &request_id, started_at, error),
     }
-    result
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -89,7 +95,7 @@ pub async fn app_manager_get_detail(
     query: AppManagerDetailQueryDto,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> Result<ManagedAppDetailDto, crate::core::AppError> {
+) -> Result<ManagedAppDetailDto, InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start(
         "app_manager_get_detail",
@@ -104,7 +110,7 @@ pub async fn app_manager_get_detail(
         Ok(_) => command_end_ok("app_manager_get_detail", &request_id, started_at),
         Err(error) => command_end_error("app_manager_get_detail", &request_id, started_at, error),
     }
-    result
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -113,7 +119,7 @@ pub async fn app_manager_scan_residue(
     input: AppManagerResidueScanInputDto,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> Result<AppManagerResidueScanResultDto, crate::core::AppError> {
+) -> Result<AppManagerResidueScanResultDto, InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start(
         "app_manager_scan_residue",
@@ -128,7 +134,7 @@ pub async fn app_manager_scan_residue(
         Ok(_) => command_end_ok("app_manager_scan_residue", &request_id, started_at),
         Err(error) => command_end_error("app_manager_scan_residue", &request_id, started_at, error),
     }
-    result
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -137,7 +143,7 @@ pub async fn app_manager_cleanup(
     input: AppManagerCleanupInputDto,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> Result<AppManagerCleanupResultDto, crate::core::AppError> {
+) -> Result<AppManagerCleanupResultDto, InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start("app_manager_cleanup", &request_id, window_label.as_deref());
     let result = run_blocking("app_manager_cleanup", move || {
@@ -148,7 +154,7 @@ pub async fn app_manager_cleanup(
         Ok(_) => command_end_ok("app_manager_cleanup", &request_id, started_at),
         Err(error) => command_end_error("app_manager_cleanup", &request_id, started_at, error),
     }
-    result
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -157,7 +163,7 @@ pub async fn app_manager_export_scan_result(
     input: AppManagerExportScanInputDto,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> Result<AppManagerExportScanResultDto, crate::core::AppError> {
+) -> Result<AppManagerExportScanResultDto, InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start(
         "app_manager_export_scan_result",
@@ -177,7 +183,7 @@ pub async fn app_manager_export_scan_result(
             error,
         ),
     }
-    result
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -185,7 +191,7 @@ pub async fn app_manager_refresh_index(
     app: tauri::AppHandle,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> Result<AppManagerActionResultDto, crate::core::AppError> {
+) -> Result<AppManagerActionResultDto, InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start(
         "app_manager_refresh_index",
@@ -202,7 +208,7 @@ pub async fn app_manager_refresh_index(
             command_end_error("app_manager_refresh_index", &request_id, started_at, error)
         }
     }
-    result
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -211,7 +217,7 @@ pub async fn app_manager_set_startup(
     input: AppManagerStartupUpdateInputDto,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> Result<AppManagerActionResultDto, crate::core::AppError> {
+) -> Result<AppManagerActionResultDto, InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start(
         "app_manager_set_startup",
@@ -226,7 +232,7 @@ pub async fn app_manager_set_startup(
         Ok(_) => command_end_ok("app_manager_set_startup", &request_id, started_at),
         Err(error) => command_end_error("app_manager_set_startup", &request_id, started_at, error),
     }
-    result
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -235,7 +241,7 @@ pub async fn app_manager_uninstall(
     input: AppManagerUninstallInputDto,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> Result<AppManagerActionResultDto, crate::core::AppError> {
+) -> Result<AppManagerActionResultDto, InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start(
         "app_manager_uninstall",
@@ -250,7 +256,7 @@ pub async fn app_manager_uninstall(
         Ok(_) => command_end_ok("app_manager_uninstall", &request_id, started_at),
         Err(error) => command_end_error("app_manager_uninstall", &request_id, started_at, error),
     }
-    result
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -259,7 +265,7 @@ pub async fn app_manager_open_uninstall_help(
     app_id: String,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> Result<AppManagerActionResultDto, crate::core::AppError> {
+) -> Result<AppManagerActionResultDto, InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start(
         "app_manager_open_uninstall_help",
@@ -279,7 +285,7 @@ pub async fn app_manager_open_uninstall_help(
             error,
         ),
     }
-    result
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -287,7 +293,7 @@ pub fn app_manager_reveal_path(
     path: String,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> AppResult<()> {
+) -> Result<(), InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start(
         "app_manager_reveal_path",
@@ -299,7 +305,7 @@ pub fn app_manager_reveal_path(
     if trimmed.is_empty() {
         let error = AppError::new("app_manager_reveal_invalid", "定位失败：路径不能为空");
         command_end_error("app_manager_reveal_path", &request_id, started_at, &error);
-        return Err(error);
+        return Err(error.into());
     }
 
     let result = reveal_path(Path::new(trimmed));
@@ -307,5 +313,5 @@ pub fn app_manager_reveal_path(
         Ok(_) => command_end_ok("app_manager_reveal_path", &request_id, started_at),
         Err(error) => command_end_error("app_manager_reveal_path", &request_id, started_at, error),
     }
-    result
+    result.map_err(Into::into)
 }

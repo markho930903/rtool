@@ -8,7 +8,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use wincode::{SchemaRead, SchemaWrite};
 
-use crate::core::{AppError, AppResult};
+use crate::core::{AppError, AppResult, ResultExt};
+use anyhow::Context;
 
 pub const PROTOCOL_VERSION_V2: u16 = 2;
 pub const CAPABILITY_CODEC_BIN_V2: &str = "codec-bin-v2";
@@ -477,7 +478,7 @@ impl From<TransferFrameBinary> for TransferFrame {
 }
 
 fn app_error(code: &str, message: impl Into<String>) -> AppError {
-    AppError::new(code, "文件传输协议错误").with_detail(message.into())
+    AppError::new(code, "文件传输协议错误").with_context("protocolMessage", message.into())
 }
 
 pub fn random_hex(bytes: usize) -> String {
@@ -520,7 +521,10 @@ fn encrypt_payload(key_bytes: &[u8; 32], plain: &[u8]) -> AppResult<Vec<u8>> {
 
     let cipher_text = cipher
         .encrypt(nonce, plain)
-        .map_err(|error| app_error("transfer_encrypt_failed", error.to_string()))?;
+        .with_context(|| format!("加密传输负载失败: payload_len={}", plain.len()))
+        .with_code("transfer_encrypt_failed", "文件传输协议错误")
+        .with_ctx("phase", "encrypt")
+        .with_ctx("payloadLength", plain.len().to_string())?;
 
     let mut output = Vec::with_capacity(24 + cipher_text.len());
     output.extend_from_slice(&nonce_bytes);
@@ -543,17 +547,24 @@ fn decrypt_payload(key_bytes: &[u8; 32], payload: &[u8]) -> AppResult<Vec<u8>> {
 
     cipher
         .decrypt(nonce, cipher_bytes)
-        .map_err(|error| app_error("transfer_decrypt_failed", error.to_string()))
+        .with_context(|| format!("解密传输负载失败: payload_len={}", payload.len()))
+        .with_code("transfer_decrypt_failed", "文件传输协议错误")
+        .with_ctx("phase", "decrypt")
+        .with_ctx("payloadLength", payload.len().to_string())
 }
 
 fn serialize_frame(frame: &TransferFrame, codec: FrameCodec) -> AppResult<Vec<u8>> {
     match codec {
         FrameCodec::JsonV1 => serde_json::to_vec(frame)
-            .map_err(|error| app_error("transfer_frame_serialize_failed", error.to_string())),
+            .context("序列化传输帧失败(json)")
+            .with_code("transfer_frame_serialize_failed", "文件传输协议错误")
+            .with_ctx("codec", codec.as_str()),
         FrameCodec::BinV2 => {
             let binary = TransferFrameBinary::from(frame);
             wincode::serialize(&binary)
-                .map_err(|error| app_error("transfer_frame_serialize_failed", error.to_string()))
+                .context("序列化传输帧失败(bin)")
+                .with_code("transfer_frame_serialize_failed", "文件传输协议错误")
+                .with_ctx("codec", codec.as_str())
         }
     }
 }
@@ -561,10 +572,14 @@ fn serialize_frame(frame: &TransferFrame, codec: FrameCodec) -> AppResult<Vec<u8
 fn deserialize_frame(payload: &[u8], codec: FrameCodec) -> AppResult<TransferFrame> {
     match codec {
         FrameCodec::JsonV1 => serde_json::from_slice::<TransferFrame>(payload)
-            .map_err(|error| app_error("transfer_frame_parse_failed", error.to_string())),
+            .context("解析传输帧失败(json)")
+            .with_code("transfer_frame_parse_failed", "文件传输协议错误")
+            .with_ctx("codec", codec.as_str()),
         FrameCodec::BinV2 => wincode::deserialize::<TransferFrameBinary>(payload)
             .map(TransferFrame::from)
-            .map_err(|error| app_error("transfer_frame_parse_failed", error.to_string())),
+            .context("解析传输帧失败(bin)")
+            .with_code("transfer_frame_parse_failed", "文件传输协议错误")
+            .with_ctx("codec", codec.as_str()),
     }
 }
 
@@ -691,53 +706,22 @@ pub async fn read_frame(
 }
 
 fn io_to_error(error: io::Error) -> AppError {
+    let io_kind = format!("{:?}", error.kind());
     match error.kind() {
         io::ErrorKind::UnexpectedEof
         | io::ErrorKind::ConnectionAborted
         | io::ErrorKind::ConnectionReset
         | io::ErrorKind::BrokenPipe => {
             AppError::new("transfer_connection_closed", "传输连接已断开")
-                .with_detail(error.to_string())
+                .with_source(error)
+                .with_context("ioKind", io_kind)
         }
-        _ => AppError::new("transfer_io_error", "文件传输 I/O 错误").with_detail(error.to_string()),
+        _ => AppError::new("transfer_io_error", "文件传输 I/O 错误")
+            .with_source(error)
+            .with_context("ioKind", io_kind),
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn proof_and_session_key_should_be_stable() {
-        let proof = derive_proof("12345678", "aa", "bb");
-        assert_eq!(proof.len(), 64);
-
-        let key_1 = derive_session_key("12345678", "aa", "bb");
-        let key_2 = derive_session_key("12345678", "aa", "bb");
-        assert_eq!(key_1, key_2);
-        assert_eq!(key_1.len(), 32);
-    }
-
-    #[test]
-    fn codec_roundtrip_should_work() {
-        let frame = TransferFrame::AckBatch {
-            session_id: "session-1".to_string(),
-            items: vec![AckFrameItem {
-                file_id: "file-1".to_string(),
-                chunk_index: 1,
-                ok: true,
-                error: None,
-            }],
-        };
-
-        let json_payload = serialize_frame(&frame, FrameCodec::JsonV1).expect("json serialize");
-        let json_decoded = deserialize_frame(json_payload.as_slice(), FrameCodec::JsonV1)
-            .expect("json deserialize");
-        assert!(matches!(json_decoded, TransferFrame::AckBatch { .. }));
-
-        let bin_payload = serialize_frame(&frame, FrameCodec::BinV2).expect("bin serialize");
-        let bin_decoded =
-            deserialize_frame(bin_payload.as_slice(), FrameCodec::BinV2).expect("bin deserialize");
-        assert!(matches!(bin_decoded, TransferFrame::AckBatch { .. }));
-    }
-}
+#[path = "../../../tests/infrastructure/transfer/protocol_tests.rs"]
+mod tests;

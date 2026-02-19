@@ -28,6 +28,8 @@
   "launcher.noResults": "No matches. Try entering a tool name, page name, or path keyword.",
   "launcher.groupAria": "{label} command list",
   "launcher.shortcut": "Shortcut: {value}",
+  "launcher.pinWindowOn": "Pin window",
+  "launcher.pinWindowOff": "Unpin window",
   "launcher.footer.select": "↑↓ Select",
   "launcher.footer.open": "Enter Open",
   "launcher.footer.close": "Esc Close",

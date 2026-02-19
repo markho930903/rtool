@@ -19,6 +19,7 @@ pub struct ActionResultDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
+#[allow(clippy::enum_variant_names)]
 pub enum LauncherActionDto {
     OpenBuiltinRoute {
         route: String,
@@ -372,7 +373,7 @@ pub struct TransferSettingsDto {
     pub ack_flush_interval_ms: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct TransferUpdateSettingsInputDto {
     pub default_download_dir: Option<String>,
@@ -383,21 +384,6 @@ pub struct TransferUpdateSettingsInputDto {
     pub resume_enabled: Option<bool>,
     pub discovery_enabled: Option<bool>,
     pub pairing_required: Option<bool>,
-}
-
-impl Default for TransferUpdateSettingsInputDto {
-    fn default() -> Self {
-        Self {
-            default_download_dir: None,
-            max_parallel_files: None,
-            max_inflight_chunks: None,
-            chunk_size_kb: None,
-            auto_cleanup_days: None,
-            resume_enabled: None,
-            discovery_enabled: None,
-            pairing_required: None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

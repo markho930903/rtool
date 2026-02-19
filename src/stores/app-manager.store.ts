@@ -249,6 +249,16 @@ export const useAppManagerStore = create<AppManagerStore>((set, get) => ({
       const nextDetail = await appManagerGetDetail(appId);
       set((state) => ({
         detailById: { ...state.detailById, [appId]: nextDetail },
+        items: state.items.map((item) => {
+          if (item.id !== appId) {
+            return item;
+          }
+          return {
+            ...item,
+            estimatedSizeBytes:
+              nextDetail.sizeSummary.appBytes ?? item.estimatedSizeBytes,
+          };
+        }),
       }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

@@ -4,6 +4,8 @@ use crate::constants::{
     CLIPBOARD_WINDOW_LABEL,
 };
 use crate::core::models::ClipboardWindowModeAppliedDto;
+use crate::core::{AppError, AppResult, ResultExt};
+use anyhow::Context;
 use tauri::{AppHandle, LogicalSize, Manager, PhysicalPosition};
 
 fn clamp_clipboard_window_position(
@@ -27,21 +29,27 @@ pub(crate) fn apply_clipboard_window_mode(
     app: &AppHandle,
     compact: bool,
     source: &str,
-) -> Result<ClipboardWindowModeAppliedDto, String> {
+) -> AppResult<ClipboardWindowModeAppliedDto> {
     let window = app
         .get_webview_window(CLIPBOARD_WINDOW_LABEL)
-        .ok_or_else(|| "window_not_found:clipboard_history".to_string())?;
+        .ok_or_else(|| AppError::new("clipboard_window_not_found", "剪贴板窗口不存在"))?;
 
     let scale_factor = window
         .scale_factor()
-        .map_err(|error| format!("scale_factor_failed:{error}"))?
+        .with_context(|| "读取窗口缩放比例失败".to_string())
+        .with_code("clipboard_window_resize_failed", "设置剪贴板窗口尺寸失败")
+        .map_err(|error| error.with_context("source", source))?
         .max(0.1);
     let before_size = window
         .outer_size()
-        .map_err(|error| format!("outer_size_failed:{error}"))?;
+        .with_context(|| "读取窗口尺寸失败".to_string())
+        .with_code("clipboard_window_resize_failed", "设置剪贴板窗口尺寸失败")
+        .map_err(|error| error.with_context("source", source))?;
     let before_position = window
         .outer_position()
-        .map_err(|error| format!("outer_position_failed:{error}"))?;
+        .with_context(|| "读取窗口位置失败".to_string())
+        .with_code("clipboard_window_resize_failed", "设置剪贴板窗口尺寸失败")
+        .map_err(|error| error.with_context("source", source))?;
 
     let target_width_logical = if compact {
         CLIPBOARD_COMPACT_WIDTH_LOGICAL
@@ -55,7 +63,14 @@ pub(crate) fn apply_clipboard_window_mode(
             target_width_logical,
             target_height_logical,
         ))
-        .map_err(|error| format!("set_size_failed:{error}"))?;
+        .with_context(|| {
+            format!(
+                "设置窗口尺寸失败: width={}, height={}",
+                target_width_logical, target_height_logical
+            )
+        })
+        .with_code("clipboard_window_resize_failed", "设置剪贴板窗口尺寸失败")
+        .map_err(|error| error.with_context("source", source))?;
 
     let target_width_px = (target_width_logical * scale_factor).round().max(1.0) as u32;
     let target_height_px = (target_height_logical * scale_factor).round().max(1.0) as u32;
@@ -92,7 +107,9 @@ pub(crate) fn apply_clipboard_window_mode(
     if (next_x, next_y) != (before_position.x, before_position.y) {
         window
             .set_position(PhysicalPosition::new(next_x, next_y))
-            .map_err(|error| format!("set_position_failed:{error}"))?;
+            .with_context(|| format!("设置窗口位置失败: x={}, y={}", next_x, next_y))
+            .with_code("clipboard_window_resize_failed", "设置剪贴板窗口尺寸失败")
+            .map_err(|error| error.with_context("source", source))?;
     }
 
     let after_size = match window.outer_size() {

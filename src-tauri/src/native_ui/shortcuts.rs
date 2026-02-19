@@ -53,7 +53,7 @@ fn handle_clipboard_window_shortcut(app: &AppHandle, requested_compact: bool) {
                 event = "clipboard_window_mode_apply_failed",
                 action = "show",
                 requested_compact = requested_compact,
-                error = error
+                error = error.to_string()
             );
         }
         set_clipboard_window_compact_state(app, requested_compact);
@@ -98,7 +98,7 @@ fn handle_clipboard_window_shortcut(app: &AppHandle, requested_compact: bool) {
             event = "clipboard_window_mode_apply_failed",
             action = "switch",
             requested_compact = requested_compact,
-            error = error
+            error = error.to_string()
         );
     }
     set_clipboard_window_compact_state(app, requested_compact);

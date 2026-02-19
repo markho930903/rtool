@@ -51,7 +51,7 @@ pub async fn launcher_execute(
     .await
     .unwrap_or_else(|error| ActionResultDto {
         ok: false,
-        message: error.message,
+        message: error.message.clone(),
     });
     command_end_status(
         "launcher_execute",

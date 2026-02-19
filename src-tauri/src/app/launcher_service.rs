@@ -6,6 +6,8 @@ use crate::core::i18n::{DEFAULT_RESOLVED_LOCALE, ResolvedAppLocale, t};
 use crate::core::models::{
     ActionResultDto, ClipboardWindowOpenedPayload, LauncherActionDto, LauncherItemDto,
 };
+use crate::core::{AppError, AppResult, ResultExt};
+use anyhow::Context;
 use serde::Serialize;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashSet, VecDeque};
@@ -127,7 +129,7 @@ fn should_hide_item_without_query(item: &LauncherItemDto) -> bool {
 }
 
 pub fn execute_launcher_action(app: &AppHandle, action: &LauncherActionDto) -> ActionResultDto {
-    let result = match action {
+    let result: AppResult<String> = match action {
         LauncherActionDto::OpenBuiltinRoute { route } => {
             open_main_with_route(app, route.clone()).map(|_| format!("route:{route}"))
         }
@@ -145,7 +147,7 @@ pub fn execute_launcher_action(app: &AppHandle, action: &LauncherActionDto) -> A
                             event = "clipboard_window_mode_apply_failed",
                             source = "launcher_open",
                             compact = false,
-                            error = error
+                            error = error.to_string()
                         );
                     }
                     if let Some(state) = app.try_state::<AppState>() {
@@ -155,7 +157,9 @@ pub fn execute_launcher_action(app: &AppHandle, action: &LauncherActionDto) -> A
                         "rtool://clipboard-window/opened",
                         ClipboardWindowOpenedPayload { compact: false },
                     )
-                    .map_err(|error| error.to_string())?;
+                    .with_context(|| "发送剪贴板窗口打开事件失败".to_string())
+                    .with_code("launcher_emit_failed", "打开窗口失败")
+                    .map_err(|error| error.with_context("windowLabel", window_label))?;
                 }
                 Ok(format!("window:{window_label}"))
             }),
@@ -166,7 +170,14 @@ pub fn execute_launcher_action(app: &AppHandle, action: &LauncherActionDto) -> A
 
     match result {
         Ok(message) => ActionResultDto { ok: true, message },
-        Err(message) => ActionResultDto { ok: false, message },
+        Err(error) => ActionResultDto {
+            ok: false,
+            message: error
+                .causes
+                .first()
+                .cloned()
+                .unwrap_or_else(|| error.message.clone()),
+        },
     }
 }
 
@@ -236,24 +247,34 @@ pub fn execute_palette_legacy(action_id: &str) -> ActionResultDto {
     }
 }
 
-fn open_main_with_route(app: &AppHandle, route: String) -> Result<(), String> {
+fn open_main_with_route(app: &AppHandle, route: String) -> AppResult<()> {
     open_window(app, "main")?;
     app.emit("rtool://main/navigate", NavigatePayload { route })
-        .map_err(|error| error.to_string())
+        .with_context(|| "发送主窗口路由跳转事件失败".to_string())
+        .with_code("launcher_navigate_failed", "打开页面失败")
 }
 
-fn open_window(app: &AppHandle, label: &str) -> Result<(), String> {
-    let window = app
-        .get_webview_window(label)
-        .ok_or_else(|| format!("window_not_found:{label}"))?;
+fn open_window(app: &AppHandle, label: &str) -> AppResult<()> {
+    let window = app.get_webview_window(label).ok_or_else(|| {
+        AppError::new("launcher_window_not_found", "目标窗口不存在").with_context("label", label)
+    })?;
 
-    window.show().map_err(|error| error.to_string())?;
-    window.set_focus().map_err(|error| error.to_string())
+    window
+        .show()
+        .with_context(|| format!("显示窗口失败: {label}"))
+        .with_code("launcher_window_show_failed", "打开窗口失败")?;
+    window
+        .set_focus()
+        .with_context(|| format!("聚焦窗口失败: {label}"))
+        .with_code("launcher_window_focus_failed", "打开窗口失败")
 }
 
-fn open_path(path: &Path) -> Result<(), String> {
+fn open_path(path: &Path) -> AppResult<()> {
     if !path.exists() {
-        return Err(format!("路径不存在: {}", path.to_string_lossy()));
+        return Err(
+            AppError::new("launcher_path_not_found", "打开失败：路径不存在")
+                .with_context("path", path.to_string_lossy().to_string()),
+        );
     }
 
     let status = if cfg!(target_os = "macos") {
@@ -268,12 +289,14 @@ fn open_path(path: &Path) -> Result<(), String> {
     } else {
         Command::new("xdg-open").arg(path).status()
     }
-    .map_err(|error| error.to_string())?;
+    .with_context(|| format!("执行系统打开命令失败: {}", path.to_string_lossy()))
+    .with_code("launcher_path_open_failed", "打开失败")?;
 
     if status.success() {
         Ok(())
     } else {
-        Err(format!("打开失败: {}", status))
+        Err(AppError::new("launcher_path_open_failed", "打开失败")
+            .with_context("status", status.to_string()))
     }
 }
 
@@ -826,14 +849,13 @@ fn application_title(path: &Path) -> String {
             .extension()
             .and_then(|extension| extension.to_str())
             .is_some_and(|extension| extension.eq_ignore_ascii_case("desktop"))
+        && let Ok(content) = fs::read_to_string(path)
     {
-        if let Ok(content) = fs::read_to_string(path) {
-            for line in content.lines() {
-                if let Some(value) = line.strip_prefix("Name=") {
-                    let title = value.trim();
-                    if !title.is_empty() {
-                        return title.to_string();
-                    }
+        for line in content.lines() {
+            if let Some(value) = line.strip_prefix("Name=") {
+                let title = value.trim();
+                if !title.is_empty() {
+                    return title.to_string();
                 }
             }
         }
@@ -852,101 +874,5 @@ fn stable_id(prefix: &str, input: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn should_score_exact_match_higher_than_contains() {
-        let exact = calculate_match_score("工具：Base64", "工具：base64");
-        let partial = calculate_match_score("打开 Base64 编码工具", "base64");
-        assert!(exact > partial);
-    }
-
-    #[test]
-    fn should_prioritize_builtin_category_weight() {
-        let builtin = category_weight("builtin");
-        let file = category_weight("file");
-        assert!(builtin > file);
-    }
-
-    #[test]
-    fn should_filter_non_matching_item() {
-        let item = LauncherItemDto {
-            id: "x".into(),
-            title: "打开工具箱".into(),
-            subtitle: "系统页面".into(),
-            category: "builtin".into(),
-            source: Some("内置".into()),
-            shortcut: None,
-            score: 0,
-            icon_kind: "iconify".into(),
-            icon_value: "i-noto:hammer-and-wrench".into(),
-            action: LauncherActionDto::OpenBuiltinRoute {
-                route: "/tools".into(),
-            },
-        };
-
-        let found = score_item(item.clone(), "工具", "zh-CN");
-        let not_found = score_item(item, "not-exist-token", "zh-CN");
-        assert!(found.is_some());
-        assert!(not_found.is_none());
-    }
-
-    #[test]
-    fn should_match_builtin_alias_terms_across_languages() {
-        let item = LauncherItemDto {
-            id: "builtin.tools".into(),
-            title: "打开工具箱".into(),
-            subtitle: "跳转到工具箱页面".into(),
-            category: "builtin".into(),
-            source: Some("内置".into()),
-            shortcut: None,
-            score: 0,
-            icon_kind: "iconify".into(),
-            icon_value: "i-noto:hammer-and-wrench".into(),
-            action: LauncherActionDto::OpenBuiltinRoute {
-                route: "/tools".into(),
-            },
-        };
-
-        let matched = score_item(item, "open tools", "zh-CN");
-        assert!(matched.is_some());
-    }
-
-    #[test]
-    fn should_hide_builtin_tools_when_query_empty() {
-        let hidden_tool = LauncherItemDto {
-            id: "builtin.tool.base64".into(),
-            title: "Base64 编解码".into(),
-            subtitle: "打开 Base64 工具".into(),
-            category: "builtin".into(),
-            source: Some("内置".into()),
-            shortcut: None,
-            score: 0,
-            icon_kind: "iconify".into(),
-            icon_value: "i-noto:input-symbols".into(),
-            action: LauncherActionDto::OpenBuiltinTool {
-                tool_id: "base64".into(),
-            },
-        };
-
-        let visible_builtin = LauncherItemDto {
-            id: "builtin.tools".into(),
-            title: "工具箱".into(),
-            subtitle: "打开工具箱".into(),
-            category: "builtin".into(),
-            source: Some("内置".into()),
-            shortcut: None,
-            score: 0,
-            icon_kind: "iconify".into(),
-            icon_value: "i-noto:hammer-and-wrench".into(),
-            action: LauncherActionDto::OpenBuiltinRoute {
-                route: "/tools".into(),
-            },
-        };
-
-        assert!(score_item(hidden_tool.clone(), "", "zh-CN").is_none());
-        assert!(score_item(hidden_tool, "base64", "zh-CN").is_some());
-        assert!(score_item(visible_builtin, "", "zh-CN").is_some());
-    }
-}
+#[path = "../../tests/app/launcher_service_tests.rs"]
+mod tests;

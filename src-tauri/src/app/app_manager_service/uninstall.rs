@@ -81,17 +81,19 @@ pub(super) fn mac_uninstall(item: &ManagedAppDto) -> AppResult<()> {
         .arg("-e")
         .arg(script)
         .status()
-        .map_err(|error| {
-            AppError::new("app_manager_uninstall_failed", "调用系统卸载失败")
-                .with_detail(error.to_string())
-        })?;
+        .with_context(|| format!("调用系统卸载失败: {}", item.path))
+        .with_code("app_manager_uninstall_failed", "调用系统卸载失败")
+        .with_ctx("appPath", item.path.clone())
+        .with_ctx("appName", item.name.clone())?;
     if status.success() {
         return Ok(());
     }
 
     Err(
         AppError::new("app_manager_uninstall_failed", "系统卸载执行失败")
-            .with_detail(format!("status={status}")),
+            .with_context("status", status.to_string())
+            .with_context("appPath", item.path.clone())
+            .with_context("appName", item.name.clone()),
     )
 }
 

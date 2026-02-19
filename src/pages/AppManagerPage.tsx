@@ -246,6 +246,7 @@ export default function AppManagerPage() {
   const selectedResidueIds = selectedApp ? selectedResidueIdsByAppId[selectedApp.id] ?? [] : [];
   const selectedDeleteMode = selectedApp ? deleteModeByAppId[selectedApp.id] ?? "trash" : "trash";
   const selectedIncludeMainApp = selectedApp ? includeMainAppByAppId[selectedApp.id] ?? true : true;
+  const selectedDetailLoading = selectedApp ? Boolean(detailLoadingById[selectedApp.id]) : false;
   const selectedScanLoading = selectedApp ? Boolean(scanLoadingById[selectedApp.id]) : false;
 
   const categoryOptions = useMemo(
@@ -335,7 +336,7 @@ export default function AppManagerPage() {
       id: `main-${selectedApp.id}`,
       path: selectedDetail?.installPath ?? selectedApp.path,
       name: getPathName(selectedDetail?.installPath ?? selectedApp.path),
-      sizeBytes: selectedApp.estimatedSizeBytes,
+      sizeBytes: selectedDetail?.sizeSummary.appBytes ?? selectedApp.estimatedSizeBytes,
       pathType: "directory",
       source: "main",
     });
@@ -625,7 +626,20 @@ export default function AppManagerPage() {
                         {selectedApp.bundleOrAppId ? <span>{t("meta.bundleId", { value: selectedApp.bundleOrAppId })}</span> : null}
                         <span>{t("meta.identity", { value: selectedApp.identity.primaryId })}</span>
                         <span>{t("meta.identitySource", { value: selectedApp.identity.identitySource })}</span>
-                        <span>{t("detail.size", { value: formatBytes(selectedApp.estimatedSizeBytes) })}</span>
+                        <span className="inline-flex items-center gap-1">
+                          {selectedDetailLoading ? (
+                            <span className="i-noto:hourglass-not-done animate-spin text-[12px]" aria-hidden="true" />
+                          ) : null}
+                          <span>
+                            {t("detail.size", {
+                              value: selectedDetailLoading
+                                ? t("detail.calculating")
+                                : formatBytes(
+                                    selectedDetail?.sizeSummary.appBytes ?? selectedApp.estimatedSizeBytes,
+                                  ),
+                            })}
+                          </span>
+                        </span>
                       </div>
                       <div className="flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
                         <span>{selectedApp.capabilities.startup ? t("meta.capability.startupEnabled") : t("meta.capability.startupDisabled")}</span>
@@ -675,7 +689,7 @@ export default function AppManagerPage() {
                       {detailError}
                     </div>
                   ) : null}
-                  {detailLoadingById[selectedApp.id] ? (
+                  {selectedDetailLoading ? (
                     <p className="mt-3 text-xs text-text-muted">{t("detail.loading")}</p>
                   ) : null}
                 </section>

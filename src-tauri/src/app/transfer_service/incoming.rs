@@ -281,10 +281,12 @@ impl TransferService {
                     }
                     let decoded = base64::engine::general_purpose::STANDARD
                         .decode(data.as_bytes())
-                        .map_err(|error| {
-                            AppError::new("transfer_chunk_decode_failed", "分块解码失败")
-                                .with_detail(error.to_string())
-                        })?;
+                        .with_context(|| {
+                            format!("分块解码失败: file_id={file_id}, chunk_index={chunk_index}")
+                        })
+                        .with_code("transfer_chunk_decode_failed", "分块解码失败")
+                        .with_ctx("fileId", file_id.clone())
+                        .with_ctx("chunkIndex", chunk_index.to_string())?;
                     let Some(file_idx) = file_id_to_idx.get(file_id.as_str()).copied() else {
                         continue;
                     };
@@ -476,24 +478,33 @@ impl TransferService {
                         )
                         .await?;
                         return Err(AppError::new("transfer_file_hash_mismatch", "文件校验失败")
-                            .with_detail(format!("file_id={}", runtime.file.id)));
+                            .with_context("fileId", runtime.file.id.clone()));
                     }
 
                     let target =
                         PathBuf::from(runtime.file.target_path.clone().unwrap_or_default());
                     let final_path = resolve_conflict_path(target.as_path());
                     if let Some(parent) = final_path.parent() {
-                        tokio::fs::create_dir_all(parent).await.map_err(|error| {
-                            AppError::new("transfer_target_dir_create_failed", "创建目标目录失败")
-                                .with_detail(error.to_string())
-                        })?;
+                        tokio::fs::create_dir_all(parent)
+                            .await
+                            .with_context(|| format!("创建目标目录失败: {}", parent.display()))
+                            .with_code("transfer_target_dir_create_failed", "创建目标目录失败")
+                            .with_ctx("fileId", runtime.file.id.clone())
+                            .with_ctx("targetDir", parent.display().to_string())?;
                     }
                     tokio::fs::rename(part_path.as_path(), final_path.as_path())
                         .await
-                        .map_err(|error| {
-                            AppError::new("transfer_target_rename_failed", "落盘文件失败")
-                                .with_detail(error.to_string())
-                        })?;
+                        .with_context(|| {
+                            format!(
+                                "落盘文件失败: {} -> {}",
+                                part_path.display(),
+                                final_path.display()
+                            )
+                        })
+                        .with_code("transfer_target_rename_failed", "落盘文件失败")
+                        .with_ctx("fileId", runtime.file.id.clone())
+                        .with_ctx("partPath", part_path.display().to_string())
+                        .with_ctx("targetPath", final_path.display().to_string())?;
 
                     runtime.file.target_path = Some(final_path.to_string_lossy().to_string());
                     runtime.file.preview_data = runtime.file.target_path.clone();

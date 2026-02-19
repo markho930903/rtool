@@ -26,7 +26,7 @@ impl AppState {
     }
 
     pub fn locale_snapshot(&self) -> LocaleStateDto {
-        self.read_locale_state().to_dto()
+        self.read_locale_state().into_dto()
     }
 
     pub fn resolved_locale(&self) -> ResolvedAppLocale {
@@ -44,7 +44,7 @@ impl AppState {
                 *guard = next.clone();
             }
         }
-        next.to_dto()
+        next.into_dto()
     }
 
     pub fn clipboard_window_compact(&self) -> bool {

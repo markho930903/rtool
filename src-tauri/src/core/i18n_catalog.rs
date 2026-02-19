@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -245,10 +246,11 @@ struct OverlayLoadResult {
 
 static CATALOG: OnceLock<RwLock<I18nCatalog>> = OnceLock::new();
 
-pub fn initialize(app_data_dir: &Path) -> Result<(), String> {
+pub fn initialize(app_data_dir: &Path) -> Result<()> {
     let builtin = load_builtin_layer()?;
     let overlay_root = app_data_dir.join("locales");
-    fs::create_dir_all(&overlay_root).map_err(|error| format!("创建语言目录失败: {}", error))?;
+    fs::create_dir_all(&overlay_root)
+        .with_context(|| format!("创建语言目录失败: {}", overlay_root.display()))?;
     let overlay = load_overlay_layer(&overlay_root)?;
 
     let catalog = I18nCatalog {
@@ -271,7 +273,7 @@ pub fn initialize(app_data_dir: &Path) -> Result<(), String> {
         None => {
             CATALOG
                 .set(RwLock::new(catalog))
-                .map_err(|_| "初始化语言目录失败: catalog 已存在".to_string())?;
+                .map_err(|_| anyhow::anyhow!("初始化语言目录失败: catalog 已存在"))?;
         }
     }
 
@@ -286,13 +288,13 @@ pub fn translate(locale: &str, fallback_locale: &str, key: &str) -> Option<Strin
         .map(ToString::to_string)
 }
 
-pub fn list_locales() -> Result<LocaleCatalogList, String> {
+pub fn list_locales() -> Result<LocaleCatalogList> {
     let lock = get_catalog_lock()?;
     let guard = read_guard(lock);
     Ok(build_catalog_list(&guard))
 }
 
-pub fn reload_overlays() -> Result<ReloadLocalesResult, String> {
+pub fn reload_overlays() -> Result<ReloadLocalesResult> {
     let lock = get_catalog_lock()?;
     let mut guard = write_guard(lock);
     let overlay = load_overlay_layer(&guard.overlay_root)?;
@@ -318,21 +320,21 @@ pub fn import_locale_file(
     content: &str,
     replace: bool,
     fallback_locale: &str,
-) -> Result<ImportLocaleResult, String> {
+) -> Result<ImportLocaleResult> {
     validate_locale_code(locale)?;
     validate_namespace(namespace)?;
 
-    if content.as_bytes().len() > OVERLAY_MAX_BYTES {
-        return Err(format!(
+    if content.len() > OVERLAY_MAX_BYTES {
+        anyhow::bail!(
             "导入失败: 文件过大 ({} bytes), 上限 {} bytes",
-            content.as_bytes().len(),
+            content.len(),
             OVERLAY_MAX_BYTES
-        ));
+        );
     }
 
     let entries = parse_translation_json(content, &format!("{}:{}", locale, namespace), true)?;
     if entries.is_empty() {
-        return Err("导入失败: 翻译文件不能为空".to_string());
+        anyhow::bail!("导入失败: 翻译文件不能为空");
     }
 
     let lock = get_catalog_lock()?;
@@ -367,10 +369,8 @@ pub fn import_locale_file(
     })
 }
 
-fn get_catalog_lock() -> Result<&'static RwLock<I18nCatalog>, String> {
-    CATALOG
-        .get()
-        .ok_or_else(|| "语言目录尚未初始化".to_string())
+fn get_catalog_lock() -> Result<&'static RwLock<I18nCatalog>> {
+    CATALOG.get().context("语言目录尚未初始化")
 }
 
 fn read_guard(lock: &RwLock<I18nCatalog>) -> RwLockReadGuard<'_, I18nCatalog> {
@@ -420,7 +420,7 @@ fn build_catalog_list(catalog: &I18nCatalog) -> LocaleCatalogList {
     }
 }
 
-fn load_builtin_layer() -> Result<CatalogLayer, String> {
+fn load_builtin_layer() -> Result<CatalogLayer> {
     let mut layer = CatalogLayer::default();
     for bundle in BUILTIN_BUNDLES {
         let entries = parse_translation_json(
@@ -433,15 +433,15 @@ fn load_builtin_layer() -> Result<CatalogLayer, String> {
     Ok(layer)
 }
 
-fn load_overlay_layer(root: &Path) -> Result<OverlayLoadResult, String> {
+fn load_overlay_layer(root: &Path) -> Result<OverlayLoadResult> {
     let mut result = OverlayLoadResult::default();
 
     if !root.exists() {
         return Ok(result);
     }
 
-    let locale_dirs =
-        fs::read_dir(root).map_err(|error| format!("读取 overlay 语言目录失败: {}", error))?;
+    let locale_dirs = fs::read_dir(root)
+        .with_context(|| format!("读取 overlay 语言目录失败: {}", root.display()))?;
     for locale_entry in locale_dirs {
         let locale_entry = match locale_entry {
             Ok(value) => value,
@@ -554,12 +554,12 @@ fn parse_translation_json(
     content: &str,
     context: &str,
     strict_key: bool,
-) -> Result<HashMap<String, String>, String> {
-    let value: Value = serde_json::from_str(content)
-        .map_err(|error| format!("{} JSON 解析失败: {}", context, error))?;
+) -> Result<HashMap<String, String>> {
+    let value: Value =
+        serde_json::from_str(content).with_context(|| format!("{} JSON 解析失败", context))?;
     let object = value
         .as_object()
-        .ok_or_else(|| format!("{} 必须为 JSON 对象", context))?;
+        .with_context(|| format!("{} 必须为 JSON 对象", context))?;
 
     let mut entries = HashMap::new();
     for (key, value) in object {
@@ -568,7 +568,7 @@ fn parse_translation_json(
         }
         let text = value
             .as_str()
-            .ok_or_else(|| format!("{} key={} 的值必须为字符串", context, key))?;
+            .with_context(|| format!("{} key={} 的值必须为字符串", context, key))?;
         entries.insert(key.clone(), text.to_string());
     }
     Ok(entries)
@@ -580,16 +580,14 @@ fn persist_overlay_namespace(
     namespace: &str,
     entries: &HashMap<String, String>,
     replace: bool,
-) -> Result<(), String> {
+) -> Result<()> {
     let locale_dir = overlay_root.join(locale);
-    fs::create_dir_all(&locale_dir).map_err(|error| format!("创建 locale 目录失败: {}", error))?;
+    fs::create_dir_all(&locale_dir)
+        .with_context(|| format!("创建 locale 目录失败: {}", locale_dir.display()))?;
 
     let file_path = locale_dir.join(format!("{}.json", namespace));
     if file_path.exists() && !replace {
-        return Err(format!(
-            "导入失败: {} 已存在且 replace=false",
-            file_path.display()
-        ));
+        anyhow::bail!("导入失败: {} 已存在且 replace=false", file_path.display());
     }
 
     let temp_path = locale_dir.join(format!(".{}.json.tmp", namespace));
@@ -599,13 +597,17 @@ fn persist_overlay_namespace(
     }
     let serialized = serde_json::to_string_pretty(&ordered)
         .map(|value| format!("{}\n", value))
-        .map_err(|error| format!("序列化导入文件失败: {}", error))?;
+        .with_context(|| "序列化导入文件失败".to_string())?;
     fs::write(&temp_path, serialized)
-        .map_err(|error| format!("写入导入临时文件失败: {}", error))?;
+        .with_context(|| format!("写入导入临时文件失败: {}", temp_path.display()))?;
 
     if let Err(error) = fs::rename(&temp_path, &file_path) {
         let _ = fs::remove_file(&temp_path);
-        return Err(format!("替换导入文件失败: {}", error));
+        return Err(anyhow::Error::new(error).context(format!(
+            "替换导入文件失败: {} -> {}",
+            temp_path.display(),
+            file_path.display()
+        )));
     }
 
     Ok(())
@@ -695,48 +697,46 @@ fn normalize_placeholder_name(raw: &str) -> Option<String> {
     Some(candidate.to_string())
 }
 
-fn validate_key(key: &str) -> Result<(), String> {
-    if key.trim().is_empty() {
-        return Err("翻译 key 不能为空".to_string());
-    }
-
-    if !key
-        .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || ch == '.' || ch == '_' || ch == '-')
-    {
-        return Err(format!("翻译 key 非法: {}", key));
-    }
+fn validate_key(key: &str) -> Result<()> {
+    anyhow::ensure!(!key.trim().is_empty(), "翻译 key 不能为空");
+    anyhow::ensure!(
+        key.chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '.' || ch == '_' || ch == '-'),
+        "翻译 key 非法: {}",
+        key
+    );
     Ok(())
 }
 
-fn validate_locale_code(locale: &str) -> Result<(), String> {
+fn validate_locale_code(locale: &str) -> Result<()> {
     let trimmed = locale.trim();
     let parts = trimmed.split('-').collect::<Vec<_>>();
-    if parts.len() != 2 {
-        return Err(format!("locale 格式非法: {}", locale));
-    }
+    anyhow::ensure!(parts.len() == 2, "locale 格式非法: {}", locale);
 
     let language = parts[0];
     let region = parts[1];
-    if language.len() != 2 || !language.chars().all(|ch| ch.is_ascii_alphabetic()) {
-        return Err(format!("locale language 非法: {}", locale));
-    }
-    if region.len() != 2 || !region.chars().all(|ch| ch.is_ascii_alphabetic()) {
-        return Err(format!("locale region 非法: {}", locale));
-    }
+    anyhow::ensure!(
+        language.len() == 2 && language.chars().all(|ch| ch.is_ascii_alphabetic()),
+        "locale language 非法: {}",
+        locale
+    );
+    anyhow::ensure!(
+        region.len() == 2 && region.chars().all(|ch| ch.is_ascii_alphabetic()),
+        "locale region 非法: {}",
+        locale
+    );
     Ok(())
 }
 
-fn validate_namespace(namespace: &str) -> Result<(), String> {
+fn validate_namespace(namespace: &str) -> Result<()> {
     let value = namespace.trim();
-    if value.is_empty() {
-        return Err("namespace 不能为空".to_string());
-    }
-    if !value
-        .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
-    {
-        return Err(format!("namespace 非法: {}", namespace));
-    }
+    anyhow::ensure!(!value.is_empty(), "namespace 不能为空");
+    anyhow::ensure!(
+        value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-'),
+        "namespace 非法: {}",
+        namespace
+    );
     Ok(())
 }

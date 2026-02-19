@@ -17,7 +17,7 @@ pub(crate) fn apply_clipboard_window_mode(
     app: &tauri::AppHandle,
     compact: bool,
     source: &str,
-) -> Result<core::models::ClipboardWindowModeAppliedDto, String> {
+) -> core::AppResult<core::models::ClipboardWindowModeAppliedDto> {
     native_ui::clipboard_window::apply_clipboard_window_mode(app, compact, source)
 }
 

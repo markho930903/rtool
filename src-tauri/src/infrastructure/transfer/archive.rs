@@ -6,7 +6,8 @@ use walkdir::WalkDir;
 use zip::write::SimpleFileOptions;
 
 use crate::core::models::TransferFileInputDto;
-use crate::core::{AppError, AppResult};
+use crate::core::{AppError, AppResult, ResultExt};
+use anyhow::Context;
 
 #[derive(Debug, Clone)]
 pub struct TransferSourceFile {
@@ -20,10 +21,6 @@ pub struct TransferSourceFile {
 pub struct TransferSourceBundle {
     pub files: Vec<TransferSourceFile>,
     pub temp_paths: Vec<PathBuf>,
-}
-
-fn to_app_error(code: &str, message: impl Into<String>) -> AppError {
-    AppError::new(code, "准备传输文件失败").with_detail(message.into())
 }
 
 fn file_name_or_fallback(path: &Path) -> String {
@@ -46,12 +43,10 @@ fn push_file(
     relative_path: String,
     is_folder_archive: bool,
 ) -> AppResult<()> {
-    let metadata = std::fs::metadata(path).map_err(|error| {
-        to_app_error(
-            "transfer_source_metadata_failed",
-            format!("{}: {}", path.to_string_lossy(), error),
-        )
-    })?;
+    let metadata = std::fs::metadata(path)
+        .with_context(|| format!("读取源文件元数据失败: {}", path.display()))
+        .with_code("transfer_source_metadata_failed", "准备传输文件失败")
+        .with_ctx("path", path.display().to_string())?;
     if !metadata.is_file() {
         return Ok(());
     }
@@ -68,20 +63,16 @@ fn push_file(
 fn build_archive_for_folder(path: &Path) -> AppResult<PathBuf> {
     let base_name = file_name_or_fallback(path);
     let temp_root = std::env::temp_dir().join("rtool-transfer-archives");
-    std::fs::create_dir_all(temp_root.as_path()).map_err(|error| {
-        to_app_error(
-            "transfer_archive_dir_create_failed",
-            format!("{}: {}", temp_root.to_string_lossy(), error),
-        )
-    })?;
+    std::fs::create_dir_all(temp_root.as_path())
+        .with_context(|| format!("创建临时归档目录失败: {}", temp_root.display()))
+        .with_code("transfer_archive_dir_create_failed", "准备传输文件失败")
+        .with_ctx("tempRoot", temp_root.display().to_string())?;
 
     let temp_file = temp_root.join(format!("{}-{}.zip", base_name, uuid::Uuid::new_v4()));
-    let handle = File::create(temp_file.as_path()).map_err(|error| {
-        to_app_error(
-            "transfer_archive_create_failed",
-            format!("{}: {}", temp_file.to_string_lossy(), error),
-        )
-    })?;
+    let handle = File::create(temp_file.as_path())
+        .with_context(|| format!("创建临时归档文件失败: {}", temp_file.display()))
+        .with_code("transfer_archive_create_failed", "准备传输文件失败")
+        .with_ctx("tempArchive", temp_file.display().to_string())?;
 
     let mut zip = zip::ZipWriter::new(handle);
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
@@ -102,30 +93,35 @@ fn build_archive_for_folder(path: &Path) -> AppResult<PathBuf> {
             relative.to_string_lossy().replace('\\', "/")
         );
         zip.start_file(zip_path, options)
-            .map_err(|error| to_app_error("transfer_archive_write_failed", error.to_string()))?;
+            .with_context(|| format!("写入归档条目失败: {}", entry_path.display()))
+            .with_code("transfer_archive_write_failed", "准备传输文件失败")
+            .with_ctx("sourcePath", entry_path.display().to_string())?;
 
-        let mut input = File::open(entry_path).map_err(|error| {
-            to_app_error(
-                "transfer_archive_source_open_failed",
-                format!("{}: {}", entry_path.to_string_lossy(), error),
-            )
-        })?;
+        let mut input = File::open(entry_path)
+            .with_context(|| format!("打开归档源文件失败: {}", entry_path.display()))
+            .with_code("transfer_archive_source_open_failed", "准备传输文件失败")
+            .with_ctx("sourcePath", entry_path.display().to_string())?;
         let mut buffer = [0u8; 16 * 1024];
         loop {
-            let read_count = input.read(buffer.as_mut_slice()).map_err(|error| {
-                to_app_error("transfer_archive_source_read_failed", error.to_string())
-            })?;
+            let read_count = input
+                .read(buffer.as_mut_slice())
+                .with_context(|| format!("读取归档源文件失败: {}", entry_path.display()))
+                .with_code("transfer_archive_source_read_failed", "准备传输文件失败")
+                .with_ctx("sourcePath", entry_path.display().to_string())?;
             if read_count == 0 {
                 break;
             }
-            zip.write_all(&buffer[..read_count]).map_err(|error| {
-                to_app_error("transfer_archive_write_failed", error.to_string())
-            })?;
+            zip.write_all(&buffer[..read_count])
+                .with_context(|| format!("写入归档输出失败: {}", temp_file.display()))
+                .with_code("transfer_archive_write_failed", "准备传输文件失败")
+                .with_ctx("tempArchive", temp_file.display().to_string())?;
         }
     }
 
     zip.finish()
-        .map_err(|error| to_app_error("transfer_archive_finish_failed", error.to_string()))?;
+        .with_context(|| format!("完成归档失败: {}", temp_file.display()))
+        .with_code("transfer_archive_finish_failed", "准备传输文件失败")
+        .with_ctx("tempArchive", temp_file.display().to_string())?;
 
     Ok(temp_file)
 }
@@ -148,12 +144,10 @@ pub fn collect_sources(inputs: &[TransferFileInputDto]) -> AppResult<TransferSou
         }
 
         let path = PathBuf::from(trimmed_path);
-        let metadata = std::fs::metadata(path.as_path()).map_err(|error| {
-            to_app_error(
-                "transfer_source_not_found",
-                format!("{}: {}", path.to_string_lossy(), error),
-            )
-        })?;
+        let metadata = std::fs::metadata(path.as_path())
+            .with_context(|| format!("读取传输源路径失败: {}", path.display()))
+            .with_code("transfer_source_not_found", "准备传输文件失败")
+            .with_ctx("path", path.display().to_string())?;
 
         if metadata.is_file() {
             push_file(
@@ -221,12 +215,5 @@ pub fn cleanup_temp_paths(paths: &[PathBuf]) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn collect_sources_should_reject_empty() {
-        let result = collect_sources(&[]);
-        assert!(result.is_err());
-    }
-}
+#[path = "../../../tests/infrastructure/transfer/archive_tests.rs"]
+mod tests;

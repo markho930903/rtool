@@ -246,6 +246,8 @@ fn detect_path_type(path: &Path) -> &'static str {
 }
 
 pub(super) fn build_app_detail(app: ManagedAppDto) -> ManagedAppDetailDto {
+    let app_size_path = resolve_app_size_path(Path::new(app.path.as_str()));
+    let app_size_bytes = exact_path_size_bytes(app_size_path.as_path());
     let related_roots = collect_related_root_specs(&app)
         .into_iter()
         .map(|root| {
@@ -282,53 +284,51 @@ pub(super) fn build_app_detail(app: ManagedAppDto) -> ManagedAppDetailDto {
     ManagedAppDetailDto {
         install_path: app.path.clone(),
         size_summary: AppSizeSummaryDto {
-            app_bytes: app.estimated_size_bytes,
+            app_bytes: app_size_bytes,
             residue_bytes: None,
-            total_bytes: app.estimated_size_bytes,
+            total_bytes: app_size_bytes,
         },
         related_roots,
         app,
     }
 }
 
-fn path_size_bytes_for_scan(path: &Path) -> u64 {
-    if !path.exists() {
-        return 0;
+fn scan_size_warning_message(code: &str) -> &'static str {
+    match code {
+        "read_dir_failed"
+        | "read_dir_entry_failed"
+        | "read_file_type_failed"
+        | "read_metadata_failed"
+        | "metadata_read_failed" => "部分目录读取失败，大小可能偏小",
+        "size_estimate_truncated" => "扫描范围受限，大小可能为估算值",
+        _ => "大小统计失败，已自动跳过部分路径",
     }
-    if path.is_file() {
-        return fs::metadata(path).map(|meta| meta.len()).unwrap_or(0);
-    }
-    let mut total = 0u64;
-    let mut queue = VecDeque::new();
-    queue.push_back((path.to_path_buf(), 0usize));
-    let mut visited = 0usize;
-    while let Some((dir, depth)) = queue.pop_front() {
-        if visited >= 8_000 {
+}
+
+fn append_scan_size_warnings(
+    warnings: &mut Vec<AppManagerScanWarningDto>,
+    warning_keys: &mut HashSet<String>,
+    path_warnings: Vec<PathSizeWarning>,
+) {
+    const MAX_SCAN_WARNINGS: usize = 20;
+    for warning in path_warnings {
+        if warnings.len() >= MAX_SCAN_WARNINGS {
             break;
         }
-        visited += 1;
-        let entries = match fs::read_dir(&dir) {
-            Ok(entries) => entries,
-            Err(_) => continue,
-        };
-        for entry in entries.flatten() {
-            let entry_path = entry.path();
-            let file_type = match entry.file_type() {
-                Ok(file_type) => file_type,
-                Err(_) => continue,
-            };
-            if file_type.is_dir() {
-                if depth < 8 {
-                    queue.push_back((entry_path, depth + 1));
-                }
-                continue;
-            }
-            if let Ok(meta) = entry.metadata() {
-                total = total.saturating_add(meta.len());
-            }
+        let key = format!("{}|{}", warning.code, warning.path);
+        if !warning_keys.insert(key) {
+            continue;
         }
+        warnings.push(AppManagerScanWarningDto {
+            code: format!("app_manager_size_{}", warning.code),
+            message: format!(
+                "{}：{}",
+                scan_size_warning_message(warning.code),
+                warning.path
+            ),
+            detail: Some(warning.detail),
+        });
     }
-    total
 }
 
 fn collect_known_residue_candidates(item: &ManagedAppDto) -> Vec<ResidueCandidate> {
@@ -336,25 +336,25 @@ fn collect_known_residue_candidates(item: &ManagedAppDto) -> Vec<ResidueCandidat
 
     #[cfg(target_os = "macos")]
     {
-        if let Some(bundle) = item.bundle_or_app_id.as_deref() {
-            if let Some(home) = home_dir() {
-                let preference_file = home
-                    .join("Library/Preferences")
-                    .join(format!("{bundle}.plist"));
-                candidates.push(ResidueCandidate {
-                    path: preference_file,
-                    scope: "user".to_string(),
-                    kind: "preferences".to_string(),
-                    exists: false,
-                    filesystem: true,
-                    match_reason: "bundle_id".to_string(),
-                    confidence: "exact".to_string(),
-                    evidence: vec!["bundle_id_exact".to_string()],
-                    risk_level: "medium".to_string(),
-                    recommended: true,
-                    readonly_reason_code: None,
-                });
-            }
+        if let Some(bundle) = item.bundle_or_app_id.as_deref()
+            && let Some(home) = home_dir()
+        {
+            let preference_file = home
+                .join("Library/Preferences")
+                .join(format!("{bundle}.plist"));
+            candidates.push(ResidueCandidate {
+                path: preference_file,
+                scope: "user".to_string(),
+                kind: "preferences".to_string(),
+                exists: false,
+                filesystem: true,
+                match_reason: "bundle_id".to_string(),
+                confidence: "exact".to_string(),
+                evidence: vec!["bundle_id_exact".to_string()],
+                risk_level: "medium".to_string(),
+                recommended: true,
+                readonly_reason_code: None,
+            });
         }
         if let Some(startup_path) = mac_startup_file_path(item.id.as_str()) {
             candidates.push(ResidueCandidate {
@@ -589,7 +589,8 @@ fn candidate_from_related_root(root: &RelatedRootSpec) -> Option<ResidueCandidat
 
 pub(super) fn build_residue_scan_result(item: &ManagedAppDto) -> AppManagerResidueScanResultDto {
     let roots = collect_related_root_specs(item);
-    let warnings = Vec::new();
+    let mut warnings = Vec::new();
+    let mut warning_keys = HashSet::new();
     let mut candidates = roots
         .iter()
         .filter_map(candidate_from_related_root)
@@ -627,7 +628,13 @@ pub(super) fn build_residue_scan_result(item: &ManagedAppDto) -> AppManagerResid
         }
         let path = candidate.path.to_string_lossy().to_string();
         let size_bytes = if candidate.filesystem {
-            path_size_bytes_for_scan(Path::new(path.as_str()))
+            let computation = exact_path_size_bytes_with_warnings(Path::new(path.as_str()));
+            if let Some(computation) = computation {
+                append_scan_size_warnings(&mut warnings, &mut warning_keys, computation.warnings);
+                computation.size_bytes
+            } else {
+                0
+            }
         } else {
             0
         };

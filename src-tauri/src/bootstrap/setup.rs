@@ -62,7 +62,7 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn Error>> {
     #[cfg(target_os = "macos")]
     app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-    let logging_guard = infrastructure::logging::init_logging(&app.handle())?;
+    let logging_guard = infrastructure::logging::init_logging(app.handle())?;
     let log_dir = logging_guard.log_dir().to_path_buf();
     tracing::info!(
         event = "logging_initialized",
@@ -94,7 +94,7 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn Error>> {
     tray_builder.build(app)?;
 
     let logging_config =
-        infrastructure::logging::init_log_center(&app.handle(), db_pool.clone(), log_dir)?;
+        infrastructure::logging::init_log_center(app.handle(), db_pool.clone(), log_dir)?;
     tracing::info!(
         event = "log_center_initialized",
         min_level = logging_config.min_level,

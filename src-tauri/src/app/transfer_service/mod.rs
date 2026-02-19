@@ -19,7 +19,7 @@ use crate::core::models::{
     TransferSendFilesInputDto, TransferSessionDto, TransferSettingsDto,
     TransferUpdateSettingsInputDto,
 };
-use crate::core::{AppError, AppResult};
+use crate::core::{AppError, AppResult, ResultExt};
 use crate::infrastructure::db::DbPool;
 use crate::infrastructure::runtime::blocking::run_blocking;
 use crate::infrastructure::transfer::TRANSFER_LISTEN_PORT;
@@ -47,6 +47,7 @@ use crate::infrastructure::transfer::store::{
     load_settings, mark_peer_pair_failure, mark_peer_pair_success, merge_online_peers,
     save_settings, upsert_files_batch, upsert_peer, upsert_session_progress,
 };
+use anyhow::Context;
 
 mod incoming;
 mod outgoing;
@@ -281,7 +282,7 @@ impl TransferService {
             .find(|value| value.device_id == input.peer_device_id)
             .ok_or_else(|| {
                 AppError::new("transfer_peer_not_found", "未找到目标设备")
-                    .with_detail(format!("peer_device_id={}", input.peer_device_id))
+                    .with_context("peerDeviceId", input.peer_device_id.clone())
             })?;
 
         let session_id = input
@@ -389,7 +390,7 @@ impl TransferService {
                     event = "transfer_send_failed",
                     session_id = session_id,
                     error_code = error.code,
-                    error_detail = error.detail.as_deref().unwrap_or_default()
+                    error_detail = error.causes.first().map(String::as_str).unwrap_or_default()
                 );
                 let _ = service
                     .update_session_failure(session_id.as_str(), &error)
@@ -541,7 +542,11 @@ impl TransferService {
                                     event = "transfer_incoming_session_failed",
                                     address = address.to_string(),
                                     error_code = error.code,
-                                    error_detail = error.detail.unwrap_or_default()
+                                    error_detail = error
+                                        .causes
+                                        .first()
+                                        .map(String::as_str)
+                                        .unwrap_or_default()
                                 );
                             }
                         });
@@ -562,12 +567,12 @@ impl TransferService {
         let peers = self.list_peers().await?;
         self.app_handle
             .emit(TRANSFER_PEER_SYNC_EVENT, peers)
-            .map_err(|error| {
-                AppError::new("transfer_event_emit_failed", "推送设备列表失败")
-                    .with_detail(error.to_string())
-            })
+            .with_context(|| format!("推送设备列表失败: event={TRANSFER_PEER_SYNC_EVENT}"))
+            .with_code("transfer_event_emit_failed", "推送设备列表失败")
+            .with_ctx("event", TRANSFER_PEER_SYNC_EVENT)
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn emit_session_snapshot(
         &self,
         session: &TransferSessionDto,
@@ -598,6 +603,7 @@ impl TransferService {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn maybe_emit_session_snapshot(
         &self,
         session: &TransferSessionDto,

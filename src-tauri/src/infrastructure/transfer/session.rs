@@ -4,28 +4,22 @@ use std::path::{Path, PathBuf};
 use tokio::fs::{OpenOptions, create_dir_all};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 
-use crate::core::{AppError, AppResult};
-
-fn io_error(code: &str, message: impl Into<String>) -> AppError {
-    AppError::new(code, "文件传输读写失败").with_detail(message.into())
-}
+use crate::core::{AppResult, ResultExt};
+use anyhow::Context;
 
 pub fn file_hash_hex(path: &Path) -> AppResult<String> {
-    let mut file = std::fs::File::open(path).map_err(|error| {
-        io_error(
-            "transfer_file_read_failed",
-            format!("{}: {}", path.to_string_lossy(), error),
-        )
-    })?;
+    let mut file = std::fs::File::open(path)
+        .with_context(|| format!("打开文件并计算哈希失败: {}", path.display()))
+        .with_code("transfer_file_read_failed", "文件传输读写失败")
+        .with_ctx("path", path.display().to_string())?;
     let mut hasher = blake3::Hasher::new();
     let mut buffer = vec![0u8; 1024 * 1024];
     loop {
-        let read_count = file.read(buffer.as_mut_slice()).map_err(|error| {
-            io_error(
-                "transfer_file_read_failed",
-                format!("{}: {}", path.to_string_lossy(), error),
-            )
-        })?;
+        let read_count = file
+            .read(buffer.as_mut_slice())
+            .with_context(|| format!("读取文件并计算哈希失败: {}", path.display()))
+            .with_code("transfer_file_read_failed", "文件传输读写失败")
+            .with_ctx("path", path.display().to_string())?;
         if read_count == 0 {
             break;
         }
@@ -42,12 +36,11 @@ pub struct ChunkReader {
 
 impl ChunkReader {
     pub async fn open(path: &Path) -> AppResult<Self> {
-        let file = tokio::fs::File::open(path).await.map_err(|error| {
-            io_error(
-                "transfer_source_open_failed",
-                format!("{}: {}", path.to_string_lossy(), error),
-            )
-        })?;
+        let file = tokio::fs::File::open(path)
+            .await
+            .with_context(|| format!("打开传输源文件失败: {}", path.display()))
+            .with_code("transfer_source_open_failed", "文件传输读写失败")
+            .with_ctx("path", path.display().to_string())?;
         Ok(Self {
             path: path.to_path_buf(),
             file,
@@ -59,24 +52,22 @@ impl ChunkReader {
         self.file
             .seek(std::io::SeekFrom::Start(offset))
             .await
-            .map_err(|error| {
-                io_error(
-                    "transfer_source_seek_failed",
-                    format!("{}: {}", self.path.to_string_lossy(), error),
-                )
-            })?;
+            .with_context(|| format!("定位传输源文件失败: {}", self.path.display()))
+            .with_code("transfer_source_seek_failed", "文件传输读写失败")
+            .with_ctx("path", self.path.display().to_string())
+            .with_ctx("chunkIndex", chunk_index.to_string())
+            .with_ctx("chunkSize", chunk_size.to_string())?;
 
         let mut buffer = vec![0u8; chunk_size as usize];
         let read_count = self
             .file
             .read(buffer.as_mut_slice())
             .await
-            .map_err(|error| {
-                io_error(
-                    "transfer_source_read_failed",
-                    format!("{}: {}", self.path.to_string_lossy(), error),
-                )
-            })?;
+            .with_context(|| format!("读取传输源文件失败: {}", self.path.display()))
+            .with_code("transfer_source_read_failed", "文件传输读写失败")
+            .with_ctx("path", self.path.display().to_string())
+            .with_ctx("chunkIndex", chunk_index.to_string())
+            .with_ctx("chunkSize", chunk_size.to_string())?;
         buffer.truncate(read_count);
         Ok(buffer)
     }
@@ -91,12 +82,11 @@ pub struct ChunkWriter {
 impl ChunkWriter {
     pub async fn open(path: &Path, total_size: Option<u64>) -> AppResult<Self> {
         if let Some(parent) = path.parent() {
-            create_dir_all(parent).await.map_err(|error| {
-                io_error(
-                    "transfer_target_dir_create_failed",
-                    format!("{}: {}", parent.to_string_lossy(), error),
-                )
-            })?;
+            create_dir_all(parent)
+                .await
+                .with_context(|| format!("创建传输目标目录失败: {}", parent.display()))
+                .with_code("transfer_target_dir_create_failed", "文件传输读写失败")
+                .with_ctx("path", parent.display().to_string())?;
         }
 
         let file = OpenOptions::new()
@@ -106,20 +96,17 @@ impl ChunkWriter {
             .read(true)
             .open(path)
             .await
-            .map_err(|error| {
-                io_error(
-                    "transfer_target_open_failed",
-                    format!("{}: {}", path.to_string_lossy(), error),
-                )
-            })?;
+            .with_context(|| format!("打开传输目标文件失败: {}", path.display()))
+            .with_code("transfer_target_open_failed", "文件传输读写失败")
+            .with_ctx("path", path.display().to_string())?;
 
         if let Some(size) = total_size {
-            file.set_len(size).await.map_err(|error| {
-                io_error(
-                    "transfer_target_preallocate_failed",
-                    format!("{}: {}", path.to_string_lossy(), error),
-                )
-            })?;
+            file.set_len(size)
+                .await
+                .with_context(|| format!("预分配目标文件失败: {}", path.display()))
+                .with_code("transfer_target_preallocate_failed", "文件传输读写失败")
+                .with_ctx("path", path.display().to_string())
+                .with_ctx("sizeBytes", size.to_string())?;
         }
 
         Ok(Self {
@@ -138,29 +125,30 @@ impl ChunkWriter {
         self.file
             .seek(std::io::SeekFrom::Start(offset))
             .await
-            .map_err(|error| {
-                io_error(
-                    "transfer_target_seek_failed",
-                    format!("{}: {}", self.path.to_string_lossy(), error),
-                )
-            })?;
+            .with_context(|| format!("定位传输目标文件失败: {}", self.path.display()))
+            .with_code("transfer_target_seek_failed", "文件传输读写失败")
+            .with_ctx("path", self.path.display().to_string())
+            .with_ctx("chunkIndex", chunk_index.to_string())
+            .with_ctx("chunkSize", chunk_size.to_string())?;
 
-        self.file.write_all(bytes).await.map_err(|error| {
-            io_error(
-                "transfer_target_write_failed",
-                format!("{}: {}", self.path.to_string_lossy(), error),
-            )
-        })?;
+        self.file
+            .write_all(bytes)
+            .await
+            .with_context(|| format!("写入传输目标文件失败: {}", self.path.display()))
+            .with_code("transfer_target_write_failed", "文件传输读写失败")
+            .with_ctx("path", self.path.display().to_string())
+            .with_ctx("chunkIndex", chunk_index.to_string())
+            .with_ctx("chunkLength", bytes.len().to_string())?;
         Ok(())
     }
 
     pub async fn flush(&mut self) -> AppResult<()> {
-        self.file.flush().await.map_err(|error| {
-            io_error(
-                "transfer_target_flush_failed",
-                format!("{}: {}", self.path.to_string_lossy(), error),
-            )
-        })?;
+        self.file
+            .flush()
+            .await
+            .with_context(|| format!("刷新传输目标文件失败: {}", self.path.display()))
+            .with_code("transfer_target_flush_failed", "文件传输读写失败")
+            .with_ctx("path", self.path.display().to_string())?;
         Ok(())
     }
 }
@@ -236,20 +224,5 @@ pub fn resolve_conflict_path(path: &Path) -> PathBuf {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn file_hash_should_match_blake3() {
-        let path =
-            std::env::temp_dir().join(format!("rtool-transfer-hash-{}.txt", uuid::Uuid::new_v4()));
-        let payload = b"transfer-hash-test";
-        std::fs::write(path.as_path(), payload).expect("write temp file");
-
-        let expected = blake3::hash(payload).to_hex().to_string();
-        let actual = file_hash_hex(path.as_path()).expect("hash file");
-        assert_eq!(expected, actual);
-
-        let _ = std::fs::remove_file(path.as_path());
-    }
-}
+#[path = "../../../tests/infrastructure/transfer/session_tests.rs"]
+mod tests;

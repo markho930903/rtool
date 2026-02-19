@@ -72,8 +72,9 @@ impl<R: Runtime> ClipboardProcessor<R> {
                     event = "clipboard_text_save_failed",
                     error_code = error.code.as_str(),
                     error_detail = error
-                        .detail
-                        .as_deref()
+                        .causes
+                        .first()
+                        .map(String::as_str)
                         .map(infrastructure::logging::sanitize_for_log)
                         .unwrap_or_default()
                 );
@@ -114,8 +115,9 @@ impl<R: Runtime> ClipboardProcessor<R> {
                     event = "clipboard_files_save_failed",
                     error_code = error.code.as_str(),
                     error_detail = error
-                        .detail
-                        .as_deref()
+                        .causes
+                        .first()
+                        .map(String::as_str)
                         .map(infrastructure::logging::sanitize_for_log)
                         .unwrap_or_default()
                 );
@@ -152,8 +154,9 @@ impl<R: Runtime> ClipboardProcessor<R> {
                 event = "clipboard_image_skip_low_disk",
                 error_code = error.code.as_str(),
                 error_detail = error
-                    .detail
-                    .as_deref()
+                    .causes
+                    .first()
+                    .map(String::as_str)
                     .map(infrastructure::logging::sanitize_for_log)
                     .unwrap_or_default()
             );
@@ -200,8 +203,9 @@ impl<R: Runtime> ClipboardProcessor<R> {
                     event = "clipboard_image_save_failed",
                     error_code = error.code.as_str(),
                     error_detail = error
-                        .detail
-                        .as_deref()
+                        .causes
+                        .first()
+                        .map(String::as_str)
                         .map(infrastructure::logging::sanitize_for_log)
                         .unwrap_or_default()
                 );
@@ -215,10 +219,10 @@ impl<R: Runtime> ClipboardProcessor<R> {
             let clipboard = self.app_handle.state::<tauri_plugin_clipboard::Clipboard>();
             clipboard.read_files_uris()
         };
-        if let Ok(files_uris) = files_uris_result {
-            if self.handle_files(files_uris, source_app.clone()) {
-                return;
-            }
+        if let Ok(files_uris) = files_uris_result
+            && self.handle_files(files_uris, source_app.clone())
+        {
+            return;
         }
 
         let image_binary_result = {

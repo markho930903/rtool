@@ -10,7 +10,7 @@ pub mod transfer;
 
 use std::time::Instant;
 
-use crate::core::AppError;
+use crate::core::InvokeError;
 use crate::infrastructure::logging::{
     RecordLogInput, record_log_event_best_effort, sanitize_for_log,
 };
@@ -77,13 +77,20 @@ pub(crate) fn command_end_ok(command: &str, request_id: &str, started_at: Instan
     });
 }
 
-pub(crate) fn command_end_error(
-    command: &str,
-    request_id: &str,
-    started_at: Instant,
-    error: &AppError,
-) {
+pub(crate) fn command_end_error<E>(command: &str, request_id: &str, started_at: Instant, error: &E)
+where
+    E: Clone + Into<InvokeError>,
+{
+    let error: InvokeError = error.clone().into().with_request_id(request_id.to_string());
     let duration_ms = started_at.elapsed().as_millis() as u64;
+    let causes: Vec<String> = error
+        .causes
+        .iter()
+        .map(|cause| sanitize_for_log(cause))
+        .collect();
+    let primary_cause = causes.first().cloned().unwrap_or_default();
+    let error_detail = primary_cause.clone();
+
     tracing::error!(
         event = "command_end",
         command = command,
@@ -92,11 +99,8 @@ pub(crate) fn command_end_error(
         duration_ms = duration_ms,
         error_code = error.code.as_str(),
         error_message = sanitize_for_log(&error.message),
-        error_detail = error
-            .detail
-            .as_deref()
-            .map(sanitize_for_log)
-            .unwrap_or_else(String::new)
+        error_detail = error_detail.as_str(),
+        error_primary_cause = primary_cause.as_str()
     );
 
     record_log_event_best_effort(RecordLogInput {
@@ -112,11 +116,14 @@ pub(crate) fn command_end_error(
             "durationMs": duration_ms,
             "errorCode": error.code.as_str(),
             "errorMessage": sanitize_for_log(&error.message),
-            "errorDetail": error
-                .detail
-                .as_deref()
-                .map(sanitize_for_log)
-                .unwrap_or_default(),
+            "errorDetail": error_detail,
+            "errorCauses": causes,
+            "errorCausesCount": error.causes.len(),
+            "errorPrimaryCause": primary_cause,
+            "errorContext": error.context.iter().map(|item| serde_json::json!({
+                "key": item.key,
+                "value": sanitize_for_log(&item.value),
+            })).collect::<Vec<_>>(),
         })),
         raw_ref: None,
     });
@@ -165,7 +172,7 @@ pub(crate) fn command_end_status(
         ok = false,
         duration_ms = duration_ms,
         error_code = error_code.unwrap_or("command_failed"),
-        error_message = message.map(sanitize_for_log).unwrap_or_else(String::new)
+        error_message = message.map(sanitize_for_log).unwrap_or_default()
     );
 
     record_log_event_best_effort(RecordLogInput {

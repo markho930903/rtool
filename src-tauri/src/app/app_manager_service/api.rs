@@ -241,10 +241,10 @@ pub fn export_managed_app_scan_result(
     let detail = build_app_detail(item.clone());
 
     let export_dir = export_root_dir();
-    fs::create_dir_all(&export_dir).map_err(|error| {
-        AppError::new("app_manager_export_dir_failed", "创建导出目录失败")
-            .with_detail(error.to_string())
-    })?;
+    fs::create_dir_all(&export_dir)
+        .with_context(|| format!("创建导出目录失败: {}", export_dir.display()))
+        .with_code("app_manager_export_dir_failed", "创建导出目录失败")
+        .with_ctx("exportDir", export_dir.display().to_string())?;
 
     let stem = sanitize_file_stem(item.name.as_str());
     let file_name = format!("{}-{}-scan.json", stem, now_unix_millis());
@@ -255,14 +255,15 @@ pub fn export_managed_app_scan_result(
         "detail": detail,
         "scanResult": scan_result
     });
-    let content = serde_json::to_string_pretty(&payload).map_err(|error| {
-        AppError::new("app_manager_export_serialize_failed", "序列化导出内容失败")
-            .with_detail(error.to_string())
-    })?;
-    fs::write(&file_path, content).map_err(|error| {
-        AppError::new("app_manager_export_write_failed", "写入导出文件失败")
-            .with_detail(error.to_string())
-    })?;
+    let content = serde_json::to_string_pretty(&payload)
+        .with_context(|| format!("序列化导出内容失败: app_id={}", input.app_id))
+        .with_code("app_manager_export_serialize_failed", "序列化导出内容失败")
+        .with_ctx("appId", input.app_id.clone())?;
+    fs::write(&file_path, content)
+        .with_context(|| format!("写入导出文件失败: {}", file_path.display()))
+        .with_code("app_manager_export_write_failed", "写入导出文件失败")
+        .with_ctx("appId", input.app_id.clone())
+        .with_ctx("filePath", file_path.display().to_string())?;
 
     Ok(AppManagerExportScanResultDto {
         app_id: input.app_id,

@@ -1,3 +1,4 @@
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -22,7 +23,7 @@ impl AppLocaleState {
         }
     }
 
-    pub fn to_dto(self) -> LocaleStateDto {
+    pub fn into_dto(self) -> LocaleStateDto {
         LocaleStateDto {
             preference: self.preference,
             resolved: self.resolved,
@@ -93,7 +94,7 @@ fn normalize_locale_value(raw: &str) -> Option<String> {
     }
 }
 
-pub fn init_i18n_catalog(app_data_dir: &Path) -> Result<(), String> {
+pub fn init_i18n_catalog(app_data_dir: &Path) -> Result<()> {
     super::i18n_catalog::initialize(app_data_dir)
 }
 

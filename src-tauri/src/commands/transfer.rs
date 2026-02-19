@@ -10,7 +10,8 @@ use crate::core::models::{
     TransferPairingCodeDto, TransferPeerDto, TransferSendFilesInputDto, TransferSessionDto,
     TransferSettingsDto, TransferUpdateSettingsInputDto,
 };
-use crate::core::{AppError, AppResult};
+use crate::core::{AppError, AppResult, InvokeError, ResultExt};
+use anyhow::Context;
 
 fn open_path(path: &str) -> AppResult<()> {
     let trimmed = path.trim();
@@ -25,7 +26,7 @@ fn open_path(path: &str) -> AppResult<()> {
     if !path_buf.exists() {
         return Err(
             AppError::new("transfer_open_path_not_found", "打开目录失败：目录不存在")
-                .with_detail(path_buf.to_string_lossy().to_string()),
+                .with_context("path", path_buf.to_string_lossy().to_string()),
         );
     }
 
@@ -41,15 +42,14 @@ fn open_path(path: &str) -> AppResult<()> {
     } else {
         Command::new("xdg-open").arg(path_buf).status()
     }
-    .map_err(|error| {
-        AppError::new("transfer_open_path_failed", "打开目录失败").with_detail(error.to_string())
-    })?;
+    .with_context(|| format!("failed to invoke system open command: {}", trimmed))
+    .with_code("transfer_open_path_failed", "打开目录失败")?;
 
     if status.success() {
         Ok(())
     } else {
         Err(AppError::new("transfer_open_path_failed", "打开目录失败")
-            .with_detail(format!("status={status}")))
+            .with_context("status", status.to_string()))
     }
 }
 
@@ -58,7 +58,7 @@ pub fn transfer_get_settings(
     state: State<'_, AppState>,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> Result<TransferSettingsDto, AppError> {
+) -> Result<TransferSettingsDto, InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start(
         "transfer_get_settings",
@@ -77,7 +77,7 @@ pub fn transfer_update_settings(
     input: TransferUpdateSettingsInputDto,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> Result<TransferSettingsDto, AppError> {
+) -> Result<TransferSettingsDto, InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start(
         "transfer_update_settings",
@@ -90,7 +90,7 @@ pub fn transfer_update_settings(
         Ok(_) => command_end_ok("transfer_update_settings", &request_id, started_at),
         Err(error) => command_end_error("transfer_update_settings", &request_id, started_at, error),
     }
-    result
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -98,7 +98,7 @@ pub fn transfer_generate_pairing_code(
     state: State<'_, AppState>,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> Result<TransferPairingCodeDto, AppError> {
+) -> Result<TransferPairingCodeDto, InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start(
         "transfer_generate_pairing_code",
@@ -116,7 +116,7 @@ pub async fn transfer_start_discovery(
     state: State<'_, AppState>,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> AppResult<()> {
+) -> Result<(), InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start(
         "transfer_start_discovery",
@@ -134,7 +134,7 @@ pub fn transfer_stop_discovery(
     state: State<'_, AppState>,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> AppResult<()> {
+) -> Result<(), InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start(
         "transfer_stop_discovery",
@@ -152,7 +152,7 @@ pub async fn transfer_list_peers(
     state: State<'_, AppState>,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> Result<Vec<TransferPeerDto>, AppError> {
+) -> Result<Vec<TransferPeerDto>, InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start("transfer_list_peers", &request_id, window_label.as_deref());
 
@@ -161,7 +161,7 @@ pub async fn transfer_list_peers(
         Ok(_) => command_end_ok("transfer_list_peers", &request_id, started_at),
         Err(error) => command_end_error("transfer_list_peers", &request_id, started_at, error),
     }
-    result
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -170,7 +170,7 @@ pub async fn transfer_send_files(
     input: TransferSendFilesInputDto,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> Result<TransferSessionDto, AppError> {
+) -> Result<TransferSessionDto, InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start("transfer_send_files", &request_id, window_label.as_deref());
 
@@ -179,7 +179,7 @@ pub async fn transfer_send_files(
         Ok(_) => command_end_ok("transfer_send_files", &request_id, started_at),
         Err(error) => command_end_error("transfer_send_files", &request_id, started_at, error),
     }
-    result
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -188,7 +188,7 @@ pub fn transfer_pause_session(
     session_id: String,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> AppResult<()> {
+) -> Result<(), InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start(
         "transfer_pause_session",
@@ -201,7 +201,7 @@ pub fn transfer_pause_session(
         Ok(_) => command_end_ok("transfer_pause_session", &request_id, started_at),
         Err(error) => command_end_error("transfer_pause_session", &request_id, started_at, error),
     }
-    result
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -210,7 +210,7 @@ pub fn transfer_resume_session(
     session_id: String,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> AppResult<()> {
+) -> Result<(), InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start(
         "transfer_resume_session",
@@ -223,7 +223,7 @@ pub fn transfer_resume_session(
         Ok(_) => command_end_ok("transfer_resume_session", &request_id, started_at),
         Err(error) => command_end_error("transfer_resume_session", &request_id, started_at, error),
     }
-    result
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -232,7 +232,7 @@ pub fn transfer_cancel_session(
     session_id: String,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> AppResult<()> {
+) -> Result<(), InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start(
         "transfer_cancel_session",
@@ -245,7 +245,7 @@ pub fn transfer_cancel_session(
         Ok(_) => command_end_ok("transfer_cancel_session", &request_id, started_at),
         Err(error) => command_end_error("transfer_cancel_session", &request_id, started_at, error),
     }
-    result
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -254,7 +254,7 @@ pub async fn transfer_retry_session(
     session_id: String,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> Result<TransferSessionDto, AppError> {
+) -> Result<TransferSessionDto, InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start(
         "transfer_retry_session",
@@ -270,7 +270,7 @@ pub async fn transfer_retry_session(
         Ok(_) => command_end_ok("transfer_retry_session", &request_id, started_at),
         Err(error) => command_end_error("transfer_retry_session", &request_id, started_at, error),
     }
-    result
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -279,7 +279,7 @@ pub fn transfer_list_history(
     filter: Option<TransferHistoryFilterDto>,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> Result<TransferHistoryPageDto, AppError> {
+) -> Result<TransferHistoryPageDto, InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start(
         "transfer_list_history",
@@ -294,7 +294,7 @@ pub fn transfer_list_history(
         Ok(_) => command_end_ok("transfer_list_history", &request_id, started_at),
         Err(error) => command_end_error("transfer_list_history", &request_id, started_at, error),
     }
-    result
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -303,7 +303,7 @@ pub fn transfer_clear_history(
     input: Option<TransferClearHistoryInputDto>,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> AppResult<()> {
+) -> Result<(), InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start(
         "transfer_clear_history",
@@ -318,7 +318,7 @@ pub fn transfer_clear_history(
         Ok(_) => command_end_ok("transfer_clear_history", &request_id, started_at),
         Err(error) => command_end_error("transfer_clear_history", &request_id, started_at, error),
     }
-    result
+    result.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -327,7 +327,7 @@ pub fn transfer_open_download_dir(
     path: Option<String>,
     request_id: Option<String>,
     window_label: Option<String>,
-) -> AppResult<()> {
+) -> Result<(), InvokeError> {
     let request_id = normalize_request_id(request_id);
     let started_at = command_start(
         "transfer_open_download_dir",
@@ -344,5 +344,5 @@ pub fn transfer_open_download_dir(
             command_end_error("transfer_open_download_dir", &request_id, started_at, error)
         }
     }
-    result
+    result.map_err(Into::into)
 }

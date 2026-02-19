@@ -1,7 +1,8 @@
-use crate::core::AppError;
 use crate::core::models::{LogConfigDto, LogEntryDto, LogPageDto, LogQueryDto};
+use crate::core::{AppError, ResultExt};
 use crate::infrastructure::db::{self, DbPool};
 use crate::infrastructure::runtime::blocking::run_blocking;
+use anyhow::Context;
 use rusqlite::{OptionalExtension, params};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -358,10 +359,8 @@ fn persist_log_config(pool: &DbPool, config: &LogConfigDto) -> Result<(), AppErr
 
 fn clamp_and_normalize_config(mut config: LogConfigDto) -> Result<LogConfigDto, AppError> {
     let level = normalize_level(&config.min_level).ok_or_else(|| {
-        AppError::new("invalid_log_level", "日志级别非法").with_detail(format!(
-            "unsupported level: {}",
-            sanitize_for_log(&config.min_level)
-        ))
+        AppError::new("invalid_log_level", "日志级别非法")
+            .with_context("level", sanitize_for_log(&config.min_level))
     })?;
 
     config.min_level = level.to_string();
@@ -380,40 +379,42 @@ fn cleanup_expired_logs_with_duration(
         return Ok(0);
     }
 
-    let entries = fs::read_dir(log_dir).map_err(|error| {
-        AppError::new("log_cleanup_read_dir_failed", "读取日志目录失败")
-            .with_detail(error.to_string())
-    })?;
+    let entries = fs::read_dir(log_dir)
+        .with_context(|| format!("读取日志目录失败: {}", log_dir.display()))
+        .with_code("log_cleanup_read_dir_failed", "读取日志目录失败")
+        .with_ctx("logDir", log_dir.display().to_string())?;
 
     let mut removed = 0usize;
     for entry in entries {
-        let entry = entry.map_err(|error| {
-            AppError::new("log_cleanup_read_entry_failed", "读取日志条目失败")
-                .with_detail(error.to_string())
-        })?;
+        let entry = entry
+            .with_context(|| format!("读取日志条目失败: {}", log_dir.display()))
+            .with_code("log_cleanup_read_entry_failed", "读取日志条目失败")
+            .with_ctx("logDir", log_dir.display().to_string())?;
         let path = entry.path();
         if !path.is_file() {
             continue;
         }
 
-        let metadata = entry.metadata().map_err(|error| {
-            AppError::new("log_cleanup_metadata_failed", "读取日志元数据失败")
-                .with_detail(error.to_string())
-        })?;
-        let modified_at = metadata.modified().map_err(|error| {
-            AppError::new("log_cleanup_modified_time_failed", "读取日志修改时间失败")
-                .with_detail(error.to_string())
-        })?;
+        let metadata = entry
+            .metadata()
+            .with_context(|| format!("读取日志元数据失败: {}", path.display()))
+            .with_code("log_cleanup_metadata_failed", "读取日志元数据失败")
+            .with_ctx("logPath", path.display().to_string())?;
+        let modified_at = metadata
+            .modified()
+            .with_context(|| format!("读取日志修改时间失败: {}", path.display()))
+            .with_code("log_cleanup_modified_time_failed", "读取日志修改时间失败")
+            .with_ctx("logPath", path.display().to_string())?;
 
         let elapsed = now.duration_since(modified_at).unwrap_or_default();
         if elapsed <= keep_duration {
             continue;
         }
 
-        fs::remove_file(&path).map_err(|error| {
-            AppError::new("log_cleanup_remove_failed", "删除过期日志失败")
-                .with_detail(error.to_string())
-        })?;
+        fs::remove_file(&path)
+            .with_context(|| format!("删除过期日志失败: {}", path.display()))
+            .with_code("log_cleanup_remove_failed", "删除过期日志失败")
+            .with_ctx("logPath", path.display().to_string())?;
         removed += 1;
     }
 
@@ -447,32 +448,21 @@ fn serialize_metadata_value(metadata: &Option<Value>) -> Option<String> {
         .and_then(|value| serde_json::to_string(value).ok())
 }
 
-fn row_to_log_entry(
-    id: i64,
-    timestamp: i64,
-    level: String,
-    scope: String,
-    event: String,
-    request_id: String,
-    window_label: Option<String>,
-    message: String,
-    metadata: Option<String>,
-    raw_ref: Option<String>,
-    aggregated_count: Option<i64>,
-) -> LogEntryDto {
-    LogEntryDto {
-        id,
-        timestamp,
-        level,
-        scope,
-        event,
-        request_id,
-        window_label,
-        message,
-        metadata: parse_metadata_value(metadata),
-        raw_ref,
+fn row_to_log_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<LogEntryDto> {
+    let aggregated_count: Option<i64> = row.get(10)?;
+    Ok(LogEntryDto {
+        id: row.get(0)?,
+        timestamp: row.get(1)?,
+        level: row.get(2)?,
+        scope: row.get(3)?,
+        event: row.get(4)?,
+        request_id: row.get(5)?,
+        window_label: row.get(6)?,
+        message: row.get(7)?,
+        metadata: parse_metadata_value(row.get(8)?),
+        raw_ref: row.get(9)?,
         aggregated_count: aggregated_count.and_then(|value| u32::try_from(value).ok()),
-    }
+    })
 }
 
 fn save_log_entry(
@@ -545,21 +535,7 @@ fn upsert_aggregated_log(
                  WHERE id = ?1
                  LIMIT 1",
                 params![row_id],
-                |row| {
-                    Ok(row_to_log_entry(
-                        row.get(0)?,
-                        row.get(1)?,
-                        row.get(2)?,
-                        row.get(3)?,
-                        row.get(4)?,
-                        row.get(5)?,
-                        row.get(6)?,
-                        row.get(7)?,
-                        row.get(8)?,
-                        row.get(9)?,
-                        row.get(10)?,
-                    ))
-                },
+                row_to_log_entry,
             )
             .optional()?;
 
@@ -759,13 +735,16 @@ pub fn resolve_log_level() -> String {
 }
 
 pub fn init_logging(app_handle: &tauri::AppHandle) -> Result<LoggingGuard, AppError> {
-    let app_data_dir = app_handle.path().app_data_dir().map_err(|error| {
-        AppError::new("log_dir_resolve_failed", "获取日志目录失败").with_detail(error.to_string())
-    })?;
+    let app_data_dir = app_handle
+        .path()
+        .app_data_dir()
+        .context("resolve app data dir")
+        .with_code("log_dir_resolve_failed", "获取日志目录失败")?;
     let log_dir = app_data_dir.join("logs");
-    fs::create_dir_all(&log_dir).map_err(|error| {
-        AppError::new("log_dir_create_failed", "创建日志目录失败").with_detail(error.to_string())
-    })?;
+    fs::create_dir_all(&log_dir)
+        .with_context(|| format!("创建日志目录失败: {}", log_dir.display()))
+        .with_code("log_dir_create_failed", "创建日志目录失败")
+        .with_ctx("logDir", log_dir.display().to_string())?;
     cleanup_expired_logs(&log_dir, u64::from(DEFAULT_KEEP_DAYS))?;
 
     let file_appender = RollingBuilder::new()
@@ -773,10 +752,9 @@ pub fn init_logging(app_handle: &tauri::AppHandle) -> Result<LoggingGuard, AppEr
         .filename_prefix("rtool")
         .filename_suffix("log")
         .build(&log_dir)
-        .map_err(|error| {
-            AppError::new("log_appender_create_failed", "创建日志写入器失败")
-                .with_detail(error.to_string())
-        })?;
+        .with_context(|| format!("创建日志写入器失败: {}", log_dir.display()))
+        .with_code("log_appender_create_failed", "创建日志写入器失败")
+        .with_ctx("logDir", log_dir.display().to_string())?;
     let (file_writer, worker_guard) = tracing_appender::non_blocking(file_appender);
 
     if let Ok(mut slot) = worker_guard_slot().lock() {
@@ -804,10 +782,11 @@ pub fn init_logging(app_handle: &tauri::AppHandle) -> Result<LoggingGuard, AppEr
                 .with_target(true),
         );
 
-        subscriber.try_init().map_err(|error| {
-            AppError::new("log_subscriber_init_failed", "初始化日志订阅器失败")
-                .with_detail(error.to_string())
-        })?;
+        subscriber
+            .try_init()
+            .with_context(|| format!("初始化日志订阅器失败: level={level}"))
+            .with_code("log_subscriber_init_failed", "初始化日志订阅器失败")
+            .with_ctx("logLevel", level.clone())?;
     }
 
     Ok(LoggingGuard { log_dir, level })
@@ -855,7 +834,7 @@ pub fn record_log_event_best_effort(input: RecordLogInput) {
                     tracing::warn!(
                         event = "logging_ingest_failed",
                         error_code = error.code,
-                        error_detail = error.detail.unwrap_or_default()
+                        error_detail = error.causes.first().map(String::as_str).unwrap_or_default()
                     );
                 }
                 Ok(())
@@ -906,7 +885,7 @@ pub fn query_log_entries(query: LogQueryDto) -> Result<LogPageDto, AppError> {
         if let Some(cursor) = query.cursor.as_deref() {
             let cursor_id = cursor.parse::<i64>().map_err(|_| {
                 AppError::new("invalid_cursor", "日志分页游标非法")
-                    .with_detail(format!("cursor={}", sanitize_for_log(cursor)))
+                    .with_context("cursor", sanitize_for_log(cursor))
             })?;
             sql.push_str(" AND id < ?");
             params.push(rusqlite::types::Value::Integer(cursor_id));
@@ -917,7 +896,7 @@ pub fn query_log_entries(query: LogQueryDto) -> Result<LogPageDto, AppError> {
             for level in levels {
                 let normalized = normalize_level(level).ok_or_else(|| {
                     AppError::new("invalid_log_level", "日志级别非法")
-                        .with_detail(format!("unsupported level: {}", sanitize_for_log(level)))
+                        .with_context("level", sanitize_for_log(level))
                 })?;
                 normalized_levels.push(normalized.to_string());
             }
@@ -987,21 +966,7 @@ pub fn query_log_entries(query: LogQueryDto) -> Result<LogPageDto, AppError> {
 
         let conn = center.db_pool.get()?;
         let mut statement = conn.prepare(&sql)?;
-        let rows = statement.query_map(rusqlite::params_from_iter(params), |row| {
-            Ok(row_to_log_entry(
-                row.get(0)?,
-                row.get(1)?,
-                row.get(2)?,
-                row.get(3)?,
-                row.get(4)?,
-                row.get(5)?,
-                row.get(6)?,
-                row.get(7)?,
-                row.get(8)?,
-                row.get(9)?,
-                row.get(10)?,
-            ))
-        })?;
+        let rows = statement.query_map(rusqlite::params_from_iter(params), row_to_log_entry)?;
 
         let mut items = Vec::new();
         for row in rows {
@@ -1042,19 +1007,19 @@ pub fn export_log_entries(
             });
 
         if let Some(parent) = resolved.parent() {
-            fs::create_dir_all(parent).map_err(|error| {
-                AppError::new("log_export_dir_create_failed", "创建日志导出目录失败")
-                    .with_detail(error.to_string())
-            })?;
+            fs::create_dir_all(parent)
+                .with_context(|| format!("创建日志导出目录失败: {}", parent.display()))
+                .with_code("log_export_dir_create_failed", "创建日志导出目录失败")
+                .with_ctx("outputDir", parent.display().to_string())?;
         }
 
         Ok(resolved)
     })?;
 
-    let file = File::create(&target_path).map_err(|error| {
-        AppError::new("log_export_file_create_failed", "创建日志导出文件失败")
-            .with_detail(error.to_string())
-    })?;
+    let file = File::create(&target_path)
+        .with_context(|| format!("创建日志导出文件失败: {}", target_path.display()))
+        .with_code("log_export_file_create_failed", "创建日志导出文件失败")
+        .with_ctx("targetPath", target_path.display().to_string())?;
     let mut writer = BufWriter::new(file);
 
     loop {
@@ -1064,22 +1029,23 @@ pub fn export_log_entries(
 
         let page = query_log_entries(next_query)?;
         for item in &page.items {
-            let line = serde_json::to_string(item).map_err(|error| {
-                AppError::new("log_export_serialize_failed", "序列化日志导出内容失败")
-                    .with_detail(error.to_string())
-            })?;
-            writeln!(writer, "{}", line).map_err(|error| {
-                AppError::new("log_export_write_failed", "写入日志导出文件失败")
-                    .with_detail(error.to_string())
-            })?;
+            let line = serde_json::to_string(item)
+                .with_context(|| format!("序列化日志导出内容失败: entryId={}", item.id))
+                .with_code("log_export_serialize_failed", "序列化日志导出内容失败")
+                .with_ctx("entryId", item.id.to_string())?;
+            writeln!(writer, "{}", line)
+                .with_context(|| format!("写入日志导出文件失败: {}", target_path.display()))
+                .with_code("log_export_write_failed", "写入日志导出文件失败")
+                .with_ctx("targetPath", target_path.display().to_string())?;
         }
 
         page_count = page_count.saturating_add(1);
-        if page_count % EXPORT_FLUSH_EVERY_PAGES == 0 {
-            writer.flush().map_err(|error| {
-                AppError::new("log_export_flush_failed", "刷新日志导出文件失败")
-                    .with_detail(error.to_string())
-            })?;
+        if page_count.is_multiple_of(EXPORT_FLUSH_EVERY_PAGES) {
+            writer
+                .flush()
+                .with_context(|| format!("刷新日志导出文件失败: {}", target_path.display()))
+                .with_code("log_export_flush_failed", "刷新日志导出文件失败")
+                .with_ctx("targetPath", target_path.display().to_string())?;
             std::thread::sleep(Duration::from_millis(EXPORT_THROTTLE_SLEEP_MS));
         }
 
@@ -1089,83 +1055,15 @@ pub fn export_log_entries(
         cursor = page.next_cursor;
     }
 
-    writer.flush().map_err(|error| {
-        AppError::new("log_export_flush_failed", "刷新日志导出文件失败")
-            .with_detail(error.to_string())
-    })?;
+    writer
+        .flush()
+        .with_context(|| format!("刷新日志导出文件失败: {}", target_path.display()))
+        .with_code("log_export_flush_failed", "刷新日志导出文件失败")
+        .with_ctx("targetPath", target_path.display().to_string())?;
 
     Ok(target_path.to_string_lossy().to_string())
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Write;
-
-    fn unique_temp_dir() -> PathBuf {
-        std::env::temp_dir().join(format!("rtool-log-test-{}", now_millis()))
-    }
-
-    #[test]
-    fn should_cleanup_only_expired_logs() {
-        let log_dir = unique_temp_dir();
-        fs::create_dir_all(&log_dir).expect("failed to create temp log dir");
-
-        let old_file = log_dir.join("old.log");
-        let mut old_writer = fs::File::create(&old_file).expect("failed to create old log");
-        writeln!(old_writer, "old").expect("failed to write old log");
-        std::thread::sleep(Duration::from_millis(40));
-
-        let new_file = log_dir.join("new.log");
-        let mut new_writer = fs::File::create(&new_file).expect("failed to create new log");
-        writeln!(new_writer, "new").expect("failed to write new log");
-
-        let removed = cleanup_expired_logs_with_duration(
-            &log_dir,
-            Duration::from_millis(20),
-            SystemTime::now(),
-        )
-        .expect("cleanup failed");
-
-        assert_eq!(removed, 1);
-        assert!(!old_file.exists());
-        assert!(new_file.exists());
-
-        let _ = fs::remove_file(new_file);
-        let _ = fs::remove_dir_all(log_dir);
-    }
-
-    #[test]
-    fn should_sanitize_sensitive_json_fields() {
-        let payload = serde_json::json!({
-            "clipboardText": "super-secret-content",
-            "filePath": "/Users/demo/Desktop/report.txt",
-            "hostName": "my-macbook",
-            "dataUrl": "data:image/png;base64,AAAA"
-        });
-
-        let sanitized = sanitize_json_value(&payload);
-        let text = sanitized
-            .get("clipboardText")
-            .and_then(|value| value.as_str())
-            .unwrap_or_default();
-        let path = sanitized
-            .get("filePath")
-            .and_then(|value| value.as_str())
-            .unwrap_or_default();
-        let host = sanitized
-            .get("hostName")
-            .and_then(|value| value.as_str())
-            .unwrap_or_default();
-
-        assert!(text.starts_with("[redacted-text"));
-        assert!(path.starts_with("[path:report.txt"));
-        assert!(host.starts_with("[host hash="));
-    }
-
-    #[test]
-    fn should_sanitize_data_url() {
-        let result = sanitize_for_log("data:image/png;base64,AAAAA");
-        assert!(result.starts_with("[data-url redacted"));
-    }
-}
+#[path = "../../tests/infrastructure/logging_tests.rs"]
+mod tests;

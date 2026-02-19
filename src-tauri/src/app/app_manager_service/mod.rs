@@ -4,11 +4,12 @@ use crate::core::models::{
     AppManagerCleanupItemResultDto, AppManagerCleanupResultDto, AppManagerDetailQueryDto,
     AppManagerExportScanInputDto, AppManagerExportScanResultDto, AppManagerIdentityDto,
     AppManagerPageDto, AppManagerQueryDto, AppManagerResidueGroupDto, AppManagerResidueItemDto,
-    AppManagerResidueScanInputDto, AppManagerResidueScanResultDto, AppManagerStartupUpdateInputDto,
-    AppManagerUninstallInputDto, AppRelatedRootDto, AppSizeSummaryDto, ManagedAppDetailDto,
-    ManagedAppDto,
+    AppManagerResidueScanInputDto, AppManagerResidueScanResultDto, AppManagerScanWarningDto,
+    AppManagerStartupUpdateInputDto, AppManagerUninstallInputDto, AppRelatedRootDto,
+    AppSizeSummaryDto, ManagedAppDetailDto, ManagedAppDto,
 };
-use crate::core::{AppError, AppResult};
+use crate::core::{AppError, AppResult, ResultExt};
+use anyhow::Context;
 #[cfg(target_os = "macos")]
 use regex::Regex;
 use std::collections::hash_map::DefaultHasher;
@@ -47,6 +48,9 @@ const MAC_STARTUP_CACHE_TTL: Duration = Duration::from_secs(20);
 const WIN_SCAN_MAX_ITEMS: usize = 700;
 const STARTUP_LABEL_PREFIX: &str = "com.rtool.startup";
 const EXPORT_DIR_NAME: &str = "rtool-app-scan-exports";
+const SIZE_ESTIMATE_MAX_DEPTH: usize = 3;
+const SIZE_ESTIMATE_MAX_DIRS: usize = 2_000;
+const SIZE_WARNING_LIMIT: usize = 24;
 
 #[derive(Debug, Clone)]
 struct AppIndexCache {
@@ -59,6 +63,19 @@ struct AppIndexCache {
 struct ResidueScanCacheEntry {
     refreshed_at: Instant,
     result: AppManagerResidueScanResultDto,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct PathSizeWarning {
+    pub(super) code: &'static str,
+    pub(super) path: String,
+    pub(super) detail: String,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct PathSizeComputation {
+    pub(super) size_bytes: u64,
+    pub(super) warnings: Vec<PathSizeWarning>,
 }
 
 #[cfg(target_os = "macos")]
@@ -378,46 +395,206 @@ fn startup_readonly_reason_code(startup_scope: &str, startup_editable: bool) -> 
     Some("permission_denied".to_string())
 }
 
-fn try_get_path_size_bytes(path: &Path) -> Option<u64> {
+pub(super) fn resolve_app_size_path(path: &Path) -> PathBuf {
+    #[cfg(target_os = "macos")]
+    {
+        for ancestor in path.ancestors() {
+            let is_app_bundle = ancestor
+                .extension()
+                .and_then(|value| value.to_str())
+                .is_some_and(|value| value.eq_ignore_ascii_case("app"));
+            if is_app_bundle {
+                return ancestor.to_path_buf();
+            }
+        }
+    }
+
+    if path.is_file() {
+        return path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| path.to_path_buf());
+    }
+    path.to_path_buf()
+}
+
+fn append_path_size_warning(
+    warnings: &mut Vec<PathSizeWarning>,
+    code: &'static str,
+    path: &Path,
+    detail: impl Into<String>,
+) {
+    if warnings.len() >= SIZE_WARNING_LIMIT {
+        return;
+    }
+    let path_value = path.to_string_lossy().to_string();
+    if warnings
+        .iter()
+        .any(|warning| warning.code == code && warning.path == path_value)
+    {
+        return;
+    }
+    warnings.push(PathSizeWarning {
+        code,
+        path: path_value,
+        detail: detail.into(),
+    });
+}
+
+fn walk_path_size_bytes(
+    path: &Path,
+    max_depth: Option<usize>,
+    max_dirs: Option<usize>,
+    collect_warnings: bool,
+) -> Option<PathSizeComputation> {
     if !path.exists() {
         return None;
     }
+
+    let mut warnings = Vec::new();
     if path.is_file() {
-        return fs::metadata(path).ok().map(|meta| meta.len());
+        return match fs::metadata(path) {
+            Ok(meta) => Some(PathSizeComputation {
+                size_bytes: meta.len(),
+                warnings,
+            }),
+            Err(error) => {
+                if collect_warnings {
+                    append_path_size_warning(
+                        &mut warnings,
+                        "metadata_read_failed",
+                        path,
+                        error.to_string(),
+                    );
+                    return Some(PathSizeComputation {
+                        size_bytes: 0,
+                        warnings,
+                    });
+                }
+                None
+            }
+        };
     }
 
-    // Use a lightweight walk for list rendering to avoid blocking large I/O.
     let mut total = 0u64;
     let mut queue = VecDeque::new();
     queue.push_back((path.to_path_buf(), 0usize));
-    let mut visited = 0usize;
+    let mut visited_dirs = 0usize;
     while let Some((dir, depth)) = queue.pop_front() {
-        if visited >= 2_000 {
+        if max_dirs.is_some_and(|limit| visited_dirs >= limit) {
+            if collect_warnings {
+                append_path_size_warning(
+                    &mut warnings,
+                    "size_estimate_truncated",
+                    path,
+                    format!("limit={}", max_dirs.unwrap_or_default()),
+                );
+            }
             break;
         }
-        visited += 1;
+        visited_dirs += 1;
+
         let entries = match fs::read_dir(&dir) {
             Ok(entries) => entries,
-            Err(_) => continue,
+            Err(error) => {
+                if collect_warnings {
+                    append_path_size_warning(
+                        &mut warnings,
+                        "read_dir_failed",
+                        dir.as_path(),
+                        error.to_string(),
+                    );
+                }
+                continue;
+            }
         };
-        for entry in entries.flatten() {
+
+        for entry_result in entries {
+            let entry = match entry_result {
+                Ok(entry) => entry,
+                Err(error) => {
+                    if collect_warnings {
+                        append_path_size_warning(
+                            &mut warnings,
+                            "read_dir_entry_failed",
+                            dir.as_path(),
+                            error.to_string(),
+                        );
+                    }
+                    continue;
+                }
+            };
             let entry_path = entry.path();
             let file_type = match entry.file_type() {
                 Ok(file_type) => file_type,
-                Err(_) => continue,
+                Err(error) => {
+                    if collect_warnings {
+                        append_path_size_warning(
+                            &mut warnings,
+                            "read_file_type_failed",
+                            entry_path.as_path(),
+                            error.to_string(),
+                        );
+                    }
+                    continue;
+                }
             };
+
+            if file_type.is_symlink() {
+                continue;
+            }
             if file_type.is_dir() {
-                if depth < 3 {
+                if max_depth.map(|limit| depth < limit).unwrap_or(true) {
                     queue.push_back((entry_path, depth + 1));
                 }
                 continue;
             }
-            if let Ok(meta) = entry.metadata() {
-                total = total.saturating_add(meta.len());
+
+            if !file_type.is_file() {
+                continue;
+            }
+
+            match entry.metadata() {
+                Ok(meta) => {
+                    total = total.saturating_add(meta.len());
+                }
+                Err(error) => {
+                    if collect_warnings {
+                        append_path_size_warning(
+                            &mut warnings,
+                            "read_metadata_failed",
+                            entry_path.as_path(),
+                            error.to_string(),
+                        );
+                    }
+                }
             }
         }
     }
-    Some(total)
+
+    Some(PathSizeComputation {
+        size_bytes: total,
+        warnings,
+    })
+}
+
+fn try_get_path_size_bytes(path: &Path) -> Option<u64> {
+    // Keep list rendering lightweight to avoid blocking large I/O.
+    walk_path_size_bytes(
+        path,
+        Some(SIZE_ESTIMATE_MAX_DEPTH),
+        Some(SIZE_ESTIMATE_MAX_DIRS),
+        false,
+    )
+    .map(|value| value.size_bytes)
+}
+
+pub(super) fn exact_path_size_bytes(path: &Path) -> Option<u64> {
+    walk_path_size_bytes(path, None, None, false).map(|value| value.size_bytes)
+}
+
+pub(super) fn exact_path_size_bytes_with_warnings(path: &Path) -> Option<PathSizeComputation> {
+    walk_path_size_bytes(path, None, None, true)
 }
 
 fn path_is_readonly(path: &Path) -> bool {
@@ -541,13 +718,18 @@ fn windows_powershell_escape(value: &str) -> String {
 }
 
 fn open_with_command(command: &str, args: &[&str], error_code: &str) -> AppResult<()> {
-    let status = Command::new(command).args(args).status().map_err(|error| {
-        AppError::new(error_code, "系统操作失败").with_detail(error.to_string())
-    })?;
+    let status = Command::new(command)
+        .args(args)
+        .status()
+        .with_context(|| format!("failed to execute command: {} {:?}", command, args))
+        .with_code(error_code, "系统操作失败")?;
     if status.success() {
         return Ok(());
     }
-    Err(AppError::new(error_code, "系统操作失败").with_detail(format!("status={status}")))
+    Err(AppError::new(error_code, "系统操作失败")
+        .with_context("status", status.to_string())
+        .with_context("command", command)
+        .with_context("args", args.join(" ")))
 }
 
 fn home_dir() -> Option<PathBuf> {
@@ -557,152 +739,17 @@ fn home_dir() -> Option<PathBuf> {
 }
 
 #[cfg(test)]
-mod residue_tests {
-    use super::*;
-
-    fn candidate_with_confidence(confidence: &str, evidence_len: usize) -> ResidueCandidate {
-        ResidueCandidate {
-            path: PathBuf::from("/tmp/a"),
-            scope: "user".to_string(),
-            kind: "cache".to_string(),
-            exists: true,
-            filesystem: true,
-            match_reason: "test".to_string(),
-            confidence: confidence.to_string(),
-            evidence: (0..evidence_len).map(|idx| format!("e{idx}")).collect(),
-            risk_level: "low".to_string(),
-            recommended: true,
-            readonly_reason_code: None,
-        }
-    }
-
-    #[test]
-    fn residue_candidate_replace_prefers_higher_confidence() {
-        let current = candidate_with_confidence("high", 1);
-        let next = candidate_with_confidence("exact", 1);
-        assert!(should_replace_residue_candidate(&current, &next));
-        assert!(!should_replace_residue_candidate(&next, &current));
-    }
-
-    #[test]
-    fn residue_candidate_replace_prefers_more_evidence_when_confidence_equal() {
-        let current = candidate_with_confidence("high", 1);
-        let next = candidate_with_confidence("high", 2);
-        assert!(should_replace_residue_candidate(&current, &next));
-    }
-}
+#[path = "../../../tests/app/app_manager_service/residue_tests.rs"]
+mod residue_tests;
 
 #[cfg(test)]
-mod display_name_tests {
-    use super::*;
+#[path = "../../../tests/app/app_manager_service/path_size_tests.rs"]
+mod path_size_tests;
 
-    #[test]
-    fn resolve_display_name_prefers_readable_stem_over_short_alias() {
-        let path = Path::new("/Applications/Visual Studio Code.app");
-        let mut candidates = Vec::new();
-        push_display_name_candidate(&mut candidates, Some("Code".to_string()), 90);
-        push_display_name_candidate(&mut candidates, Some("Visual Studio Code".to_string()), 85);
-
-        let name = resolve_application_display_name(
-            path,
-            "/Applications/Visual Studio Code.app",
-            candidates,
-        );
-        assert_eq!(name, "Visual Studio Code");
-    }
-
-    #[test]
-    fn resolve_display_name_keeps_short_name_when_stem_is_also_short() {
-        let path = Path::new("/Applications/Code.app");
-        let mut candidates = Vec::new();
-        push_display_name_candidate(&mut candidates, Some("Code".to_string()), 90);
-        let name = resolve_application_display_name(path, "/Applications/Code.app", candidates);
-        assert_eq!(name, "Code");
-    }
-
-    #[test]
-    fn resolve_display_name_prefers_windows_registry_display_name() {
-        let path = Path::new("/Program Files/Foo/foo.exe");
-        let mut candidates = Vec::new();
-        push_display_name_candidate(&mut candidates, Some("Foo Enterprise".to_string()), 90);
-        push_display_name_candidate(&mut candidates, Some("foo".to_string()), 80);
-        let name = resolve_application_display_name(path, "/Program Files/Foo/foo.exe", candidates);
-        assert_eq!(name, "Foo Enterprise");
-    }
-}
+#[cfg(test)]
+#[path = "../../../tests/app/app_manager_service/display_name_tests.rs"]
+mod display_name_tests;
 
 #[cfg(all(test, target_os = "macos"))]
-mod tests {
-    use super::*;
-
-    fn test_app(bundle_or_app_id: Option<&str>) -> ManagedAppDto {
-        ManagedAppDto {
-            id: "mac.test.app".to_string(),
-            name: "AppCleaner.app".to_string(),
-            path: "/Applications/AppCleaner.app".to_string(),
-            bundle_or_app_id: bundle_or_app_id.map(ToString::to_string),
-            version: None,
-            publisher: None,
-            platform: "macos".to_string(),
-            source: "application".to_string(),
-            icon_kind: "iconify".to_string(),
-            icon_value: "i-noto:desktop-computer".to_string(),
-            estimated_size_bytes: None,
-            startup_enabled: false,
-            startup_scope: "none".to_string(),
-            startup_editable: true,
-            readonly_reason_code: None,
-            uninstall_supported: true,
-            uninstall_kind: None,
-            capabilities: build_app_capabilities(true, true, true),
-            identity: build_app_identity(
-                bundle_or_app_id.unwrap_or("net.freemacsoft.AppCleaner"),
-                vec![
-                    "AppCleaner".to_string(),
-                    "net.freemacsoft.AppCleaner".to_string(),
-                ],
-                "bundle_id",
-            ),
-            risk_level: "low".to_string(),
-            fingerprint: "fp".to_string(),
-        }
-    }
-
-    fn has_root_path(roots: &[RelatedRootSpec], expected: &Path) -> bool {
-        let expected_key = normalize_path_key(expected.to_string_lossy().as_ref());
-        roots
-            .iter()
-            .any(|root| normalize_path_key(root.path.to_string_lossy().as_ref()) == expected_key)
-    }
-
-    #[test]
-    fn collect_related_root_specs_includes_http_storages_bundle_path() {
-        let app = test_app(Some("net.freemacsoft.AppCleaner"));
-        let roots = collect_related_root_specs(&app);
-        let home = home_dir().expect("home dir should exist for mac tests");
-        let expected = home
-            .join("Library")
-            .join("HTTPStorages")
-            .join("net.freemacsoft.AppCleaner");
-        assert!(
-            has_root_path(roots.as_slice(), expected.as_path()),
-            "expected HTTPStorages path {} to be included",
-            expected.to_string_lossy()
-        );
-    }
-
-    #[test]
-    fn collect_related_root_specs_includes_temp_cache_alias_paths() {
-        let app = test_app(Some("net.freemacsoft.AppCleaner"));
-        let roots = collect_related_root_specs(&app);
-        let expected_paths = mac_collect_temp_alias_roots("net.freemacsoft.AppCleaner");
-        assert!(!expected_paths.is_empty(), "expected temp candidate paths");
-        for expected in expected_paths {
-            assert!(
-                has_root_path(roots.as_slice(), expected.as_path()),
-                "expected temp cache path {} to be included",
-                expected.to_string_lossy()
-            );
-        }
-    }
-}
+#[path = "../../../tests/app/app_manager_service/macos_tests.rs"]
+mod tests;

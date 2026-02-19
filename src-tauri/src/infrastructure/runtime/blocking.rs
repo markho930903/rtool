@@ -10,20 +10,21 @@ where
         Ok(result) => result,
         Err(error) => {
             if error.is_cancelled() {
-                return Err(
-                    AppError::new("blocking_task_canceled", "阻塞任务被取消").with_detail(label)
-                );
+                return Err(AppError::new("blocking_task_canceled", "阻塞任务被取消")
+                    .with_context("blockingTask", label));
             }
 
             if error.is_panic() {
                 return Err(
                     AppError::new("blocking_task_panicked", "阻塞任务发生 panic")
-                        .with_detail(format!("{label}: {}", join_error_detail(&error))),
+                        .with_context("joinError", join_error_detail(&error))
+                        .with_context("blockingTask", label),
                 );
             }
 
             Err(AppError::new("blocking_task_failed", "阻塞任务执行失败")
-                .with_detail(format!("{label}: {}", join_error_detail(&error))))
+                .with_context("joinError", join_error_detail(&error))
+                .with_context("blockingTask", label))
         }
     }
 }
@@ -38,35 +39,5 @@ fn join_error_detail(error: &tokio::task::JoinError) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn run_blocking_should_return_value() {
-        let result = run_blocking("sum", || Ok::<_, AppError>(1 + 2))
-            .await
-            .expect("run blocking success");
-        assert_eq!(result, 3);
-    }
-
-    #[tokio::test]
-    async fn run_blocking_should_map_inner_error() {
-        let result = run_blocking::<(), _>("inner_error", || {
-            Err(AppError::new("inner", "inner failure"))
-        })
-        .await;
-
-        assert!(result.is_err());
-        assert_eq!(result.expect_err("expect err").code, "inner");
-    }
-
-    #[tokio::test]
-    async fn run_blocking_should_map_panic_error() {
-        let result = run_blocking::<(), _>("panic_case", || panic!("panic in blocking job")).await;
-        assert!(result.is_err());
-        assert_eq!(
-            result.expect_err("expect panic mapping").code,
-            "blocking_task_panicked"
-        );
-    }
-}
+#[path = "../../../tests/infrastructure/runtime/blocking_tests.rs"]
+mod tests;

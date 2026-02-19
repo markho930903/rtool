@@ -5,15 +5,17 @@ fn delete_path_with_mode(path: &Path, delete_mode: &str) -> AppResult<()> {
         "trash" => move_path_to_trash(path),
         "permanent" => {
             if path.is_dir() {
-                fs::remove_dir_all(path).map_err(|error| {
-                    AppError::new("app_manager_cleanup_delete_failed", "删除目录失败")
-                        .with_detail(error.to_string())
-                })
+                fs::remove_dir_all(path)
+                    .with_context(|| format!("删除目录失败: {}", path.display()))
+                    .with_code("app_manager_cleanup_delete_failed", "删除目录失败")
+                    .with_ctx("path", path.display().to_string())
+                    .with_ctx("deleteMode", delete_mode)
             } else {
-                fs::remove_file(path).map_err(|error| {
-                    AppError::new("app_manager_cleanup_delete_failed", "删除文件失败")
-                        .with_detail(error.to_string())
-                })
+                fs::remove_file(path)
+                    .with_context(|| format!("删除文件失败: {}", path.display()))
+                    .with_code("app_manager_cleanup_delete_failed", "删除文件失败")
+                    .with_ctx("path", path.display().to_string())
+                    .with_ctx("deleteMode", delete_mode)
             }
         }
         _ => Err(AppError::new(
@@ -34,16 +36,18 @@ fn move_path_to_trash(path: &Path) -> AppResult<()> {
         .arg("-e")
         .arg(script)
         .status()
-        .map_err(|error| {
-            AppError::new("app_manager_cleanup_delete_failed", "移入废纸篓失败")
-                .with_detail(error.to_string())
-        })?;
+        .with_context(|| format!("调用 osascript 失败: {}", path.display()))
+        .with_code("app_manager_cleanup_delete_failed", "移入废纸篓失败")
+        .with_ctx("path", path.display().to_string())
+        .with_ctx("deleteMode", "trash")?;
     if status.success() {
         return Ok(());
     }
     Err(
         AppError::new("app_manager_cleanup_delete_failed", "移入废纸篓失败")
-            .with_detail(format!("status={status}")),
+            .with_context("status", status.to_string())
+            .with_context("path", path.display().to_string())
+            .with_context("deleteMode", "trash"),
     )
 }
 
@@ -66,16 +70,18 @@ fn move_path_to_trash(path: &Path) -> AppResult<()> {
     let status = Command::new("powershell")
         .args(["-NoProfile", "-Command", script.as_str()])
         .status()
-        .map_err(|error| {
-            AppError::new("app_manager_cleanup_delete_failed", "移入回收站失败")
-                .with_detail(error.to_string())
-        })?;
+        .with_context(|| format!("调用 powershell 失败: {}", path.display()))
+        .with_code("app_manager_cleanup_delete_failed", "移入回收站失败")
+        .with_ctx("path", path.display().to_string())
+        .with_ctx("deleteMode", "trash")?;
     if status.success() {
         return Ok(());
     }
     Err(
         AppError::new("app_manager_cleanup_delete_failed", "移入回收站失败")
-            .with_detail(format!("status={status}")),
+            .with_context("status", status.to_string())
+            .with_context("path", path.display().to_string())
+            .with_context("deleteMode", "trash"),
     )
 }
 
@@ -108,16 +114,16 @@ fn windows_delete_registry_key(reg_key: &str) -> AppResult<()> {
     let status = Command::new("reg")
         .args(["delete", reg_key, "/f"])
         .status()
-        .map_err(|error| {
-            AppError::new("app_manager_cleanup_delete_failed", "删除注册表键失败")
-                .with_detail(error.to_string())
-        })?;
+        .with_context(|| format!("删除注册表键失败: {}", reg_key))
+        .with_code("app_manager_cleanup_delete_failed", "删除注册表键失败")
+        .with_ctx("registryKey", reg_key.to_string())?;
     if status.success() {
         return Ok(());
     }
     Err(
         AppError::new("app_manager_cleanup_delete_failed", "删除注册表键失败")
-            .with_detail(format!("status={status}")),
+            .with_context("status", status.to_string())
+            .with_context("registryKey", reg_key.to_string()),
     )
 }
 
@@ -135,16 +141,18 @@ fn windows_delete_registry_value(spec: &str) -> AppResult<()> {
     let status = Command::new("reg")
         .args(["delete", reg_key, "/v", value_name, "/f"])
         .status()
-        .map_err(|error| {
-            AppError::new("app_manager_cleanup_delete_failed", "删除注册表值失败")
-                .with_detail(error.to_string())
-        })?;
+        .with_context(|| format!("删除注册表值失败: {}::{}", reg_key, value_name))
+        .with_code("app_manager_cleanup_delete_failed", "删除注册表值失败")
+        .with_ctx("registryKey", reg_key.to_string())
+        .with_ctx("registryValue", value_name.to_string())?;
     if status.success() {
         return Ok(());
     }
     Err(
         AppError::new("app_manager_cleanup_delete_failed", "删除注册表值失败")
-            .with_detail(format!("status={status}")),
+            .with_context("status", status.to_string())
+            .with_context("registryKey", reg_key.to_string())
+            .with_context("registryValue", value_name.to_string()),
     )
 }
 
@@ -184,6 +192,9 @@ pub(super) fn execute_cleanup_plan(
     }
     let skip_on_error = input.skip_on_error.unwrap_or(true);
     let mut released_size_bytes = 0u64;
+    let main_app_size_bytes =
+        exact_path_size_bytes(resolve_app_size_path(Path::new(app_item.path.as_str())).as_path())
+            .or(app_item.estimated_size_bytes);
     let mut deleted = Vec::new();
     let mut skipped = Vec::new();
     let mut failed = Vec::new();
@@ -197,7 +208,7 @@ pub(super) fn execute_cleanup_plan(
                 status: "skipped".to_string(),
                 reason_code: "self_uninstall_forbidden".to_string(),
                 message: "当前运行中的应用不可在此流程卸载".to_string(),
-                size_bytes: app_item.estimated_size_bytes,
+                size_bytes: main_app_size_bytes,
             });
         } else {
             let confirmed_fingerprint = input.confirmed_fingerprint.clone().ok_or_else(|| {
@@ -211,8 +222,8 @@ pub(super) fn execute_cleanup_plan(
             }
             match platform_uninstall(app_item) {
                 Ok(_) => {
-                    released_size_bytes = released_size_bytes
-                        .saturating_add(app_item.estimated_size_bytes.unwrap_or(0));
+                    released_size_bytes =
+                        released_size_bytes.saturating_add(main_app_size_bytes.unwrap_or(0));
                     deleted.push(AppManagerCleanupItemResultDto {
                         item_id: "main-app".to_string(),
                         path: app_item.path.clone(),
@@ -220,23 +231,23 @@ pub(super) fn execute_cleanup_plan(
                         status: "deleted".to_string(),
                         reason_code: "ok".to_string(),
                         message: "主程序卸载流程已执行".to_string(),
-                        size_bytes: app_item.estimated_size_bytes,
+                        size_bytes: main_app_size_bytes,
                     });
                 }
                 Err(error) => {
                     let detail = error
-                        .detail
-                        .as_deref()
-                        .map(ToString::to_string)
+                        .causes
+                        .first()
+                        .cloned()
                         .unwrap_or_else(|| error.message.clone());
                     failed.push(AppManagerCleanupItemResultDto {
                         item_id: "main-app".to_string(),
                         path: app_item.path.clone(),
                         kind: "main_app".to_string(),
                         status: "failed".to_string(),
-                        reason_code: error.code,
+                        reason_code: error.code.clone(),
                         message: detail,
-                        size_bytes: app_item.estimated_size_bytes,
+                        size_bytes: main_app_size_bytes,
                     });
                     if !skip_on_error {
                         return Err(AppError::new(
@@ -307,16 +318,16 @@ pub(super) fn execute_cleanup_plan(
                 }
                 Err(error) => {
                     let detail = error
-                        .detail
-                        .as_deref()
-                        .map(ToString::to_string)
+                        .causes
+                        .first()
+                        .cloned()
                         .unwrap_or_else(|| error.message.clone());
                     failed.push(AppManagerCleanupItemResultDto {
                         item_id: item.item_id.clone(),
                         path: item.path.clone(),
                         kind: item.kind.clone(),
                         status: "failed".to_string(),
-                        reason_code: error.code,
+                        reason_code: error.code.clone(),
                         message: detail,
                         size_bytes: Some(item.size_bytes),
                     });

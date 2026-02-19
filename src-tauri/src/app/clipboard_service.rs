@@ -3,7 +3,7 @@ use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::core::models::{ClipboardFilterDto, ClipboardItemDto, ClipboardSettingsDto};
-use crate::core::{AppError, AppResult};
+use crate::core::{AppError, AppResult, ResultExt};
 use crate::infrastructure::clipboard::build_clipboard_item;
 use crate::infrastructure::db::{self, DbPool};
 use sysinfo::Disks;
@@ -35,33 +35,42 @@ impl Default for ClipboardRuntimeSettings {
 }
 
 fn validate_max_items(max_items: u32) -> AppResult<u32> {
-    if (CLIPBOARD_MAX_ITEMS_MIN..=CLIPBOARD_MAX_ITEMS_MAX).contains(&max_items) {
-        return Ok(max_items);
-    }
-
-    Err(AppError::new(
+    (|| -> anyhow::Result<u32> {
+        anyhow::ensure!(
+            (CLIPBOARD_MAX_ITEMS_MIN..=CLIPBOARD_MAX_ITEMS_MAX).contains(&max_items),
+            "max_items={max_items}, expected=[{}, {}]",
+            CLIPBOARD_MAX_ITEMS_MIN,
+            CLIPBOARD_MAX_ITEMS_MAX
+        );
+        Ok(max_items)
+    })()
+    .with_code(
         "clipboard_max_items_out_of_range",
         format!(
             "剪贴板条目上限必须在 {} 到 {} 之间",
             CLIPBOARD_MAX_ITEMS_MIN, CLIPBOARD_MAX_ITEMS_MAX
         ),
-    ))
+    )
 }
 
 fn validate_max_total_size_mb(max_total_size_mb: u32) -> AppResult<u32> {
-    if (CLIPBOARD_MAX_TOTAL_SIZE_MB_MIN..=CLIPBOARD_MAX_TOTAL_SIZE_MB_MAX)
-        .contains(&max_total_size_mb)
-    {
-        return Ok(max_total_size_mb);
-    }
-
-    Err(AppError::new(
+    (|| -> anyhow::Result<u32> {
+        anyhow::ensure!(
+            (CLIPBOARD_MAX_TOTAL_SIZE_MB_MIN..=CLIPBOARD_MAX_TOTAL_SIZE_MB_MAX)
+                .contains(&max_total_size_mb),
+            "max_total_size_mb={max_total_size_mb}, expected=[{}, {}]",
+            CLIPBOARD_MAX_TOTAL_SIZE_MB_MIN,
+            CLIPBOARD_MAX_TOTAL_SIZE_MB_MAX
+        );
+        Ok(max_total_size_mb)
+    })()
+    .with_code(
         "clipboard_max_total_size_out_of_range",
         format!(
             "剪贴板体积上限必须在 {} 到 {} MB 之间",
             CLIPBOARD_MAX_TOTAL_SIZE_MB_MIN, CLIPBOARD_MAX_TOTAL_SIZE_MB_MAX
         ),
-    ))
+    )
 }
 
 fn resolve_available_space_bytes(path: &Path) -> Option<u64> {
@@ -94,19 +103,24 @@ fn ensure_available_space(
         return Ok(());
     };
 
-    if available >= min_required_bytes {
-        return Ok(());
-    }
-
     let min_required_mb = min_required_bytes / (1024 * 1024);
     let available_mb = available / (1024 * 1024);
-    Err(AppError::new(
+    (|| -> anyhow::Result<()> {
+        anyhow::ensure!(
+            available >= min_required_bytes,
+            "available_mb={available_mb}, required_mb={min_required_mb}"
+        );
+        Ok(())
+    })()
+    .with_code(
         "clipboard_disk_space_low",
         format!("磁盘可用空间不足，至少需要保留 {min_required_mb} MB"),
     )
-    .with_detail(format!(
-        "available_mb={available_mb}, required_mb={min_required_mb}"
-    )))
+    .map_err(|error| {
+        error
+            .with_context("availableMb", available_mb.to_string())
+            .with_context("requiredMb", min_required_mb.to_string())
+    })
 }
 
 fn remove_preview_file(path: &str) {
@@ -114,14 +128,14 @@ fn remove_preview_file(path: &str) {
         return;
     }
 
-    if let Err(error) = std::fs::remove_file(path) {
-        if error.kind() != std::io::ErrorKind::NotFound {
-            tracing::warn!(
-                event = "clipboard_preview_delete_failed",
-                preview_path = path,
-                error = error.to_string()
-            );
-        }
+    if let Err(error) = std::fs::remove_file(path)
+        && error.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::warn!(
+            event = "clipboard_preview_delete_failed",
+            preview_path = path,
+            error = error.to_string()
+        );
     }
 }
 
@@ -319,62 +333,5 @@ impl ClipboardService {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::infrastructure::db;
-
-    fn unique_temp_db_path(prefix: &str) -> PathBuf {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system time before UNIX_EPOCH")
-            .as_millis();
-        std::env::temp_dir().join(format!("rtool-{prefix}-{}-{now}.db", std::process::id()))
-    }
-
-    #[test]
-    fn should_load_default_clipboard_settings() {
-        let db_path = unique_temp_db_path("clipboard-settings-default");
-        db::init_db(db_path.as_path()).expect("init db");
-        let db_pool = db::new_db_pool(db_path.as_path()).expect("new db pool");
-        let service =
-            ClipboardService::new(db_pool, db_path.clone()).expect("new clipboard service");
-
-        let settings = service.get_settings();
-        assert_eq!(settings.max_items, CLIPBOARD_MAX_ITEMS_DEFAULT);
-        assert!(settings.size_cleanup_enabled);
-        assert_eq!(
-            settings.max_total_size_mb,
-            CLIPBOARD_MAX_TOTAL_SIZE_MB_DEFAULT
-        );
-
-        let _ = std::fs::remove_file(db_path);
-    }
-
-    #[test]
-    fn should_allow_when_disk_space_metric_is_missing() {
-        let result = ensure_available_space(None, CLIPBOARD_MIN_FREE_DISK_BYTES);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn should_allow_when_disk_space_is_enough() {
-        let result = ensure_available_space(
-            Some(CLIPBOARD_MIN_FREE_DISK_BYTES),
-            CLIPBOARD_MIN_FREE_DISK_BYTES,
-        );
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn should_reject_when_disk_space_is_low() {
-        let result = ensure_available_space(
-            Some(CLIPBOARD_MIN_FREE_DISK_BYTES - 1),
-            CLIPBOARD_MIN_FREE_DISK_BYTES,
-        );
-        assert!(result.is_err());
-        assert_eq!(
-            result.expect_err("expected low disk error").code,
-            "clipboard_disk_space_low"
-        );
-    }
-}
+#[path = "../../tests/app/clipboard_service_tests.rs"]
+mod tests;

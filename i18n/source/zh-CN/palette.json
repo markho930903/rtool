@@ -28,6 +28,8 @@
   "launcher.noResults": "暂无匹配结果。试试输入工具名、页面名或路径关键字。",
   "launcher.groupAria": "{label}命令列表",
   "launcher.shortcut": "快捷键：{value}",
+  "launcher.pinWindowOn": "置顶窗口",
+  "launcher.pinWindowOff": "取消置顶",
   "launcher.footer.select": "↑↓ 选择",
   "launcher.footer.open": "Enter 打开",
   "launcher.footer.close": "Esc 关闭",

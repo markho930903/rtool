@@ -2,10 +2,11 @@ use std::io;
 
 use chacha20poly1305::aead::{Aead, KeyInit};
 use chacha20poly1305::{Key, XChaCha20Poly1305, XNonce};
-use rand::RngCore;
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
+use wincode::{SchemaRead, SchemaWrite};
 
 use crate::core::{AppError, AppResult};
 
@@ -35,7 +36,7 @@ impl FrameCodec {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, SchemaWrite, SchemaRead)]
 #[serde(rename_all = "camelCase")]
 pub struct ManifestFileFrame {
     pub file_id: String,
@@ -48,14 +49,14 @@ pub struct ManifestFileFrame {
     pub is_folder_archive: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, SchemaWrite, SchemaRead)]
 #[serde(rename_all = "camelCase")]
 pub struct MissingChunkFrame {
     pub file_id: String,
     pub missing_chunk_indexes: Vec<u32>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, SchemaWrite, SchemaRead)]
 #[serde(rename_all = "camelCase")]
 pub struct AckFrameItem {
     pub file_id: String,
@@ -148,7 +149,7 @@ pub enum TransferFrame {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, SchemaWrite, SchemaRead)]
 enum TransferFrameBinary {
     Hello {
         device_id: String,
@@ -551,7 +552,7 @@ fn serialize_frame(frame: &TransferFrame, codec: FrameCodec) -> AppResult<Vec<u8
             .map_err(|error| app_error("transfer_frame_serialize_failed", error.to_string())),
         FrameCodec::BinV2 => {
             let binary = TransferFrameBinary::from(frame);
-            bincode::serde::encode_to_vec(&binary, bincode::config::standard())
+            wincode::serialize(&binary)
                 .map_err(|error| app_error("transfer_frame_serialize_failed", error.to_string()))
         }
     }
@@ -561,12 +562,9 @@ fn deserialize_frame(payload: &[u8], codec: FrameCodec) -> AppResult<TransferFra
     match codec {
         FrameCodec::JsonV1 => serde_json::from_slice::<TransferFrame>(payload)
             .map_err(|error| app_error("transfer_frame_parse_failed", error.to_string())),
-        FrameCodec::BinV2 => bincode::serde::decode_from_slice::<TransferFrameBinary, _>(
-            payload,
-            bincode::config::standard(),
-        )
-        .map(|(frame, _)| TransferFrame::from(frame))
-        .map_err(|error| app_error("transfer_frame_parse_failed", error.to_string())),
+        FrameCodec::BinV2 => wincode::deserialize::<TransferFrameBinary>(payload)
+            .map(TransferFrame::from)
+            .map_err(|error| app_error("transfer_frame_parse_failed", error.to_string())),
     }
 }
 

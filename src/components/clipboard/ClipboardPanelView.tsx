@@ -115,7 +115,7 @@ export default function ClipboardPanelView(props: ClipboardPanelViewProps) {
             <span
               className={[
                 "inline-block leading-none text-[2.2rem] transform-gpu scale-[1.25] origin-center",
-                props.compactMode ? "i-noto:left-right-arrow" : "i-noto:up-down-arrow",
+                props.compactMode ? "i-lucide:chevrons-left-right" : "i-lucide:chevrons-up-down",
               ].join(" ")}
               aria-hidden="true"
             />

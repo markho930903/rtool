@@ -6,6 +6,7 @@ import { localeActions, useLocaleStore } from "@/i18n/store";
 import type { LocalePreference } from "@/i18n/types";
 import { useLayoutStore } from "@/layouts/layout.store";
 import type { LayoutPreference } from "@/layouts/layout.types";
+import { LoadingIndicator } from "@/components/loading";
 import { Button, Input, Select, SwitchField } from "@/components/ui";
 import type { SelectOptionInput } from "@/components/ui";
 import {
@@ -768,9 +769,7 @@ export default function SettingsPage() {
                     >
                       {t("general.import.reload")}
                     </Button>
-                    {localeCatalogLoading ? (
-                      <span className="text-xs text-text-muted">{t("common:status.loading")}</span>
-                    ) : null}
+                    {localeCatalogLoading ? <LoadingIndicator text={t("common:status.loading")} /> : null}
                   </div>
 
                   {localeCatalogError ? <p className="m-0 text-xs text-danger">{localeCatalogError}</p> : null}
@@ -898,9 +897,7 @@ export default function SettingsPage() {
                   >
                     {clipboardSaving ? t("common:action.saving") : t("common:action.save")}
                   </Button>
-                  {clipboardLoading ? (
-                    <span className="text-xs text-text-muted">{t("common:status.loading")}</span>
-                  ) : null}
+                  {clipboardLoading ? <LoadingIndicator text={t("common:status.loading")} /> : null}
                   {clipboardError ? <span className="text-xs text-danger">{clipboardError}</span> : null}
                   {saveMessage ? (
                     <span className={`text-xs ${saveMessage.isError ? "text-danger" : "text-text-secondary"}`}>

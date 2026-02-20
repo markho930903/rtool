@@ -5,6 +5,7 @@ import TransferDropzone from "@/components/transfer/TransferDropzone";
 import TransferHistoryPanel from "@/components/transfer/TransferHistoryPanel";
 import TransferPeerPanel from "@/components/transfer/TransferPeerPanel";
 import TransferSessionList from "@/components/transfer/TransferSessionList";
+import { LoadingIndicator } from "@/components/loading";
 import { Button, Input } from "@/components/ui";
 import { useTransferStore } from "@/stores/transfer.store";
 
@@ -142,31 +143,38 @@ export default function TransferPage() {
         {error ? <div className="mt-2 text-xs text-danger">{error}</div> : null}
       </header>
 
-      {!initialized && loading ? <p className="text-xs text-text-secondary">{t("page.loading")}</p> : null}
-
-      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
-        <TransferPeerPanel
-          peers={peers}
-          selectedPeerId={selectedPeerId}
-          pairCode={pairCode}
-          onSelectPeer={setSelectedPeerId}
-          onPairCodeChange={setPairCode}
-          onRefresh={refreshPeers}
-        />
-
-        <div className="space-y-3">
-          <TransferDropzone pendingFiles={pendingFiles} onChangeFiles={setPendingFiles} onSend={sendPendingFiles} />
-          <TransferSessionList
-            sessions={sessions}
-            onPause={pauseSession}
-            onResume={resumeSession}
-            onCancel={cancelSession}
-            onRetry={retrySession}
+      <LoadingIndicator
+        mode="overlay"
+        loading={!initialized && loading}
+        text={t("page.loading")}
+        className="text-text-secondary"
+        textClassName="text-xs text-text-secondary"
+        containerClassName="mt-3"
+      >
+        <div className="grid grid-cols-1 gap-3 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
+          <TransferPeerPanel
+            peers={peers}
+            selectedPeerId={selectedPeerId}
+            pairCode={pairCode}
+            onSelectPeer={setSelectedPeerId}
+            onPairCodeChange={setPairCode}
+            onRefresh={refreshPeers}
           />
-        </div>
 
-        <TransferHistoryPanel history={history} onRefresh={refreshHistory} onClear={clearHistory} />
-      </div>
+          <div className="space-y-3">
+            <TransferDropzone pendingFiles={pendingFiles} onChangeFiles={setPendingFiles} onSend={sendPendingFiles} />
+            <TransferSessionList
+              sessions={sessions}
+              onPause={pauseSession}
+              onResume={resumeSession}
+              onCancel={cancelSession}
+              onRetry={retrySession}
+            />
+          </div>
+
+          <TransferHistoryPanel history={history} onRefresh={refreshHistory} onClear={clearHistory} />
+        </div>
+      </LoadingIndicator>
     </div>
   );
 }

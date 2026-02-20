@@ -1,3 +1,4 @@
+import { LoadingIndicator } from "@/components/loading";
 import { Input } from "@/components/ui";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
@@ -35,7 +36,7 @@ export default function PaletteInput(props: PaletteInputProps) {
             onChange={(event) => props.onQueryChange(event.currentTarget.value)}
             placeholder={t("input.placeholder")}
           />
-          {props.loading ? <span className="text-xs text-text-muted">{t("input.searching")}</span> : null}
+          {props.loading ? <LoadingIndicator text={t("input.searching")} /> : null}
         </label>
         {props.trailingActions ? <div className="shrink-0">{props.trailingActions}</div> : null}
       </div>

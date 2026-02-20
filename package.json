@@ -28,6 +28,7 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@iconify-json/lucide": "^1.2.92",
     "@iconify-json/noto": "^1.2.7",
     "@tauri-apps/cli": "^2.10.0",
     "@types/react": "^19.2.13",

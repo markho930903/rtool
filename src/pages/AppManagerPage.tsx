@@ -7,6 +7,7 @@ import type {
   AppManagerResidueItem,
   ManagedApp,
 } from "@/components/app-manager/types";
+import { LoadingIndicator } from "@/components/loading";
 import { AppEntityIcon } from "@/components/icons/AppEntityIcon";
 import { resolvePathIcon } from "@/components/icons/pathIcon";
 import { Button, Dialog, Input, RadioGroup, Select, SwitchField, Tooltip } from "@/components/ui";
@@ -46,7 +47,10 @@ interface RelatedLocationEntry {
 }
 
 function normalizePathKey(path: string): string {
-  return path.trim().replace(/[\\/]+/g, "/").toLowerCase();
+  return path
+    .trim()
+    .replace(/[\\/]+/g, "/")
+    .toLowerCase();
 }
 
 function isRegistryResiduePath(path: string): boolean {
@@ -79,7 +83,10 @@ function isAppBundlePath(path: string): boolean {
   return normalizePathKey(path).replace(/\/+$/, "").endsWith(".app");
 }
 
-function resolveRelatedEntryIcon(entry: RelatedLocationEntry, selectedApp: ManagedApp | null): {
+function resolveRelatedEntryIcon(
+  entry: RelatedLocationEntry,
+  selectedApp: ManagedApp | null,
+): {
   iconKind?: string;
   iconValue?: string;
   fallbackIcon: string;
@@ -134,7 +141,10 @@ function ResultRows({
       <h4 className="m-0 text-xs font-semibold text-text-secondary">{title}</h4>
       <div className="space-y-1.5">
         {rows.slice(0, 20).map((row) => (
-          <div key={`${title}-${row.itemId}-${row.path}`} className={`rounded-md border px-2 py-1.5 text-xs ${kindClassName}`}>
+          <div
+            key={`${title}-${row.itemId}-${row.path}`}
+            className={`rounded-md border px-2 py-1.5 text-xs ${kindClassName}`}
+          >
             <div className="break-all">{row.path}</div>
             <div className="mt-0.5 text-[11px] opacity-80">
               {row.reasonCode} · {row.message}
@@ -235,17 +245,14 @@ export default function AppManagerPage() {
     };
   }, [highlightExportPath]);
 
-  const selectedApp = useMemo(
-    () => items.find((item) => item.id === selectedAppId) ?? null,
-    [items, selectedAppId],
-  );
+  const selectedApp = useMemo(() => items.find((item) => item.id === selectedAppId) ?? null, [items, selectedAppId]);
   const selectedDetail = selectedApp ? detailById[selectedApp.id] : undefined;
   const selectedScanResult = selectedApp ? scanResultById[selectedApp.id] : undefined;
   const selectedCleanupResult = selectedApp ? cleanupResultById[selectedApp.id] : undefined;
   const selectedExportResult = selectedApp ? exportResultById[selectedApp.id] : undefined;
-  const selectedResidueIds = selectedApp ? selectedResidueIdsByAppId[selectedApp.id] ?? [] : [];
-  const selectedDeleteMode = selectedApp ? deleteModeByAppId[selectedApp.id] ?? "trash" : "trash";
-  const selectedIncludeMainApp = selectedApp ? includeMainAppByAppId[selectedApp.id] ?? true : true;
+  const selectedResidueIds = selectedApp ? (selectedResidueIdsByAppId[selectedApp.id] ?? []) : [];
+  const selectedDeleteMode = selectedApp ? (deleteModeByAppId[selectedApp.id] ?? "trash") : "trash";
+  const selectedIncludeMainApp = selectedApp ? (includeMainAppByAppId[selectedApp.id] ?? true) : true;
   const selectedDetailLoading = selectedApp ? Boolean(detailLoadingById[selectedApp.id]) : false;
   const selectedScanLoading = selectedApp ? Boolean(scanLoadingById[selectedApp.id]) : false;
 
@@ -474,7 +481,12 @@ export default function AppManagerPage() {
                 <h1 className="m-0 text-base font-semibold text-text-primary">{t("title")}</h1>
                 <p className="m-0 text-xs text-text-secondary">{t("desc")}</p>
               </div>
-              <Button size="xs" variant="secondary" disabled={refreshing || loading} onClick={() => void refreshIndex()}>
+              <Button
+                size="xs"
+                variant="secondary"
+                disabled={refreshing || loading}
+                onClick={() => void refreshIndex()}
+              >
                 {refreshing ? t("actions.refreshing") : t("actions.refresh")}
               </Button>
             </div>
@@ -519,7 +531,11 @@ export default function AppManagerPage() {
               <span>{t("meta.count", { count: items.length })}</span>
             </div>
 
-            {error ? <div className="rounded-md border border-danger/35 bg-danger/10 px-2.5 py-2 text-xs text-danger">{error}</div> : null}
+            {error ? (
+              <div className="rounded-md border border-danger/35 bg-danger/10 px-2.5 py-2 text-xs text-danger">
+                {error}
+              </div>
+            ) : null}
             {lastActionResult ? (
               <div
                 className={`rounded-md border px-2.5 py-2 text-xs ${
@@ -541,65 +557,73 @@ export default function AppManagerPage() {
           <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">
             <div className="mb-2 flex items-center justify-between">
               <h2 className="m-0 text-sm font-semibold text-text-primary">{t("list.title")}</h2>
-              {loading ? <span className="text-xs text-text-muted">{t("status.loading")}</span> : null}
             </div>
-            {!loading && items.length === 0 ? (
-              <div className="rounded-lg border border-border-muted bg-surface-soft px-3 py-6 text-center text-sm text-text-muted">
-                {t("status.empty")}
-              </div>
-            ) : null}
-            <div className="space-y-2">
-              {items.map((app) => {
-                const selected = app.id === selectedAppId;
-                const actionLoading = Boolean(actionLoadingById[app.id]);
-                return (
-                  <button
-                    key={app.id}
-                    type="button"
-                    className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
-                      selected
-                        ? "border-accent/70 bg-accent/10"
-                        : "border-border-muted bg-surface-soft hover:border-accent/45"
-                    }`}
-                    onClick={() => void selectApp(app.id)}
-                  >
-                    <div className="flex items-start gap-2">
-                      <AppIcon app={app} sizeClassName="h-9 w-9" iconSizeClassName="text-[1.15rem]" />
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm font-medium text-text-primary">{app.name}</div>
-                        <div className="mt-0.5 truncate text-xs text-text-muted">{app.path}</div>
-                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-text-secondary">
-                          <span>{formatBytes(app.estimatedSizeBytes)}</span>
-                          <span>{t(`meta.startupScope.${app.startupScope}`, { defaultValue: app.startupScope })}</span>
-                        </div>
-                      </div>
-                      <Button
-                        size="xs"
-                        variant="ghost"
-                        iconOnly
-                        disabled={actionLoading}
-                        title={t("actions.deepUninstall")}
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          setConfirmTarget(app);
-                        }}
+            <LoadingIndicator
+              mode="overlay"
+              loading={loading && items.length === 0}
+              text={t("status.loading")}
+              containerClassName="min-h-24"
+            >
+              <>
+                {!loading && items.length === 0 ? (
+                  <div className="rounded-lg border border-border-muted bg-surface-soft px-3 py-6 text-center text-sm text-text-muted">
+                    {t("status.empty")}
+                  </div>
+                ) : null}
+                <div className="space-y-2">
+                  {items.map((app) => {
+                    const selected = app.id === selectedAppId;
+                    const actionLoading = Boolean(actionLoadingById[app.id]);
+                    return (
+                      <button
+                        key={app.id}
+                        type="button"
+                        className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
+                          selected
+                            ? "border-accent/70 bg-accent/10"
+                            : "border-border-muted bg-surface-soft hover:border-accent/45"
+                        }`}
+                        onClick={() => void selectApp(app.id)}
                       >
-                        <span className="btn-icon i-noto:wastebasket text-base" aria-hidden="true" />
-                      </Button>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+                        <div className="flex items-start gap-2">
+                          <AppIcon app={app} sizeClassName="h-9 w-9" iconSizeClassName="text-[1.15rem]" />
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-medium text-text-primary">{app.name}</div>
+                            <div className="mt-0.5 truncate text-xs text-text-muted">{app.path}</div>
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-text-secondary">
+                              <span>{formatBytes(app.estimatedSizeBytes)}</span>
+                              <span>{t(`meta.startupScope.${app.startupScope}`, { defaultValue: app.startupScope })}</span>
+                            </div>
+                          </div>
+                          <Button
+                            size="xs"
+                            variant="ghost"
+                            iconOnly
+                            disabled={actionLoading}
+                            title={t("actions.deepUninstall")}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              setConfirmTarget(app);
+                            }}
+                          >
+                            <span className="btn-icon i-noto:wastebasket text-base" aria-hidden="true" />
+                          </Button>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
 
-            {!loading && nextCursor ? (
-              <div className="mt-3 flex justify-center">
-                <Button size="default" variant="secondary" disabled={loadingMore} onClick={() => void loadMore()}>
-                  {loadingMore ? t("actions.loadingMore") : t("actions.loadMore")}
-                </Button>
-              </div>
-            ) : null}
+                {!loading && nextCursor ? (
+                  <div className="mt-3 flex justify-center">
+                    <Button size="default" variant="secondary" disabled={loadingMore} onClick={() => void loadMore()}>
+                      {loadingMore ? t("actions.loadingMore") : t("actions.loadMore")}
+                    </Button>
+                  </div>
+                ) : null}
+              </>
+            </LoadingIndicator>
           </div>
         </aside>
 
@@ -618,33 +642,49 @@ export default function AppManagerPage() {
                         <AppIcon app={selectedApp} />
                         <h2 className="m-0 text-base font-semibold text-text-primary">{selectedApp.name}</h2>
                       </div>
-                      <p className="m-0 break-all text-xs text-text-muted">{selectedDetail?.installPath ?? selectedApp.path}</p>
+                      <p className="m-0 break-all text-xs text-text-muted">
+                        {selectedDetail?.installPath ?? selectedApp.path}
+                      </p>
                       <div className="flex flex-wrap items-center gap-2 text-xs text-text-secondary">
                         <span>{t("meta.platform", { value: selectedApp.platform })}</span>
                         {selectedApp.version ? <span>{t("meta.version", { value: selectedApp.version })}</span> : null}
-                        {selectedApp.publisher ? <span>{t("meta.publisher", { value: selectedApp.publisher })}</span> : null}
-                        {selectedApp.bundleOrAppId ? <span>{t("meta.bundleId", { value: selectedApp.bundleOrAppId })}</span> : null}
+                        {selectedApp.publisher ? (
+                          <span>{t("meta.publisher", { value: selectedApp.publisher })}</span>
+                        ) : null}
+                        {selectedApp.bundleOrAppId ? (
+                          <span>{t("meta.bundleId", { value: selectedApp.bundleOrAppId })}</span>
+                        ) : null}
                         <span>{t("meta.identity", { value: selectedApp.identity.primaryId })}</span>
                         <span>{t("meta.identitySource", { value: selectedApp.identity.identitySource })}</span>
                         <span className="inline-flex items-center gap-1">
                           {selectedDetailLoading ? (
-                            <span className="i-noto:hourglass-not-done animate-spin text-[12px]" aria-hidden="true" />
+                            <LoadingIndicator ariaLabel={t("detail.loading")} className="text-text-secondary" />
                           ) : null}
                           <span>
                             {t("detail.size", {
                               value: selectedDetailLoading
                                 ? t("detail.calculating")
-                                : formatBytes(
-                                    selectedDetail?.sizeSummary.appBytes ?? selectedApp.estimatedSizeBytes,
-                                  ),
+                                : formatBytes(selectedDetail?.sizeSummary.appBytes ?? selectedApp.estimatedSizeBytes),
                             })}
                           </span>
                         </span>
                       </div>
                       <div className="flex flex-wrap items-center gap-2 text-[11px] text-text-muted">
-                        <span>{selectedApp.capabilities.startup ? t("meta.capability.startupEnabled") : t("meta.capability.startupDisabled")}</span>
-                        <span>{selectedApp.capabilities.uninstall ? t("meta.capability.uninstallEnabled") : t("meta.capability.uninstallDisabled")}</span>
-                        <span>{selectedApp.capabilities.residueScan ? t("meta.capability.scanEnabled") : t("meta.capability.scanDisabled")}</span>
+                        <span>
+                          {selectedApp.capabilities.startup
+                            ? t("meta.capability.startupEnabled")
+                            : t("meta.capability.startupDisabled")}
+                        </span>
+                        <span>
+                          {selectedApp.capabilities.uninstall
+                            ? t("meta.capability.uninstallEnabled")
+                            : t("meta.capability.uninstallDisabled")}
+                        </span>
+                        <span>
+                          {selectedApp.capabilities.residueScan
+                            ? t("meta.capability.scanEnabled")
+                            : t("meta.capability.scanDisabled")}
+                        </span>
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -690,7 +730,13 @@ export default function AppManagerPage() {
                     </div>
                   ) : null}
                   {selectedDetailLoading ? (
-                    <p className="mt-3 text-xs text-text-muted">{t("detail.loading")}</p>
+                    <LoadingIndicator
+                      mode="overlay"
+                      text={t("detail.loading")}
+                      containerClassName="mt-3 rounded-md border border-border-muted/65 bg-surface-soft"
+                      minHeightClassName="min-h-16"
+                      showMask={false}
+                    />
                   ) : null}
                 </section>
 
@@ -698,7 +744,9 @@ export default function AppManagerPage() {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h3 className="m-0 text-sm font-semibold text-text-primary">{t("detail.relatedRoots")}</h3>
                     <span className="text-xs text-text-secondary">
-                      {selectedScanLoading ? t("cleanup.scanning") : t("detail.relatedCount", { count: relatedLocations.length })}
+                      {selectedScanLoading
+                        ? t("cleanup.scanning")
+                        : t("detail.relatedCount", { count: relatedLocations.length })}
                     </span>
                   </div>
                   <p className="m-0 mt-1 text-[11px] text-text-muted">{t("detail.relatedAutoScanHint")}</p>
@@ -769,11 +817,15 @@ export default function AppManagerPage() {
                                   iconClassName="h-8 w-8 shrink-0 text-[1rem] text-text-secondary"
                                 />
                                 <span className="min-w-0 flex-1">
-                                  <span className="block truncate text-sm font-medium text-text-primary">{entry.name}</span>
+                                  <span className="block truncate text-sm font-medium text-text-primary">
+                                    {entry.name}
+                                  </span>
                                   <span className="mt-0.5 block break-all text-xs text-text-muted">{entry.path}</span>
                                   {entry.readonlyReasonCode ? (
                                     <span className="mt-0.5 block text-[11px] text-info">
-                                      {t(`readonly.${entry.readonlyReasonCode}`, { defaultValue: entry.readonlyReasonCode })}
+                                      {t(`readonly.${entry.readonlyReasonCode}`, {
+                                        defaultValue: entry.readonlyReasonCode,
+                                      })}
                                     </span>
                                   ) : null}
                                 </span>
@@ -832,7 +884,9 @@ export default function AppManagerPage() {
                     <Select
                       value={selectedDeleteMode}
                       options={deleteModeOptions}
-                      onChange={(event) => setDeleteMode(selectedApp.id, event.currentTarget.value as "trash" | "permanent")}
+                      onChange={(event) =>
+                        setDeleteMode(selectedApp.id, event.currentTarget.value as "trash" | "permanent")
+                      }
                     />
                     <SwitchField
                       checked={selectedIncludeMainApp}
@@ -862,7 +916,11 @@ export default function AppManagerPage() {
                   {selectedScanResult ? (
                     <div className="mt-3 space-y-3">
                       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-text-secondary">
-                        <span>{t("cleanup.scanSummary", { count: selectedScanResult.groups.flatMap((group) => group.items).length })}</span>
+                        <span>
+                          {t("cleanup.scanSummary", {
+                            count: selectedScanResult.groups.flatMap((group) => group.items).length,
+                          })}
+                        </span>
                         <span>{t("cleanup.totalSize", { value: formatBytes(selectedScanResult.totalSizeBytes) })}</span>
                       </div>
 
@@ -908,12 +966,15 @@ export default function AppManagerPage() {
 
                       <div className="space-y-2">
                         {selectedScanResult.groups.map((group: AppManagerResidueGroup) => (
-                          <div key={group.groupId} className="rounded-lg border border-border-muted bg-surface-soft px-3 py-2">
+                          <div
+                            key={group.groupId}
+                            className="rounded-lg border border-border-muted bg-surface-soft px-3 py-2"
+                          >
                             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                              <h4 className="m-0 text-xs font-semibold text-text-primary">
-                                {group.label}
-                              </h4>
-                              <span className="text-[11px] text-text-secondary">{formatBytes(group.totalSizeBytes)}</span>
+                              <h4 className="m-0 text-xs font-semibold text-text-primary">{group.label}</h4>
+                              <span className="text-[11px] text-text-secondary">
+                                {formatBytes(group.totalSizeBytes)}
+                              </span>
                             </div>
                             <div className="space-y-2">
                               {group.items.map((item: AppManagerResidueItem) => {
@@ -1019,7 +1080,9 @@ export default function AppManagerPage() {
                       </Button>
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-text-secondary">
-                      <span>{t("result.released", { value: formatBytes(selectedCleanupResult.releasedSizeBytes) })}</span>
+                      <span>
+                        {t("result.released", { value: formatBytes(selectedCleanupResult.releasedSizeBytes) })}
+                      </span>
                       <span>{t("result.deleted", { count: selectedCleanupResult.deleted.length })}</span>
                       <span>{t("result.skipped", { count: selectedCleanupResult.skipped.length })}</span>
                       <span>{t("result.failed", { count: selectedCleanupResult.failed.length })}</span>
@@ -1072,11 +1135,22 @@ export default function AppManagerPage() {
               <div>{t("uninstallDialog.appPath", { value: confirmTarget.path })}</div>
               <div>{t("uninstallDialog.publisher", { value: confirmTarget.publisher || "-" })}</div>
               <div>{t("uninstallDialog.version", { value: confirmTarget.version || "-" })}</div>
-              <div>{t("uninstallDialog.cleanMode", { value: t(`cleanup.${(deleteModeByAppId[confirmTarget.id] ?? "trash") === "trash" ? "deleteModeTrash" : "deleteModePermanent"}`) })}</div>
+              <div>
+                {t("uninstallDialog.cleanMode", {
+                  value: t(
+                    `cleanup.${(deleteModeByAppId[confirmTarget.id] ?? "trash") === "trash" ? "deleteModeTrash" : "deleteModePermanent"}`,
+                  ),
+                })}
+              </div>
             </div>
           ) : null}
           <div className="flex justify-end gap-2">
-            <Button size="default" variant="secondary" disabled={confirmingDeepUninstall} onClick={() => setConfirmTarget(null)}>
+            <Button
+              size="default"
+              variant="secondary"
+              disabled={confirmingDeepUninstall}
+              onClick={() => setConfirmTarget(null)}
+            >
               {t("uninstallDialog.cancel")}
             </Button>
             <Button

@@ -11,10 +11,13 @@ import {
   transformerVariantGroup,
 } from "unocss";
 
+import { icons as lucideIcons } from "@iconify-json/lucide";
 import { icons as notoEmoji } from "@iconify-json/noto";
 
 export default defineConfig({
   safelist: [
+    "i-lucide:chevrons-left-right",
+    "i-lucide:chevrons-up-down",
     "i-noto:desktop-computer",
     "i-noto:hammer-and-wrench",
     "i-noto:outbox-tray",
@@ -30,6 +33,7 @@ export default defineConfig({
     presetWind4(),
     presetIcons({
       collections: {
+        lucide: () => lucideIcons,
         noto: () => notoEmoji,
       },
     }),

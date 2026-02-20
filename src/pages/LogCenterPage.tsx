@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { LoadingIndicator } from "@/components/loading";
 import { Button, Input, Textarea } from "@/components/ui";
 import { useLoggingStore } from "@/stores/logging.store";
 import type { LogLevel } from "@/services/logging.service";
@@ -295,46 +296,49 @@ export default function LogCenterPage() {
               <div className="text-xs text-text-muted">{t("list.count", { count: items.length })}</div>
             </div>
 
-            <div className="h-[500px] overflow-auto rounded-lg border border-border-muted/80 bg-app/55">
-              {loading && items.length === 0 ? (
-                <div className="p-3 text-xs text-text-muted">{t("list.loading")}</div>
-              ) : null}
+            <LoadingIndicator
+              mode="overlay"
+              loading={loading && items.length === 0}
+              text={t("list.loading")}
+              containerClassName="h-[500px] overflow-auto rounded-lg border border-border-muted/80 bg-app/55"
+            >
+              <>
+                {!loading && items.length === 0 ? (
+                  <div className="p-3 text-xs text-text-muted">{t("list.empty")}</div>
+                ) : null}
 
-              {!loading && items.length === 0 ? (
-                <div className="p-3 text-xs text-text-muted">{t("list.empty")}</div>
-              ) : null}
-
-              {items.map((item) => {
-                const selected = selectedLog?.id === item.id;
-                return (
-                  <Button
-                    unstyled
-                    key={item.id}
-                    type="button"
-                    className={`w-full border-b border-border-muted/60 px-3 py-2 text-left last:border-b-0 ${
-                      selected ? "bg-accent-soft" : "hover:bg-surface-soft"
-                    }`}
-                    onClick={() => selectLog(item.id)}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`rounded border px-1.5 py-0.5 font-mono ui-text-micro uppercase ${levelClassName(item.level)}`}
-                      >
-                        {item.level}
-                      </span>
-                      <span className="truncate font-mono ui-text-micro text-text-secondary">
-                        {formatTimestamp(item.timestamp, locale)}
-                      </span>
-                      <span className="truncate text-xs text-text-primary">{item.scope}</span>
-                    </div>
-                    <div className="mt-1 truncate text-xs text-text-secondary">
-                      {item.event} · {item.message}
-                    </div>
-                    <div className="mt-1 truncate font-mono ui-text-micro text-text-muted">{item.requestId}</div>
-                  </Button>
-                );
-              })}
-            </div>
+                {items.map((item) => {
+                  const selected = selectedLog?.id === item.id;
+                  return (
+                    <Button
+                      unstyled
+                      key={item.id}
+                      type="button"
+                      className={`w-full border-b border-border-muted/60 px-3 py-2 text-left last:border-b-0 ${
+                        selected ? "bg-accent-soft" : "hover:bg-surface-soft"
+                      }`}
+                      onClick={() => selectLog(item.id)}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`rounded border px-1.5 py-0.5 font-mono ui-text-micro uppercase ${levelClassName(item.level)}`}
+                        >
+                          {item.level}
+                        </span>
+                        <span className="truncate font-mono ui-text-micro text-text-secondary">
+                          {formatTimestamp(item.timestamp, locale)}
+                        </span>
+                        <span className="truncate text-xs text-text-primary">{item.scope}</span>
+                      </div>
+                      <div className="mt-1 truncate text-xs text-text-secondary">
+                        {item.event} · {item.message}
+                      </div>
+                      <div className="mt-1 truncate font-mono ui-text-micro text-text-muted">{item.requestId}</div>
+                    </Button>
+                  );
+                })}
+              </>
+            </LoadingIndicator>
 
             <div className="mt-2 flex items-center justify-between gap-2">
               <div className="text-xs text-text-muted">{nextCursor ? t("list.hasMore") : t("list.end")}</div>

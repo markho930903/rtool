@@ -267,6 +267,109 @@ pub fn init_db(db_path: &Path) -> AppResult<()> {
             value TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS launcher_index_entries_v2 (
+            path TEXT PRIMARY KEY,
+            kind TEXT NOT NULL,
+            name TEXT NOT NULL,
+            parent TEXT NOT NULL,
+            ext TEXT,
+            mtime INTEGER,
+            size INTEGER,
+            source_root TEXT NOT NULL,
+            searchable_text TEXT NOT NULL,
+            scan_token TEXT
+        );
+
+        CREATE VIRTUAL TABLE IF NOT EXISTS launcher_index_entries_fts_v2 USING fts5(
+            name,
+            parent,
+            path,
+            ext,
+            searchable_text,
+            content='launcher_index_entries_v2',
+            content_rowid='rowid',
+            tokenize='unicode61'
+        );
+
+        CREATE TRIGGER IF NOT EXISTS launcher_index_entries_v2_ai
+        AFTER INSERT ON launcher_index_entries_v2
+        BEGIN
+            INSERT INTO launcher_index_entries_fts_v2(
+                rowid,
+                name,
+                parent,
+                path,
+                ext,
+                searchable_text
+            ) VALUES (
+                NEW.rowid,
+                NEW.name,
+                NEW.parent,
+                NEW.path,
+                COALESCE(NEW.ext, ''),
+                NEW.searchable_text
+            );
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS launcher_index_entries_v2_ad
+        AFTER DELETE ON launcher_index_entries_v2
+        BEGIN
+            INSERT INTO launcher_index_entries_fts_v2(
+                launcher_index_entries_fts_v2,
+                rowid,
+                name,
+                parent,
+                path,
+                ext,
+                searchable_text
+            ) VALUES (
+                'delete',
+                OLD.rowid,
+                OLD.name,
+                OLD.parent,
+                OLD.path,
+                COALESCE(OLD.ext, ''),
+                OLD.searchable_text
+            );
+        END;
+
+        CREATE TRIGGER IF NOT EXISTS launcher_index_entries_v2_au
+        AFTER UPDATE ON launcher_index_entries_v2
+        BEGIN
+            INSERT INTO launcher_index_entries_fts_v2(
+                launcher_index_entries_fts_v2,
+                rowid,
+                name,
+                parent,
+                path,
+                ext,
+                searchable_text
+            ) VALUES (
+                'delete',
+                OLD.rowid,
+                OLD.name,
+                OLD.parent,
+                OLD.path,
+                COALESCE(OLD.ext, ''),
+                OLD.searchable_text
+            );
+            INSERT INTO launcher_index_entries_fts_v2(
+                rowid,
+                name,
+                parent,
+                path,
+                ext,
+                searchable_text
+            ) VALUES (
+                NEW.rowid,
+                NEW.name,
+                NEW.parent,
+                NEW.path,
+                COALESCE(NEW.ext, ''),
+                NEW.searchable_text
+            );
+        END;
+
         CREATE INDEX IF NOT EXISTS idx_clipboard_created_at ON clipboard_items(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_clipboard_type_created_at ON clipboard_items(item_type, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_log_ts ON log_entries(timestamp DESC);
@@ -282,6 +385,9 @@ pub fn init_db(db_path: &Path) -> AppResult<()> {
         CREATE INDEX IF NOT EXISTS idx_launcher_index_source_root_name ON launcher_index_entries(source_root, name COLLATE NOCASE);
         CREATE INDEX IF NOT EXISTS idx_launcher_index_scan_token ON launcher_index_entries(scan_token);
         CREATE INDEX IF NOT EXISTS idx_launcher_index_searchable_text ON launcher_index_entries(searchable_text);
+        CREATE INDEX IF NOT EXISTS idx_launcher_index_v2_kind_name ON launcher_index_entries_v2(kind, name COLLATE NOCASE);
+        CREATE INDEX IF NOT EXISTS idx_launcher_index_v2_source_root_name ON launcher_index_entries_v2(source_root, name COLLATE NOCASE);
+        CREATE INDEX IF NOT EXISTS idx_launcher_index_v2_scan_token ON launcher_index_entries_v2(scan_token);
         "#,
     )?;
 
@@ -310,6 +416,10 @@ pub fn init_db(db_path: &Path) -> AppResult<()> {
     deduplicate_clipboard_items_by_content_key(&conn)?;
     conn.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_clipboard_content_key_unique ON clipboard_items(content_key)",
+        [],
+    )?;
+    conn.execute(
+        "INSERT INTO launcher_index_entries_fts_v2(launcher_index_entries_fts_v2) VALUES('rebuild')",
         [],
     )?;
 

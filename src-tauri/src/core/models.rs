@@ -61,6 +61,54 @@ pub struct LauncherItemDto {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LauncherSearchSettingsDto {
+    pub roots: Vec<String>,
+    pub exclude_patterns: Vec<String>,
+    pub max_scan_depth: u32,
+    pub max_items_per_root: u32,
+    pub max_total_items: u32,
+    pub refresh_interval_secs: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct LauncherUpdateSearchSettingsInputDto {
+    pub roots: Option<Vec<String>>,
+    pub exclude_patterns: Option<Vec<String>>,
+    pub max_scan_depth: Option<u32>,
+    pub max_items_per_root: Option<u32>,
+    pub max_total_items: Option<u32>,
+    pub refresh_interval_secs: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LauncherIndexStatusDto {
+    pub ready: bool,
+    pub building: bool,
+    pub indexed_items: u64,
+    pub indexed_roots: u32,
+    pub last_build_ms: Option<i64>,
+    pub last_duration_ms: Option<u64>,
+    pub last_error: Option<String>,
+    pub refresh_interval_secs: u32,
+    pub index_version: String,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LauncherRebuildResultDto {
+    pub success: bool,
+    pub duration_ms: u64,
+    pub indexed_items: u64,
+    pub indexed_roots: u32,
+    pub truncated: bool,
+    pub ready: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AppManagerQueryDto {
     pub keyword: Option<String>,

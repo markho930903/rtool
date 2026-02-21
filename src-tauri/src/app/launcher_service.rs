@@ -22,9 +22,9 @@ const CACHE_TTL: Duration = Duration::from_secs(30);
 const DEFAULT_RESULT_LIMIT: usize = 60;
 const MAX_RESULT_LIMIT: usize = 120;
 const MAX_APP_ITEMS: usize = 300;
-const MAX_FILE_ITEMS: usize = 600;
+const MAX_FILE_ITEMS: usize = 2_000;
 const APP_SCAN_DEPTH: usize = 4;
-const FILE_SCAN_DEPTH: usize = 8;
+const FILE_SCAN_DEPTH: usize = 12;
 
 struct LauncherCache {
     refreshed_at: Option<Instant>,
@@ -830,9 +830,7 @@ fn application_roots() -> Vec<PathBuf> {
 fn file_roots() -> Vec<PathBuf> {
     let mut roots = Vec::new();
     if let Some(home) = home_dir() {
-        roots.push(home.join("Desktop"));
-        roots.push(home.join("Documents"));
-        roots.push(home.join("Downloads"));
+        roots.push(home);
     }
     roots
 }

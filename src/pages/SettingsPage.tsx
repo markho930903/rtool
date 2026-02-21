@@ -16,6 +16,14 @@ import {
   type BackendLocaleCatalogList,
 } from "@/services/locale.service";
 import { transferGetSettings, transferUpdateSettings } from "@/services/transfer.service";
+import {
+  launcherGetIndexStatus,
+  launcherGetSearchSettings,
+  launcherRebuildIndex,
+  launcherUpdateSearchSettings,
+  type LauncherIndexStatus,
+  type LauncherSearchSettings,
+} from "@/services/launcher.service";
 import { useLoggingStore } from "@/stores/logging.store";
 import { useSettingsStore } from "@/stores/settings.store";
 
@@ -34,6 +42,18 @@ const MAX_HIGH_FREQ_MAX_PER_KEY = 200;
 const LOG_KEEP_DAYS_PRESETS = ["1", "3", "7", "14", "30", "60", "90"];
 const LOG_WINDOW_MS_PRESETS = ["100", "250", "500", "1000", "2000", "5000", "10000", "30000", "60000"];
 const LOG_MAX_PER_KEY_PRESETS = ["1", "5", "10", "20", "50", "100", "200"];
+const MIN_LAUNCHER_DEPTH = 2;
+const MAX_LAUNCHER_DEPTH = 32;
+const DEFAULT_LAUNCHER_DEPTH = 20;
+const MIN_LAUNCHER_ITEMS_PER_ROOT = 500;
+const MAX_LAUNCHER_ITEMS_PER_ROOT = 1_000_000;
+const DEFAULT_LAUNCHER_ITEMS_PER_ROOT = 200_000;
+const MIN_LAUNCHER_TOTAL_ITEMS = 2_000;
+const MAX_LAUNCHER_TOTAL_ITEMS = 2_000_000;
+const DEFAULT_LAUNCHER_TOTAL_ITEMS = 500_000;
+const MIN_LAUNCHER_REFRESH_INTERVAL = 60;
+const MAX_LAUNCHER_REFRESH_INTERVAL = 86_400;
+const DEFAULT_LAUNCHER_REFRESH_INTERVAL = 600;
 
 type SettingsSection = "general" | "clipboard" | "transfer" | "launcher" | "logging";
 type SizeThresholdMode = "preset" | "custom";
@@ -62,6 +82,20 @@ function parsePositiveInt(value: string): number | null {
   }
 
   return parsed;
+}
+
+function parseLineArray(value: string): string[] {
+  return value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+function formatLines(values: string[] | undefined): string {
+  if (!values || values.length === 0) {
+    return "";
+  }
+  return values.join("\n");
 }
 
 function localeDisplayLabel(locale: string, t: (key: string) => string): string {
@@ -146,6 +180,24 @@ export default function SettingsPage() {
   const [transferDiscoveryEnabled, setTransferDiscoveryEnabled] = useState(true);
   const [transferPairingRequired, setTransferPairingRequired] = useState(true);
   const [transferSaveMessage, setTransferSaveMessage] = useState<MessageState | null>(null);
+  const [launcherLoading, setLauncherLoading] = useState(false);
+  const [launcherSaving, setLauncherSaving] = useState(false);
+  const [launcherRebuilding, setLauncherRebuilding] = useState(false);
+  const [launcherSettings, setLauncherSettings] = useState<LauncherSearchSettings | null>(null);
+  const [launcherStatus, setLauncherStatus] = useState<LauncherIndexStatus | null>(null);
+  const [launcherRootsInput, setLauncherRootsInput] = useState("");
+  const [launcherExcludeInput, setLauncherExcludeInput] = useState("");
+  const [launcherDepthInput, setLauncherDepthInput] = useState(String(DEFAULT_LAUNCHER_DEPTH));
+  const [launcherItemsPerRootInput, setLauncherItemsPerRootInput] = useState(
+    String(DEFAULT_LAUNCHER_ITEMS_PER_ROOT),
+  );
+  const [launcherTotalItemsInput, setLauncherTotalItemsInput] = useState(
+    String(DEFAULT_LAUNCHER_TOTAL_ITEMS),
+  );
+  const [launcherRefreshInput, setLauncherRefreshInput] = useState(
+    String(DEFAULT_LAUNCHER_REFRESH_INTERVAL),
+  );
+  const [launcherMessage, setLauncherMessage] = useState<MessageState | null>(null);
 
   const [logMinLevel, setLogMinLevel] = useState("info");
   const [logKeepDaysInput, setLogKeepDaysInput] = useState(String(MIN_KEEP_DAYS));
@@ -222,6 +274,21 @@ export default function SettingsPage() {
     };
 
     void loadTransfer();
+    const loadLauncher = async () => {
+      setLauncherLoading(true);
+      try {
+        const [settings, status] = await Promise.all([launcherGetSearchSettings(), launcherGetIndexStatus()]);
+        setLauncherSettings(settings);
+        setLauncherStatus(status);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setLauncherMessage({ text: message, isError: true });
+      } finally {
+        setLauncherLoading(false);
+      }
+    };
+
+    void loadLauncher();
   }, [fetchClipboardSettings, fetchLoggingConfig]);
 
   const refreshLocaleCatalog = useCallback(async () => {
@@ -257,6 +324,30 @@ export default function SettingsPage() {
       }
     }
   }, [clipboardSettings]);
+
+  useEffect(() => {
+    if (!launcherSettings) {
+      return;
+    }
+    setLauncherRootsInput(formatLines(launcherSettings.roots));
+    setLauncherExcludeInput(formatLines(launcherSettings.excludePatterns));
+    setLauncherDepthInput(String(launcherSettings.maxScanDepth));
+    setLauncherItemsPerRootInput(String(launcherSettings.maxItemsPerRoot));
+    setLauncherTotalItemsInput(String(launcherSettings.maxTotalItems));
+    setLauncherRefreshInput(String(launcherSettings.refreshIntervalSecs));
+  }, [launcherSettings]);
+
+  useEffect(() => {
+    if (activeSection !== "launcher" || !launcherStatus?.building) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void launcherGetIndexStatus()
+        .then((status) => setLauncherStatus(status))
+        .catch(() => undefined);
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [activeSection, launcherStatus?.building]);
 
   useEffect(() => {
     if (!sizeCleanupEnabled || sizeThresholdMode !== "custom") {
@@ -362,6 +453,51 @@ export default function SettingsPage() {
   const transferDirInvalid = transferDefaultDirInput.trim().length === 0;
   const transferCleanupInvalid =
     parsedTransferCleanupDays === null || parsedTransferCleanupDays < 1 || parsedTransferCleanupDays > 365;
+  const parsedLauncherDepth = useMemo(() => parsePositiveInt(launcherDepthInput), [launcherDepthInput]);
+  const parsedLauncherItemsPerRoot = useMemo(
+    () => parsePositiveInt(launcherItemsPerRootInput),
+    [launcherItemsPerRootInput],
+  );
+  const parsedLauncherTotalItems = useMemo(
+    () => parsePositiveInt(launcherTotalItemsInput),
+    [launcherTotalItemsInput],
+  );
+  const parsedLauncherRefresh = useMemo(() => parsePositiveInt(launcherRefreshInput), [launcherRefreshInput]);
+  const launcherRoots = useMemo(() => parseLineArray(launcherRootsInput), [launcherRootsInput]);
+  const launcherExcludes = useMemo(() => parseLineArray(launcherExcludeInput), [launcherExcludeInput]);
+
+  const launcherDepthInvalid =
+    parsedLauncherDepth === null ||
+    parsedLauncherDepth < MIN_LAUNCHER_DEPTH ||
+    parsedLauncherDepth > MAX_LAUNCHER_DEPTH;
+  const launcherItemsPerRootInvalid =
+    parsedLauncherItemsPerRoot === null ||
+    parsedLauncherItemsPerRoot < MIN_LAUNCHER_ITEMS_PER_ROOT ||
+    parsedLauncherItemsPerRoot > MAX_LAUNCHER_ITEMS_PER_ROOT;
+  const launcherTotalItemsInvalid =
+    parsedLauncherTotalItems === null ||
+    parsedLauncherTotalItems < MIN_LAUNCHER_TOTAL_ITEMS ||
+    parsedLauncherTotalItems > MAX_LAUNCHER_TOTAL_ITEMS;
+  const launcherRefreshInvalid =
+    parsedLauncherRefresh === null ||
+    parsedLauncherRefresh < MIN_LAUNCHER_REFRESH_INTERVAL ||
+    parsedLauncherRefresh > MAX_LAUNCHER_REFRESH_INTERVAL;
+  const launcherRootsInvalid = launcherRoots.length === 0;
+
+  const launcherInvalid =
+    launcherRootsInvalid ||
+    launcherDepthInvalid ||
+    launcherItemsPerRootInvalid ||
+    launcherTotalItemsInvalid ||
+    launcherRefreshInvalid;
+  const launcherUnchanged =
+    launcherSettings !== null &&
+    launcherRoots.join("\n") === launcherSettings.roots.join("\n") &&
+    launcherExcludes.join("\n") === launcherSettings.excludePatterns.join("\n") &&
+    parsedLauncherDepth === launcherSettings.maxScanDepth &&
+    parsedLauncherItemsPerRoot === launcherSettings.maxItemsPerRoot &&
+    parsedLauncherTotalItems === launcherSettings.maxTotalItems &&
+    parsedLauncherRefresh === launcherSettings.refreshIntervalSecs;
 
   const localePreferenceOptions = useMemo(() => {
     const values = new Set<string>(SUPPORTED_LOCALES);
@@ -431,6 +567,18 @@ export default function SettingsPage() {
         ? t("clipboard.sizeInvalid", { min: MIN_MAX_TOTAL_SIZE_MB, max: MAX_MAX_TOTAL_SIZE_MB })
         : t("clipboard.sizeCustomInputHint")
       : t("clipboard.sizePresetHint", { value: selectedPresetMb });
+  const launcherLastBuildText =
+    launcherStatus?.lastBuildMs !== undefined &&
+    launcherStatus?.lastBuildMs !== null &&
+    Number.isFinite(launcherStatus.lastBuildMs)
+      ? new Date(launcherStatus.lastBuildMs).toLocaleString()
+      : t("launcher.statusUnknown");
+  const launcherLastDurationText =
+    launcherStatus?.lastDurationMs !== undefined &&
+    launcherStatus?.lastDurationMs !== null &&
+    Number.isFinite(launcherStatus.lastDurationMs)
+      ? t("launcher.durationValue", { value: launcherStatus.lastDurationMs })
+      : t("launcher.statusUnknown");
 
   const handleSaveTransfer = async () => {
     if (transferDirInvalid || transferCleanupInvalid) {
@@ -456,6 +604,66 @@ export default function SettingsPage() {
       setTransferSaveMessage({ text: t("transfer.saveFailed", { message }), isError: true });
     } finally {
       setTransferSaving(false);
+    }
+  };
+
+  const handleRefreshLauncherStatus = async () => {
+    try {
+      const status = await launcherGetIndexStatus();
+      setLauncherStatus(status);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setLauncherMessage({ text: message, isError: true });
+    }
+  };
+
+  const handleSaveLauncher = async () => {
+    if (
+      launcherRootsInvalid ||
+      launcherDepthInvalid ||
+      launcherItemsPerRootInvalid ||
+      launcherTotalItemsInvalid ||
+      launcherRefreshInvalid
+    ) {
+      setLauncherMessage({
+        text: t("launcher.saveFailedInvalid"),
+        isError: true,
+      });
+      return;
+    }
+
+    setLauncherSaving(true);
+    try {
+      const settings = await launcherUpdateSearchSettings({
+        roots: launcherRoots,
+        excludePatterns: launcherExcludes,
+        maxScanDepth: parsedLauncherDepth ?? DEFAULT_LAUNCHER_DEPTH,
+        maxItemsPerRoot: parsedLauncherItemsPerRoot ?? DEFAULT_LAUNCHER_ITEMS_PER_ROOT,
+        maxTotalItems: parsedLauncherTotalItems ?? DEFAULT_LAUNCHER_TOTAL_ITEMS,
+        refreshIntervalSecs: parsedLauncherRefresh ?? DEFAULT_LAUNCHER_REFRESH_INTERVAL,
+      });
+      setLauncherSettings(settings);
+      setLauncherMessage({ text: t("launcher.saved"), isError: false });
+      await handleRefreshLauncherStatus();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setLauncherMessage({ text: t("launcher.saveFailed", { message }), isError: true });
+    } finally {
+      setLauncherSaving(false);
+    }
+  };
+
+  const handleRebuildLauncherIndex = async () => {
+    setLauncherRebuilding(true);
+    try {
+      await launcherRebuildIndex();
+      await handleRefreshLauncherStatus();
+      setLauncherMessage({ text: t("launcher.rebuildSuccess"), isError: false });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setLauncherMessage({ text: t("launcher.rebuildFailed", { message }), isError: true });
+    } finally {
+      setLauncherRebuilding(false);
     }
   };
 
@@ -1002,8 +1210,177 @@ export default function SettingsPage() {
               <div className="space-y-3">
                 <h2 className="m-0 text-sm font-semibold text-text-primary">{t("launcher.title")}</h2>
                 <p className="m-0 text-xs text-text-muted">{t("launcher.desc")}</p>
-                <div className="rounded-lg border border-border-muted bg-surface-soft px-3 py-2 text-xs text-text-secondary">
-                  {t("launcher.tip")}
+
+                <div className="max-w-[760px] space-y-3 rounded-lg border border-border-muted bg-surface-soft px-3 py-3">
+                  <div className="space-y-1">
+                    <label htmlFor="launcher-roots" className="text-xs text-text-secondary">
+                      {t("launcher.roots")}
+                    </label>
+                    <textarea
+                      id="launcher-roots"
+                      className={[
+                        "min-h-[88px] w-full resize-y rounded-md border bg-surface px-2.5 py-2 text-xs outline-none",
+                        launcherRootsInvalid ? "border-danger" : "border-border-muted focus:border-border-primary",
+                      ].join(" ")}
+                      value={launcherRootsInput}
+                      onChange={(event) => {
+                        setLauncherRootsInput(event.currentTarget.value);
+                        setLauncherMessage(null);
+                      }}
+                    />
+                    <p className={`m-0 text-xs ${launcherRootsInvalid ? "text-danger" : "text-text-muted"}`}>
+                      {launcherRootsInvalid ? t("launcher.rootsInvalid") : t("launcher.rootsHint")}
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label htmlFor="launcher-excludes" className="text-xs text-text-secondary">
+                      {t("launcher.excludes")}
+                    </label>
+                    <textarea
+                      id="launcher-excludes"
+                      className="min-h-[110px] w-full resize-y rounded-md border border-border-muted bg-surface px-2.5 py-2 text-xs outline-none focus:border-border-primary"
+                      value={launcherExcludeInput}
+                      onChange={(event) => {
+                        setLauncherExcludeInput(event.currentTarget.value);
+                        setLauncherMessage(null);
+                      }}
+                    />
+                    <p className="m-0 text-xs text-text-muted">{t("launcher.excludesHint")}</p>
+                  </div>
+
+                  <div className="grid gap-2 md:grid-cols-2">
+                    <div className="space-y-1">
+                      <label htmlFor="launcher-depth" className="text-xs text-text-secondary">
+                        {t("launcher.maxDepth")}
+                      </label>
+                      <Input
+                        id="launcher-depth"
+                        type="number"
+                        min={MIN_LAUNCHER_DEPTH}
+                        max={MAX_LAUNCHER_DEPTH}
+                        value={launcherDepthInput}
+                        invalid={launcherDepthInvalid}
+                        onChange={(event) => {
+                          setLauncherDepthInput(event.currentTarget.value);
+                          setLauncherMessage(null);
+                        }}
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label htmlFor="launcher-items-per-root" className="text-xs text-text-secondary">
+                        {t("launcher.maxItemsPerRoot")}
+                      </label>
+                      <Input
+                        id="launcher-items-per-root"
+                        type="number"
+                        min={MIN_LAUNCHER_ITEMS_PER_ROOT}
+                        max={MAX_LAUNCHER_ITEMS_PER_ROOT}
+                        value={launcherItemsPerRootInput}
+                        invalid={launcherItemsPerRootInvalid}
+                        onChange={(event) => {
+                          setLauncherItemsPerRootInput(event.currentTarget.value);
+                          setLauncherMessage(null);
+                        }}
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label htmlFor="launcher-total-items" className="text-xs text-text-secondary">
+                        {t("launcher.maxTotalItems")}
+                      </label>
+                      <Input
+                        id="launcher-total-items"
+                        type="number"
+                        min={MIN_LAUNCHER_TOTAL_ITEMS}
+                        max={MAX_LAUNCHER_TOTAL_ITEMS}
+                        value={launcherTotalItemsInput}
+                        invalid={launcherTotalItemsInvalid}
+                        onChange={(event) => {
+                          setLauncherTotalItemsInput(event.currentTarget.value);
+                          setLauncherMessage(null);
+                        }}
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label htmlFor="launcher-refresh" className="text-xs text-text-secondary">
+                        {t("launcher.refreshInterval")}
+                      </label>
+                      <Input
+                        id="launcher-refresh"
+                        type="number"
+                        min={MIN_LAUNCHER_REFRESH_INTERVAL}
+                        max={MAX_LAUNCHER_REFRESH_INTERVAL}
+                        value={launcherRefreshInput}
+                        invalid={launcherRefreshInvalid}
+                        onChange={(event) => {
+                          setLauncherRefreshInput(event.currentTarget.value);
+                          setLauncherMessage(null);
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="max-w-[760px] rounded-lg border border-border-muted bg-surface-soft px-3 py-3 text-xs text-text-secondary">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                    <span>{t("launcher.status.ready", { value: launcherStatus?.ready ? t("launcher.value.yes") : t("launcher.value.no") })}</span>
+                    <span>
+                      {t("launcher.status.building", {
+                        value: launcherStatus?.building ? t("launcher.value.yes") : t("launcher.value.no"),
+                      })}
+                    </span>
+                    <span>{t("launcher.status.indexedItems", { value: launcherStatus?.indexedItems ?? 0 })}</span>
+                    <span>{t("launcher.status.indexedRoots", { value: launcherStatus?.indexedRoots ?? 0 })}</span>
+                    <span>{t("launcher.status.lastBuild", { value: launcherLastBuildText })}</span>
+                    <span>{t("launcher.status.lastDuration", { value: launcherLastDurationText })}</span>
+                    <span>{t("launcher.status.version", { value: launcherStatus?.indexVersion ?? "--" })}</span>
+                    <span>
+                      {t("launcher.status.truncated", {
+                        value: launcherStatus?.truncated ? t("launcher.value.yes") : t("launcher.value.no"),
+                      })}
+                    </span>
+                  </div>
+                  {launcherStatus?.lastError ? (
+                    <p className="mt-2 mb-0 text-xs text-danger">
+                      {t("launcher.status.lastError", { value: launcherStatus.lastError })}
+                    </p>
+                  ) : null}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="default"
+                    variant="primary"
+                    disabled={launcherLoading || launcherSaving || launcherInvalid || launcherUnchanged}
+                    onClick={() => void handleSaveLauncher()}
+                  >
+                    {launcherSaving ? t("common:action.saving") : t("launcher.save")}
+                  </Button>
+                  <Button
+                    size="default"
+                    variant="secondary"
+                    disabled={launcherLoading || launcherRebuilding}
+                    onClick={() => void handleRefreshLauncherStatus()}
+                  >
+                    {t("launcher.refreshStatus")}
+                  </Button>
+                  <Button
+                    size="default"
+                    variant="secondary"
+                    disabled={launcherLoading || launcherRebuilding}
+                    onClick={() => void handleRebuildLauncherIndex()}
+                  >
+                    {launcherRebuilding ? t("launcher.rebuilding") : t("launcher.rebuild")}
+                  </Button>
+                  {launcherLoading ? <LoadingIndicator text={t("common:status.loading")} /> : null}
+                  {launcherMessage ? (
+                    <span className={`text-xs ${launcherMessage.isError ? "text-danger" : "text-text-secondary"}`}>
+                      {launcherMessage.text}
+                    </span>
+                  ) : null}
                 </div>
               </div>
             </section>

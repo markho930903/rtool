@@ -75,7 +75,6 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn Error>> {
     init_i18n_catalog(&app_data_dir).map_err(std::io::Error::other)?;
 
     let (db_path, db_pool) = init_database(app)?;
-    start_background_indexer(db_pool.clone());
     let initial_locale_state = read_initial_locale_state(&db_pool)?;
     let app_handle = app.handle().clone();
     let tray_menu = tray::build_tray_menu(&app_handle, &initial_locale_state.resolved)?;
@@ -114,13 +113,14 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn Error>> {
 
     app.manage(AppState {
         db_path,
-        db_pool,
+        db_pool: db_pool.clone(),
         clipboard_service,
         transfer_service,
         locale_state,
         clipboard_window_compact: Arc::new(Mutex::new(false)),
         started_at: Instant::now(),
     });
+    start_background_indexer(db_pool);
     apply_locale_to_native_ui(&app_handle, &initial_resolved_locale);
 
     Ok(())

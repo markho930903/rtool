@@ -90,6 +90,12 @@ struct ScanOutcome {
     truncated: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TruncationLogLevel {
+    Info,
+    Warn,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 struct LauncherSearchSettingsRecord {
@@ -196,6 +202,100 @@ impl RefreshReason {
             Self::Startup => "startup",
             Self::Periodic => "periodic",
             Self::Manual => "manual",
+        }
+    }
+}
+
+fn is_legacy_default_full_disk_profile(settings: &LauncherSearchSettingsRecord) -> bool {
+    if cfg!(target_os = "windows") {
+        return false;
+    }
+    has_default_full_disk_scope(settings)
+        && settings.max_scan_depth == DEFAULT_MAX_SCAN_DEPTH
+        && settings.max_items_per_root == DEFAULT_MAX_ITEMS_PER_ROOT
+        && settings.max_total_items == DEFAULT_MAX_TOTAL_ITEMS
+        && settings.refresh_interval_secs == DEFAULT_REFRESH_INTERVAL_SECS
+        && settings.exclude_patterns == default_exclude_patterns()
+}
+
+fn is_default_full_disk_profile(settings: &LauncherSearchSettingsRecord) -> bool {
+    if cfg!(target_os = "windows") {
+        return false;
+    }
+    has_default_full_disk_scope(settings)
+        && settings.max_scan_depth == DEFAULT_MAX_SCAN_DEPTH
+        && settings.max_total_items == DEFAULT_MAX_TOTAL_ITEMS
+        && settings.refresh_interval_secs == DEFAULT_REFRESH_INTERVAL_SECS
+        && settings.exclude_patterns == default_exclude_patterns()
+        && (settings.max_items_per_root == DEFAULT_MAX_ITEMS_PER_ROOT
+            || settings.max_items_per_root == settings.max_total_items)
+}
+
+fn has_default_full_disk_scope(settings: &LauncherSearchSettingsRecord) -> bool {
+    if settings.roots.len() != 1 {
+        return false;
+    }
+    normalize_path_for_match(Path::new(settings.roots[0].as_str())) == "/"
+}
+
+fn migrate_legacy_default_full_disk_profile(
+    mut settings: LauncherSearchSettingsRecord,
+) -> LauncherSearchSettingsRecord {
+    if is_legacy_default_full_disk_profile(&settings) {
+        settings.max_items_per_root = settings.max_total_items;
+    }
+    settings
+}
+
+fn resolve_effective_max_items_per_root(
+    configured_max_items_per_root: usize,
+    remaining_total: usize,
+    default_full_disk_profile: bool,
+) -> usize {
+    if default_full_disk_profile {
+        return remaining_total.max(1);
+    }
+    configured_max_items_per_root.max(1)
+}
+
+fn classify_truncation_log_level(settings: &LauncherSearchSettingsRecord) -> TruncationLogLevel {
+    if is_default_full_disk_profile(settings) {
+        return TruncationLogLevel::Info;
+    }
+    TruncationLogLevel::Warn
+}
+
+fn log_scan_truncation(
+    settings: &LauncherSearchSettingsRecord,
+    reason: RefreshReason,
+    root: &str,
+    effective_max_items: usize,
+    indexed_items: usize,
+) {
+    let configured_max_items_per_root = settings.max_items_per_root as usize;
+    let max_total_items = settings.max_total_items as usize;
+    match classify_truncation_log_level(settings) {
+        TruncationLogLevel::Info => {
+            tracing::info!(
+                event = "launcher_index_scan_truncated_expected",
+                root,
+                effective_max_items,
+                configured_max_items_per_root,
+                max_total_items,
+                indexed_items,
+                reason = reason.as_str()
+            );
+        }
+        TruncationLogLevel::Warn => {
+            tracing::warn!(
+                event = "launcher_index_scan_truncated_unexpected",
+                root,
+                effective_max_items,
+                configured_max_items_per_root,
+                max_total_items,
+                indexed_items,
+                reason = reason.as_str()
+            );
         }
     }
 }
@@ -467,6 +567,7 @@ fn refresh_index_inner(
     let scan_token = now_unix_millis().to_string();
     write_meta(db_pool, INDEX_VERSION_KEY, INDEX_VERSION_VALUE)?;
 
+    let default_full_disk_profile = is_default_full_disk_profile(&settings);
     let mut indexed_items: usize = 0;
     let mut indexed_roots: u32 = 0;
     let mut truncated = false;
@@ -483,11 +584,21 @@ fn refresh_index_inner(
             continue;
         }
 
+        let configured_max_items_per_root = settings.max_items_per_root as usize;
+        let effective_max_items_per_root = resolve_effective_max_items_per_root(
+            configured_max_items_per_root,
+            remaining_total,
+            default_full_disk_profile,
+        );
+        let effective_max_items = effective_max_items_per_root
+            .max(1)
+            .min(remaining_total.max(1));
+
         indexed_roots += 1;
         let outcome = scan_index_root_with_rules(
             root_path.as_path(),
             settings.max_scan_depth as usize,
-            settings.max_items_per_root as usize,
+            effective_max_items_per_root,
             remaining_total,
             exclusion_rules.as_slice(),
             root,
@@ -496,6 +607,15 @@ fn refresh_index_inner(
         indexed_items = indexed_items.saturating_add(outcome.entries.len());
         remaining_total = remaining_total.saturating_sub(outcome.entries.len());
         truncated |= outcome.truncated;
+        if outcome.truncated {
+            log_scan_truncation(
+                &settings,
+                reason,
+                root.as_str(),
+                effective_max_items,
+                indexed_items,
+            );
+        }
 
         upsert_entries_batched(db_pool, outcome.entries.as_slice(), scan_token.as_str())?;
         delete_stale_entries_for_root(db_pool, root.as_str(), scan_token.as_str())?;
@@ -774,6 +894,9 @@ fn scan_index_root_with_rules(
     let mut entries = Vec::new();
     let mut truncated = false;
     let mut processed: usize = 0;
+    let home_normalized = current_home_dir()
+        .map(|value| normalize_path_for_match(value.as_path()))
+        .filter(|value| !value.is_empty());
 
     while let Some((current_dir, depth)) = queue.pop_front() {
         if entries.len() >= hard_limit {
@@ -793,7 +916,33 @@ fn scan_index_root_with_rules(
             }
         };
 
-        for dir_entry in dir_entries.flatten() {
+        let is_root_level = depth == 0 && normalize_path_for_match(root) == "/";
+        let mut dir_entries = dir_entries
+            .filter_map(|entry| match entry {
+                Ok(entry) => Some(entry),
+                Err(error) => {
+                    tracing::debug!(
+                        event = "launcher_index_scan_read_dir_entry_failed",
+                        dir = %current_dir.to_string_lossy(),
+                        error = error.to_string()
+                    );
+                    None
+                }
+            })
+            .map(|entry| {
+                let path = entry.path();
+                let normalized = normalize_path_for_match(path.as_path());
+                let priority = scan_priority_for_path(
+                    normalized.as_str(),
+                    is_root_level,
+                    home_normalized.as_deref(),
+                );
+                (entry, normalized, priority)
+            })
+            .collect::<Vec<_>>();
+        dir_entries.sort_by(|left, right| left.2.cmp(&right.2).then_with(|| left.1.cmp(&right.1)));
+
+        for (dir_entry, _, _) in dir_entries {
             if entries.len() >= hard_limit {
                 truncated = true;
                 break;
@@ -849,14 +998,6 @@ fn scan_index_root_with_rules(
                 entries.push(entry);
             }
         }
-    }
-
-    if truncated {
-        tracing::warn!(
-            event = "launcher_index_scan_truncated",
-            root = %root.to_string_lossy(),
-            max_items = hard_limit
-        );
     }
 
     ScanOutcome { entries, truncated }
@@ -1042,6 +1183,34 @@ fn path_has_component(path: &Path, target: &str) -> bool {
     })
 }
 
+fn scan_priority_for_path(
+    normalized_path: &str,
+    is_root_level: bool,
+    home_normalized: Option<&str>,
+) -> u8 {
+    if !is_root_level {
+        return 3;
+    }
+
+    if home_normalized.is_some_and(|home| path_is_same_or_ancestor(normalized_path, home)) {
+        return 0;
+    }
+    if normalized_path == "/applications" {
+        return 1;
+    }
+    if path_is_same_or_ancestor(normalized_path, "/system/applications") {
+        return 2;
+    }
+    3
+}
+
+fn path_is_same_or_ancestor(path: &str, target: &str) -> bool {
+    path == target
+        || target
+            .strip_prefix(path)
+            .is_some_and(|tail| tail.starts_with('/'))
+}
+
 fn should_skip_dir_traversal(path: &Path) -> bool {
     cfg!(target_os = "macos")
         && path
@@ -1086,10 +1255,19 @@ fn load_or_init_settings(db_pool: &DbPool) -> AppResult<LauncherSearchSettingsRe
     match serde_json::from_str::<LauncherSearchSettingsRecord>(raw_value.as_str()) {
         Ok(parsed) => {
             let normalized = parsed.clone().normalize();
-            if normalized != parsed {
-                save_settings(db_pool, &normalized)?;
+            let migrated = migrate_legacy_default_full_disk_profile(normalized);
+            if migrated != parsed {
+                save_settings(db_pool, &migrated)?;
             }
-            Ok(normalized)
+            if migrated.max_items_per_root != parsed.max_items_per_root {
+                tracing::info!(
+                    event = "launcher_settings_legacy_default_migrated",
+                    from_max_items_per_root = parsed.max_items_per_root,
+                    to_max_items_per_root = migrated.max_items_per_root,
+                    max_total_items = migrated.max_total_items
+                );
+            }
+            Ok(migrated)
         }
         Err(error) => {
             tracing::warn!(
@@ -1163,7 +1341,7 @@ fn default_search_roots() -> Vec<String> {
             }
         }
         if roots.is_empty()
-            && let Some(home) = home_dir()
+            && let Some(home) = current_home_dir()
         {
             roots.push(home.to_string_lossy().to_string());
         }
@@ -1208,8 +1386,7 @@ fn default_exclude_patterns() -> Vec<String> {
     ]
 }
 
-#[cfg(target_os = "windows")]
-fn home_dir() -> Option<PathBuf> {
+fn current_home_dir() -> Option<PathBuf> {
     std::env::var_os("HOME")
         .map(PathBuf::from)
         .or_else(|| std::env::var_os("USERPROFILE").map(PathBuf::from))

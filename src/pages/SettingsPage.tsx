@@ -579,6 +579,7 @@ export default function SettingsPage() {
     Number.isFinite(launcherStatus.lastDurationMs)
       ? t("launcher.durationValue", { value: launcherStatus.lastDurationMs })
       : t("launcher.statusUnknown");
+  const launcherTruncatedHintText = launcherStatus?.truncated ? t("launcher.status.truncatedHint") : null;
 
   const handleSaveTransfer = async () => {
     if (transferDirInvalid || transferCleanupInvalid) {
@@ -1347,6 +1348,9 @@ export default function SettingsPage() {
                     <p className="mt-2 mb-0 text-xs text-danger">
                       {t("launcher.status.lastError", { value: launcherStatus.lastError })}
                     </p>
+                  ) : null}
+                  {launcherTruncatedHintText ? (
+                    <p className="mt-2 mb-0 text-xs text-text-muted">{launcherTruncatedHintText}</p>
                   ) : null}
                 </div>
 

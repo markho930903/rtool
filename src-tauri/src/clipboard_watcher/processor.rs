@@ -3,11 +3,11 @@ use super::image_preview::{
     save_clipboard_image_preview,
 };
 use crate::app::clipboard_service::ClipboardService;
-use crate::constants::CLIPBOARD_SYNC_EVENT;
+use crate::app::clipboard_sync::emit_clipboard_sync;
 use crate::core::models::ClipboardSyncPayload;
 use crate::infrastructure;
 use std::path::PathBuf;
-use tauri::{AppHandle, Emitter, Manager, Runtime};
+use tauri::{AppHandle, Manager, Runtime};
 
 pub(super) struct ClipboardProcessor<R: Runtime> {
     app_handle: AppHandle<R>,
@@ -39,16 +39,6 @@ impl<R: Runtime> ClipboardProcessor<R> {
         }
     }
 
-    fn emit_sync(&self, payload: ClipboardSyncPayload) {
-        if let Err(error) = self.app_handle.emit(CLIPBOARD_SYNC_EVENT, payload) {
-            tracing::warn!(
-                event = "clipboard_event_emit_failed",
-                event_name = CLIPBOARD_SYNC_EVENT,
-                error = error.to_string()
-            );
-        }
-    }
-
     fn handle_text(&mut self, text: String, source_app: Option<String>) -> bool {
         let trimmed = text.trim().to_string();
         if trimmed.is_empty() || trimmed == self.last_seen {
@@ -60,12 +50,15 @@ impl<R: Runtime> ClipboardProcessor<R> {
 
         match self.service.save_text(trimmed, source_app) {
             Ok(result) => {
-                self.emit_sync(ClipboardSyncPayload {
-                    upsert: vec![result.item],
-                    removed_ids: result.removed_ids,
-                    clear_all: false,
-                    reason: Some("watcher_save_text".to_string()),
-                });
+                emit_clipboard_sync(
+                    &self.app_handle,
+                    ClipboardSyncPayload {
+                        upsert: vec![result.item],
+                        removed_ids: result.removed_ids,
+                        clear_all: false,
+                        reason: Some("watcher_save_text".to_string()),
+                    },
+                );
             }
             Err(error) => {
                 tracing::warn!(
@@ -103,12 +96,15 @@ impl<R: Runtime> ClipboardProcessor<R> {
 
         match self.service.save_text(serialized, source_app) {
             Ok(result) => {
-                self.emit_sync(ClipboardSyncPayload {
-                    upsert: vec![result.item],
-                    removed_ids: result.removed_ids,
-                    clear_all: false,
-                    reason: Some("watcher_save_files".to_string()),
-                });
+                emit_clipboard_sync(
+                    &self.app_handle,
+                    ClipboardSyncPayload {
+                        upsert: vec![result.item],
+                        removed_ids: result.removed_ids,
+                        clear_all: false,
+                        reason: Some("watcher_save_files".to_string()),
+                    },
+                );
             }
             Err(error) => {
                 tracing::warn!(
@@ -191,12 +187,15 @@ impl<R: Runtime> ClipboardProcessor<R> {
 
         match self.service.save_item(item) {
             Ok(result) => {
-                self.emit_sync(ClipboardSyncPayload {
-                    upsert: vec![result.item],
-                    removed_ids: result.removed_ids,
-                    clear_all: false,
-                    reason: Some("watcher_save_image".to_string()),
-                });
+                emit_clipboard_sync(
+                    &self.app_handle,
+                    ClipboardSyncPayload {
+                        upsert: vec![result.item],
+                        removed_ids: result.removed_ids,
+                        clear_all: false,
+                        reason: Some("watcher_save_image".to_string()),
+                    },
+                );
             }
             Err(error) => {
                 tracing::warn!(

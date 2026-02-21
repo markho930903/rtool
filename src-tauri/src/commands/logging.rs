@@ -1,4 +1,4 @@
-use super::{command_end_error, command_end_ok, command_start, normalize_request_id};
+use super::run_blocking_command;
 use crate::core::models::{LogConfigDto, LogPageDto, LogQueryDto};
 use crate::core::{AppError, InvokeError};
 use crate::infrastructure::logging::{
@@ -128,19 +128,15 @@ pub async fn logging_query(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<LogPageDto, InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start("logging_query", &request_id, window_label.as_deref());
-
     let normalized = query.unwrap_or_default();
-    let result = run_blocking("logging_query", move || {
-        crate::infrastructure::logging::query_log_entries(normalized)
-    })
-    .await;
-    match &result {
-        Ok(_) => command_end_ok("logging_query", &request_id, started_at),
-        Err(error) => command_end_error("logging_query", &request_id, started_at, error),
-    }
-    result.map_err(Into::into)
+    run_blocking_command(
+        "logging_query",
+        request_id,
+        window_label,
+        "logging_query",
+        move || crate::infrastructure::logging::query_log_entries(normalized),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -148,15 +144,14 @@ pub async fn logging_get_config(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<LogConfigDto, InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start("logging_get_config", &request_id, window_label.as_deref());
-
-    let result = run_blocking("logging_get_config", get_log_config).await;
-    match &result {
-        Ok(_) => command_end_ok("logging_get_config", &request_id, started_at),
-        Err(error) => command_end_error("logging_get_config", &request_id, started_at, error),
-    }
-    result.map_err(Into::into)
+    run_blocking_command(
+        "logging_get_config",
+        request_id,
+        window_label,
+        "logging_get_config",
+        get_log_config,
+    )
+    .await
 }
 
 #[tauri::command]
@@ -165,19 +160,14 @@ pub async fn logging_update_config(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<LogConfigDto, InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start(
+    run_blocking_command(
         "logging_update_config",
-        &request_id,
-        window_label.as_deref(),
-    );
-
-    let result = run_blocking("logging_update_config", move || update_log_config(config)).await;
-    match &result {
-        Ok(_) => command_end_ok("logging_update_config", &request_id, started_at),
-        Err(error) => command_end_error("logging_update_config", &request_id, started_at, error),
-    }
-    result.map_err(Into::into)
+        request_id,
+        window_label,
+        "logging_update_config",
+        move || update_log_config(config),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -187,19 +177,15 @@ pub async fn logging_export_jsonl(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<String, InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start("logging_export_jsonl", &request_id, window_label.as_deref());
-
     let normalized = query.unwrap_or_default();
-    let result = run_blocking("logging_export_jsonl", move || {
-        export_log_entries(normalized, output_path)
-    })
-    .await;
-    match &result {
-        Ok(_) => command_end_ok("logging_export_jsonl", &request_id, started_at),
-        Err(error) => command_end_error("logging_export_jsonl", &request_id, started_at, error),
-    }
-    result.map_err(Into::into)
+    run_blocking_command(
+        "logging_export_jsonl",
+        request_id,
+        window_label,
+        "logging_export_jsonl",
+        move || export_log_entries(normalized, output_path),
+    )
+    .await
 }
 
 #[cfg(test)]

@@ -1,0 +1,198 @@
+use super::*;
+
+fn prune_finished_discovery_tasks(tasks: &mut Vec<JoinHandle<()>>) -> usize {
+    let previous_len = tasks.len();
+    tasks.retain(|task| !task.inner().is_finished());
+    previous_len.saturating_sub(tasks.len())
+}
+
+impl TransferService {
+    pub fn start_discovery(&self) {
+        let settings = self.get_settings();
+        if !settings.discovery_enabled {
+            return;
+        }
+        self.discovery_stop.store(false, Ordering::Relaxed);
+
+        let mut tasks = lock_mutex(self.discovery_tasks.as_ref(), "discovery_tasks");
+        let pruned = prune_finished_discovery_tasks(&mut tasks);
+        if pruned > 0 {
+            tracing::warn!(
+                event = "transfer_discovery_task_pruned",
+                pruned_count = pruned
+            );
+        }
+        if !tasks.is_empty() {
+            return;
+        }
+
+        let mut capabilities = vec![
+            "chunk".to_string(),
+            "resume".to_string(),
+            "history".to_string(),
+        ];
+        if settings.codec_v2_enabled {
+            capabilities.push(CAPABILITY_CODEC_BIN_V2.to_string());
+        }
+        if settings.pipeline_v2_enabled {
+            capabilities.push(CAPABILITY_ACK_BATCH_V2.to_string());
+            capabilities.push(CAPABILITY_PIPELINE_V2.to_string());
+        }
+
+        let packet = DiscoveryPacket {
+            device_id: self.device_id.clone(),
+            display_name: self.device_name.clone(),
+            listen_port: TRANSFER_LISTEN_PORT,
+            app_version: env!("CARGO_PKG_VERSION").to_string(),
+            pairing_required: settings.pairing_required,
+            capabilities,
+            ts: now_millis(),
+        };
+
+        let stop_a = self.discovery_stop.clone();
+        let task_broadcast = tauri::async_runtime::spawn(async move {
+            run_broadcast_loop(stop_a, packet).await;
+        });
+
+        let stop_b = self.discovery_stop.clone();
+        let peers = self.peers.clone();
+        let local_device_id = self.device_id.clone();
+        let task_listen = tauri::async_runtime::spawn(async move {
+            run_listen_loop(stop_b, peers, local_device_id).await;
+        });
+
+        let service = self.clone();
+        let stop_c = self.discovery_stop.clone();
+        let task_peer_sync = tauri::async_runtime::spawn(async move {
+            let mut ticker = interval(Duration::from_secs(2));
+            ticker.set_missed_tick_behavior(MissedTickBehavior::Skip);
+            ticker.tick().await;
+            loop {
+                if stop_c.load(Ordering::Relaxed) {
+                    break;
+                }
+                let _ = service.emit_peer_sync().await;
+                ticker.tick().await;
+            }
+        });
+
+        tasks.push(task_broadcast);
+        tasks.push(task_listen);
+        tasks.push(task_peer_sync);
+    }
+
+    pub fn stop_discovery(&self) {
+        self.discovery_stop.store(true, Ordering::Relaxed);
+
+        let mut tasks = lock_mutex(self.discovery_tasks.as_ref(), "discovery_tasks");
+        for task in tasks.drain(..) {
+            task.abort();
+        }
+    }
+
+    pub async fn list_peers(&self) -> AppResult<Vec<TransferPeerDto>> {
+        let online = self.collect_online_peers().await;
+        let pool = self.db_pool.clone();
+        let online_for_upsert = online.clone();
+        let _ = run_blocking("transfer_upsert_peers", move || {
+            for peer in &online_for_upsert {
+                let _ = upsert_peer(&pool, peer);
+            }
+            Ok(())
+        })
+        .await;
+
+        let pool = self.db_pool.clone();
+        let stored = run_blocking("transfer_list_stored_peers", move || {
+            list_stored_peers(&pool)
+        })
+        .await?;
+        Ok(merge_online_peers(stored, online.as_slice()))
+    }
+
+    pub(super) fn ensure_listener_started(&self) {
+        if self.listener_started.swap(true, Ordering::Relaxed) {
+            return;
+        }
+
+        let service = self.clone();
+        tauri::async_runtime::spawn(async move {
+            let listener = match TcpListener::bind(("0.0.0.0", TRANSFER_LISTEN_PORT)).await {
+                Ok(value) => value,
+                Err(error) => {
+                    service.listener_started.store(false, Ordering::Relaxed);
+                    tracing::error!(
+                        event = "transfer_listener_bind_failed",
+                        error = error.to_string()
+                    );
+                    return;
+                }
+            };
+
+            loop {
+                match listener.accept().await {
+                    Ok((stream, address)) => {
+                        let service_inner = service.clone();
+                        tauri::async_runtime::spawn(async move {
+                            if let Err(error) = service_inner.handle_incoming(stream).await {
+                                if error.code == TRANSFER_SESSION_CANCELED_CODE {
+                                    tracing::info!(
+                                        event = "transfer_incoming_session_canceled",
+                                        address = address.to_string(),
+                                    );
+                                } else {
+                                    tracing::warn!(
+                                        event = "transfer_incoming_session_failed",
+                                        address = address.to_string(),
+                                        error_code = error.code,
+                                        error_detail = error
+                                            .causes
+                                            .first()
+                                            .map(String::as_str)
+                                            .unwrap_or_default()
+                                    );
+                                }
+                            }
+                        });
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            event = "transfer_listener_accept_failed",
+                            error = error.to_string()
+                        );
+                        sleep(Duration::from_millis(250)).await;
+                    }
+                }
+            }
+        });
+    }
+
+    async fn emit_peer_sync(&self) -> AppResult<()> {
+        let peers = self.list_peers().await?;
+        self.app_handle
+            .emit(TRANSFER_PEER_SYNC_EVENT, peers)
+            .with_context(|| format!("推送设备列表失败: event={TRANSFER_PEER_SYNC_EVENT}"))
+            .with_code("transfer_event_emit_failed", "推送设备列表失败")
+            .with_ctx("event", TRANSFER_PEER_SYNC_EVENT)
+    }
+
+    async fn collect_online_peers(&self) -> Vec<TransferPeerDto> {
+        let peers = self.peers.read().await;
+        peers
+            .values()
+            .map(|peer| TransferPeerDto {
+                device_id: peer.device_id.clone(),
+                display_name: peer.display_name.clone(),
+                address: peer.address.clone(),
+                listen_port: peer.listen_port,
+                last_seen_at: peer.last_seen_at,
+                paired_at: None,
+                trust_level: TransferPeerTrustLevel::Online,
+                failed_attempts: 0,
+                blocked_until: None,
+                pairing_required: peer.pairing_required,
+                online: true,
+            })
+            .collect()
+    }
+}

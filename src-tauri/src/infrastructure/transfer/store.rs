@@ -1,4 +1,4 @@
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{OptionalExtension, params, params_from_iter};
 
 use crate::core::models::{
     TransferDirection, TransferFileDto, TransferHistoryFilterDto, TransferHistoryPageDto,
@@ -231,10 +231,7 @@ pub fn upsert_peer(pool: &DbPool, peer: &TransferPeerDto) -> AppResult<()> {
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
          ON CONFLICT(device_id) DO UPDATE SET
            display_name = excluded.display_name,
-           last_seen_at = excluded.last_seen_at,
-           trust_level = excluded.trust_level,
-           failed_attempts = excluded.failed_attempts,
-           blocked_until = excluded.blocked_until",
+           last_seen_at = excluded.last_seen_at",
         params![
             peer.device_id,
             peer.display_name,
@@ -246,6 +243,35 @@ pub fn upsert_peer(pool: &DbPool, peer: &TransferPeerDto) -> AppResult<()> {
         ],
     )?;
     Ok(())
+}
+
+pub fn get_peer_by_device_id(pool: &DbPool, device_id: &str) -> AppResult<Option<TransferPeerDto>> {
+    let conn = pool.get()?;
+    let peer = conn
+        .query_row(
+            "SELECT device_id, display_name, last_seen_at, paired_at, trust_level, failed_attempts, blocked_until
+             FROM transfer_peers
+             WHERE device_id = ?1
+             LIMIT 1",
+            params![device_id],
+            |row| {
+                Ok(TransferPeerDto {
+                    device_id: row.get(0)?,
+                    display_name: row.get(1)?,
+                    address: String::new(),
+                    listen_port: 0,
+                    last_seen_at: row.get(2)?,
+                    paired_at: row.get(3)?,
+                    trust_level: parse_transfer_trust_level(row.get(4)?),
+                    failed_attempts: row.get::<_, u32>(5)?,
+                    blocked_until: row.get(6)?,
+                    pairing_required: true,
+                    online: false,
+                })
+            },
+        )
+        .optional()?;
+    Ok(peer)
 }
 
 pub fn mark_peer_pair_success(pool: &DbPool, device_id: &str, paired_at: i64) -> AppResult<()> {
@@ -589,6 +615,59 @@ pub fn list_session_files(pool: &DbPool, session_id: &str) -> AppResult<Vec<Tran
     Ok(files)
 }
 
+fn list_files_for_sessions(
+    pool: &DbPool,
+    session_ids: &[String],
+) -> AppResult<std::collections::HashMap<String, Vec<TransferFileDto>>> {
+    if session_ids.is_empty() {
+        return Ok(std::collections::HashMap::new());
+    }
+
+    let placeholders = (1..=session_ids.len())
+        .map(|index| format!("?{index}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!(
+        "SELECT id, session_id, relative_path, source_path, target_path, size_bytes, transferred_bytes, chunk_size, chunk_count,
+                status, blake3, mime_type, preview_kind, preview_data, is_folder_archive
+         FROM transfer_files
+         WHERE session_id IN ({placeholders})
+         ORDER BY session_id ASC, relative_path ASC"
+    );
+
+    let conn = pool.get()?;
+    let mut statement = conn.prepare(sql.as_str())?;
+    let rows = statement.query_map(params_from_iter(session_ids.iter()), |row| {
+        Ok(TransferFileDto {
+            id: row.get(0)?,
+            session_id: row.get(1)?,
+            relative_path: row.get(2)?,
+            source_path: row.get(3)?,
+            target_path: row.get(4)?,
+            size_bytes: from_db_i64(row.get(5)?),
+            transferred_bytes: from_db_i64(row.get(6)?),
+            chunk_size: row.get(7)?,
+            chunk_count: row.get(8)?,
+            status: parse_transfer_status(row.get(9)?),
+            blake3: row.get(10)?,
+            mime_type: row.get(11)?,
+            preview_kind: row.get(12)?,
+            preview_data: row.get(13)?,
+            is_folder_archive: row.get::<_, i64>(14)? == 1,
+        })
+    })?;
+
+    let mut grouped = std::collections::HashMap::<String, Vec<TransferFileDto>>::new();
+    for row in rows {
+        let file = row?;
+        grouped
+            .entry(file.session_id.clone())
+            .or_default()
+            .push(file);
+    }
+    Ok(grouped)
+}
+
 pub fn list_history(
     pool: &DbPool,
     filter: &TransferHistoryFilterDto,
@@ -636,9 +715,15 @@ pub fn list_history(
 
     let mut items = Vec::new();
     for row in rows {
-        let mut item = row?;
-        item.files = list_session_files(pool, item.id.as_str())?;
-        items.push(item);
+        items.push(row?);
+    }
+
+    let session_ids = items.iter().map(|item| item.id.clone()).collect::<Vec<_>>();
+    let mut files_by_session = list_files_for_sessions(pool, session_ids.as_slice())?;
+    for item in &mut items {
+        item.files = files_by_session
+            .remove(item.id.as_str())
+            .unwrap_or_default();
     }
 
     let next_cursor = items.last().map(|value| value.created_at.to_string());

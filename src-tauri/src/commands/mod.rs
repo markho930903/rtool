@@ -8,12 +8,14 @@ pub mod logging;
 pub mod palette;
 pub mod transfer;
 
+use std::future::Future;
 use std::time::Instant;
 
-use crate::core::InvokeError;
+use crate::core::{AppResult, InvokeError};
 use crate::infrastructure::logging::{
     RecordLogInput, record_log_event_best_effort, sanitize_for_log,
 };
+use crate::infrastructure::runtime::blocking::run_blocking;
 
 pub(crate) fn normalize_request_id(request_id: Option<String>) -> String {
     request_id
@@ -127,4 +129,62 @@ where
         })),
         raw_ref: None,
     });
+}
+
+pub(crate) fn run_command_sync<T, E, F>(
+    command: &str,
+    request_id: Option<String>,
+    window_label: Option<String>,
+    op: F,
+) -> Result<T, InvokeError>
+where
+    E: Clone + Into<InvokeError>,
+    F: FnOnce() -> Result<T, E>,
+{
+    let request_id = normalize_request_id(request_id);
+    let started_at = command_start(command, &request_id, window_label.as_deref());
+    let result = op();
+    match &result {
+        Ok(_) => command_end_ok(command, &request_id, started_at),
+        Err(error) => command_end_error(command, &request_id, started_at, error),
+    }
+    result.map_err(Into::into)
+}
+
+pub(crate) async fn run_command_async<T, E, Fut, F>(
+    command: &str,
+    request_id: Option<String>,
+    window_label: Option<String>,
+    op: F,
+) -> Result<T, InvokeError>
+where
+    E: Clone + Into<InvokeError>,
+    Fut: Future<Output = Result<T, E>>,
+    F: FnOnce() -> Fut,
+{
+    let request_id = normalize_request_id(request_id);
+    let started_at = command_start(command, &request_id, window_label.as_deref());
+    let result = op().await;
+    match &result {
+        Ok(_) => command_end_ok(command, &request_id, started_at),
+        Err(error) => command_end_error(command, &request_id, started_at, error),
+    }
+    result.map_err(Into::into)
+}
+
+pub(crate) async fn run_blocking_command<T, F>(
+    command: &str,
+    request_id: Option<String>,
+    window_label: Option<String>,
+    blocking_label: &'static str,
+    job: F,
+) -> Result<T, InvokeError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> AppResult<T> + Send + 'static,
+{
+    run_command_async(command, request_id, window_label, move || async move {
+        run_blocking(blocking_label, job).await
+    })
+    .await
 }

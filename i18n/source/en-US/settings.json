@@ -91,6 +91,7 @@
   "launcher.status.lastDuration": "Last duration: {value}",
   "launcher.status.version": "Index version: {value}",
   "launcher.status.truncated": "Truncated: {value}",
+  "launcher.status.truncatedHint": "Truncated means the index reached the current budget cap, not a build failure; adjust scope or limits if needed.",
   "launcher.status.lastError": "Last error: {value}",
   "transfer.title": "File transfer",
   "transfer.desc": "Configure default download path, discovery policy and security settings.",

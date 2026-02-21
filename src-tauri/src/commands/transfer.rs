@@ -3,7 +3,7 @@ use std::process::Command;
 
 use tauri::State;
 
-use super::{command_end_error, command_end_ok, command_start, normalize_request_id};
+use super::{run_command_async, run_command_sync};
 use crate::app::state::AppState;
 use crate::core::models::{
     TransferClearHistoryInputDto, TransferHistoryFilterDto, TransferHistoryPageDto,
@@ -59,16 +59,12 @@ pub fn transfer_get_settings(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<TransferSettingsDto, InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start(
+    run_command_sync(
         "transfer_get_settings",
-        &request_id,
-        window_label.as_deref(),
-    );
-
-    let result = Ok(state.transfer_service.get_settings());
-    command_end_ok("transfer_get_settings", &request_id, started_at);
-    result
+        request_id,
+        window_label,
+        move || Ok::<_, InvokeError>(state.transfer_service.get_settings()),
+    )
 }
 
 #[tauri::command]
@@ -78,19 +74,12 @@ pub fn transfer_update_settings(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<TransferSettingsDto, InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start(
+    run_command_sync(
         "transfer_update_settings",
-        &request_id,
-        window_label.as_deref(),
-    );
-
-    let result = state.transfer_service.update_settings(input);
-    match &result {
-        Ok(_) => command_end_ok("transfer_update_settings", &request_id, started_at),
-        Err(error) => command_end_error("transfer_update_settings", &request_id, started_at, error),
-    }
-    result.map_err(Into::into)
+        request_id,
+        window_label,
+        move || state.transfer_service.update_settings(input),
+    )
 }
 
 #[tauri::command]
@@ -99,16 +88,12 @@ pub fn transfer_generate_pairing_code(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<TransferPairingCodeDto, InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start(
+    run_command_sync(
         "transfer_generate_pairing_code",
-        &request_id,
-        window_label.as_deref(),
-    );
-
-    let result = Ok(state.transfer_service.generate_pairing_code());
-    command_end_ok("transfer_generate_pairing_code", &request_id, started_at);
-    result
+        request_id,
+        window_label,
+        move || Ok::<_, InvokeError>(state.transfer_service.generate_pairing_code()),
+    )
 }
 
 #[tauri::command]
@@ -117,16 +102,16 @@ pub async fn transfer_start_discovery(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<(), InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start(
+    run_command_async(
         "transfer_start_discovery",
-        &request_id,
-        window_label.as_deref(),
-    );
-
-    state.transfer_service.start_discovery();
-    command_end_ok("transfer_start_discovery", &request_id, started_at);
-    Ok(())
+        request_id,
+        window_label,
+        move || async move {
+            state.transfer_service.start_discovery();
+            Ok::<_, InvokeError>(())
+        },
+    )
+    .await
 }
 
 #[tauri::command]
@@ -135,16 +120,15 @@ pub fn transfer_stop_discovery(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<(), InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start(
+    run_command_sync(
         "transfer_stop_discovery",
-        &request_id,
-        window_label.as_deref(),
-    );
-
-    state.transfer_service.stop_discovery();
-    command_end_ok("transfer_stop_discovery", &request_id, started_at);
-    Ok(())
+        request_id,
+        window_label,
+        move || {
+            state.transfer_service.stop_discovery();
+            Ok::<_, InvokeError>(())
+        },
+    )
 }
 
 #[tauri::command]
@@ -153,15 +137,13 @@ pub async fn transfer_list_peers(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<Vec<TransferPeerDto>, InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start("transfer_list_peers", &request_id, window_label.as_deref());
-
-    let result = state.transfer_service.list_peers().await;
-    match &result {
-        Ok(_) => command_end_ok("transfer_list_peers", &request_id, started_at),
-        Err(error) => command_end_error("transfer_list_peers", &request_id, started_at, error),
-    }
-    result.map_err(Into::into)
+    run_command_async(
+        "transfer_list_peers",
+        request_id,
+        window_label,
+        move || async move { state.transfer_service.list_peers().await },
+    )
+    .await
 }
 
 #[tauri::command]
@@ -171,15 +153,13 @@ pub async fn transfer_send_files(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<TransferSessionDto, InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start("transfer_send_files", &request_id, window_label.as_deref());
-
-    let result = state.transfer_service.send_files(input).await;
-    match &result {
-        Ok(_) => command_end_ok("transfer_send_files", &request_id, started_at),
-        Err(error) => command_end_error("transfer_send_files", &request_id, started_at, error),
-    }
-    result.map_err(Into::into)
+    run_command_async(
+        "transfer_send_files",
+        request_id,
+        window_label,
+        move || async move { state.transfer_service.send_files(input).await },
+    )
+    .await
 }
 
 #[tauri::command]
@@ -189,19 +169,12 @@ pub fn transfer_pause_session(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<(), InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start(
+    run_command_sync(
         "transfer_pause_session",
-        &request_id,
-        window_label.as_deref(),
-    );
-
-    let result = state.transfer_service.pause_session(session_id.as_str());
-    match &result {
-        Ok(_) => command_end_ok("transfer_pause_session", &request_id, started_at),
-        Err(error) => command_end_error("transfer_pause_session", &request_id, started_at, error),
-    }
-    result.map_err(Into::into)
+        request_id,
+        window_label,
+        move || state.transfer_service.pause_session(session_id.as_str()),
+    )
 }
 
 #[tauri::command]
@@ -211,19 +184,12 @@ pub fn transfer_resume_session(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<(), InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start(
+    run_command_sync(
         "transfer_resume_session",
-        &request_id,
-        window_label.as_deref(),
-    );
-
-    let result = state.transfer_service.resume_session(session_id.as_str());
-    match &result {
-        Ok(_) => command_end_ok("transfer_resume_session", &request_id, started_at),
-        Err(error) => command_end_error("transfer_resume_session", &request_id, started_at, error),
-    }
-    result.map_err(Into::into)
+        request_id,
+        window_label,
+        move || state.transfer_service.resume_session(session_id.as_str()),
+    )
 }
 
 #[tauri::command]
@@ -233,19 +199,12 @@ pub fn transfer_cancel_session(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<(), InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start(
+    run_command_sync(
         "transfer_cancel_session",
-        &request_id,
-        window_label.as_deref(),
-    );
-
-    let result = state.transfer_service.cancel_session(session_id.as_str());
-    match &result {
-        Ok(_) => command_end_ok("transfer_cancel_session", &request_id, started_at),
-        Err(error) => command_end_error("transfer_cancel_session", &request_id, started_at, error),
-    }
-    result.map_err(Into::into)
+        request_id,
+        window_label,
+        move || state.transfer_service.cancel_session(session_id.as_str()),
+    )
 }
 
 #[tauri::command]
@@ -255,22 +214,18 @@ pub async fn transfer_retry_session(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<TransferSessionDto, InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start(
+    run_command_async(
         "transfer_retry_session",
-        &request_id,
-        window_label.as_deref(),
-    );
-
-    let result = state
-        .transfer_service
-        .retry_session(session_id.as_str())
-        .await;
-    match &result {
-        Ok(_) => command_end_ok("transfer_retry_session", &request_id, started_at),
-        Err(error) => command_end_error("transfer_retry_session", &request_id, started_at, error),
-    }
-    result.map_err(Into::into)
+        request_id,
+        window_label,
+        move || async move {
+            state
+                .transfer_service
+                .retry_session(session_id.as_str())
+                .await
+        },
+    )
+    .await
 }
 
 #[tauri::command]
@@ -280,21 +235,16 @@ pub fn transfer_list_history(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<TransferHistoryPageDto, InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start(
+    run_command_sync(
         "transfer_list_history",
-        &request_id,
-        window_label.as_deref(),
-    );
-
-    let result = state
-        .transfer_service
-        .list_history(filter.unwrap_or_default());
-    match &result {
-        Ok(_) => command_end_ok("transfer_list_history", &request_id, started_at),
-        Err(error) => command_end_error("transfer_list_history", &request_id, started_at, error),
-    }
-    result.map_err(Into::into)
+        request_id,
+        window_label,
+        move || {
+            state
+                .transfer_service
+                .list_history(filter.unwrap_or_default())
+        },
+    )
 }
 
 #[tauri::command]
@@ -304,21 +254,16 @@ pub fn transfer_clear_history(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<(), InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start(
+    run_command_sync(
         "transfer_clear_history",
-        &request_id,
-        window_label.as_deref(),
-    );
-
-    let result = state
-        .transfer_service
-        .clear_history(input.unwrap_or_default());
-    match &result {
-        Ok(_) => command_end_ok("transfer_clear_history", &request_id, started_at),
-        Err(error) => command_end_error("transfer_clear_history", &request_id, started_at, error),
-    }
-    result.map_err(Into::into)
+        request_id,
+        window_label,
+        move || {
+            state
+                .transfer_service
+                .clear_history(input.unwrap_or_default())
+        },
+    )
 }
 
 #[tauri::command]
@@ -328,21 +273,14 @@ pub fn transfer_open_download_dir(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<(), InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start(
+    run_command_sync(
         "transfer_open_download_dir",
-        &request_id,
-        window_label.as_deref(),
-    );
-
-    let resolved =
-        path.unwrap_or_else(|| state.transfer_service.get_settings().default_download_dir);
-    let result = open_path(resolved.as_str());
-    match &result {
-        Ok(_) => command_end_ok("transfer_open_download_dir", &request_id, started_at),
-        Err(error) => {
-            command_end_error("transfer_open_download_dir", &request_id, started_at, error)
-        }
-    }
-    result.map_err(Into::into)
+        request_id,
+        window_label,
+        move || {
+            let resolved =
+                path.unwrap_or_else(|| state.transfer_service.get_settings().default_download_dir);
+            open_path(resolved.as_str())
+        },
+    )
 }

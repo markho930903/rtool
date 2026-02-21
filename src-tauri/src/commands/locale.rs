@@ -1,4 +1,4 @@
-use super::{command_end_error, command_end_ok, command_start, normalize_request_id};
+use super::run_command_sync;
 use crate::app::launcher_service::invalidate_launcher_cache;
 use crate::app::state::AppState;
 use crate::core::i18n::{
@@ -14,11 +14,9 @@ pub fn app_get_locale(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<LocaleStateDto, InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start("app_get_locale", &request_id, window_label.as_deref());
-    let result = Ok(state.locale_snapshot());
-    command_end_ok("app_get_locale", &request_id, started_at);
-    result
+    run_command_sync("app_get_locale", request_id, window_label, move || {
+        Ok::<_, InvokeError>(state.locale_snapshot())
+    })
 }
 
 #[tauri::command]
@@ -29,10 +27,7 @@ pub fn app_set_locale(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<LocaleStateDto, InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start("app_set_locale", &request_id, window_label.as_deref());
-
-    let result = (|| -> Result<LocaleStateDto, AppError> {
+    run_command_sync("app_set_locale", request_id, window_label, move || {
         let canonical_preference = normalize_locale_preference(&preference).ok_or_else(|| {
             AppError::new("invalid_locale_preference", "语言偏好无效")
                 .with_context("preference", preference.clone())
@@ -47,13 +42,6 @@ pub fn app_set_locale(
         let next = state.update_locale(canonical_preference, resolved.clone());
         invalidate_launcher_cache();
         crate::apply_locale_to_native_ui(&app, &resolved);
-        Ok(next)
-    })();
-
-    match &result {
-        Ok(_) => command_end_ok("app_set_locale", &request_id, started_at),
-        Err(error) => command_end_error("app_set_locale", &request_id, started_at, error),
-    }
-
-    result.map_err(Into::into)
+        Ok::<LocaleStateDto, AppError>(next)
+    })
 }

@@ -1,4 +1,4 @@
-use super::{command_end_error, command_end_ok, command_start, normalize_request_id};
+use super::{run_blocking_command, run_command_sync};
 use crate::app::app_manager_service::{
     cleanup_managed_app_residue, export_managed_app_scan_result, get_managed_app_detail,
     list_managed_apps, open_uninstall_help, refresh_managed_apps_index, scan_managed_app_residue,
@@ -12,7 +12,6 @@ use crate::core::models::{
     ManagedAppDetailDto,
 };
 use crate::core::{AppError, AppResult, InvokeError, ResultExt};
-use crate::infrastructure::runtime::blocking::run_blocking;
 use anyhow::Context;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -75,18 +74,15 @@ pub async fn app_manager_list(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerPageDto, InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start("app_manager_list", &request_id, window_label.as_deref());
     let input_query = query.unwrap_or_default();
-    let result = run_blocking("app_manager_list", move || {
-        list_managed_apps(&app, input_query)
-    })
-    .await;
-    match &result {
-        Ok(_) => command_end_ok("app_manager_list", &request_id, started_at),
-        Err(error) => command_end_error("app_manager_list", &request_id, started_at, error),
-    }
-    result.map_err(Into::into)
+    run_blocking_command(
+        "app_manager_list",
+        request_id,
+        window_label,
+        "app_manager_list",
+        move || list_managed_apps(&app, input_query),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -96,21 +92,14 @@ pub async fn app_manager_get_detail(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<ManagedAppDetailDto, InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start(
+    run_blocking_command(
         "app_manager_get_detail",
-        &request_id,
-        window_label.as_deref(),
-    );
-    let result = run_blocking("app_manager_get_detail", move || {
-        get_managed_app_detail(&app, query)
-    })
-    .await;
-    match &result {
-        Ok(_) => command_end_ok("app_manager_get_detail", &request_id, started_at),
-        Err(error) => command_end_error("app_manager_get_detail", &request_id, started_at, error),
-    }
-    result.map_err(Into::into)
+        request_id,
+        window_label,
+        "app_manager_get_detail",
+        move || get_managed_app_detail(&app, query),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -120,21 +109,14 @@ pub async fn app_manager_scan_residue(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerResidueScanResultDto, InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start(
+    run_blocking_command(
         "app_manager_scan_residue",
-        &request_id,
-        window_label.as_deref(),
-    );
-    let result = run_blocking("app_manager_scan_residue", move || {
-        scan_managed_app_residue(&app, input)
-    })
-    .await;
-    match &result {
-        Ok(_) => command_end_ok("app_manager_scan_residue", &request_id, started_at),
-        Err(error) => command_end_error("app_manager_scan_residue", &request_id, started_at, error),
-    }
-    result.map_err(Into::into)
+        request_id,
+        window_label,
+        "app_manager_scan_residue",
+        move || scan_managed_app_residue(&app, input),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -144,17 +126,14 @@ pub async fn app_manager_cleanup(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerCleanupResultDto, InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start("app_manager_cleanup", &request_id, window_label.as_deref());
-    let result = run_blocking("app_manager_cleanup", move || {
-        cleanup_managed_app_residue(&app, input)
-    })
-    .await;
-    match &result {
-        Ok(_) => command_end_ok("app_manager_cleanup", &request_id, started_at),
-        Err(error) => command_end_error("app_manager_cleanup", &request_id, started_at, error),
-    }
-    result.map_err(Into::into)
+    run_blocking_command(
+        "app_manager_cleanup",
+        request_id,
+        window_label,
+        "app_manager_cleanup",
+        move || cleanup_managed_app_residue(&app, input),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -164,26 +143,14 @@ pub async fn app_manager_export_scan_result(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerExportScanResultDto, InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start(
+    run_blocking_command(
         "app_manager_export_scan_result",
-        &request_id,
-        window_label.as_deref(),
-    );
-    let result = run_blocking("app_manager_export_scan_result", move || {
-        export_managed_app_scan_result(&app, input)
-    })
-    .await;
-    match &result {
-        Ok(_) => command_end_ok("app_manager_export_scan_result", &request_id, started_at),
-        Err(error) => command_end_error(
-            "app_manager_export_scan_result",
-            &request_id,
-            started_at,
-            error,
-        ),
-    }
-    result.map_err(Into::into)
+        request_id,
+        window_label,
+        "app_manager_export_scan_result",
+        move || export_managed_app_scan_result(&app, input),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -192,23 +159,14 @@ pub async fn app_manager_refresh_index(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerActionResultDto, InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start(
+    run_blocking_command(
         "app_manager_refresh_index",
-        &request_id,
-        window_label.as_deref(),
-    );
-    let result = run_blocking("app_manager_refresh_index", move || {
-        refresh_managed_apps_index(&app)
-    })
-    .await;
-    match &result {
-        Ok(_) => command_end_ok("app_manager_refresh_index", &request_id, started_at),
-        Err(error) => {
-            command_end_error("app_manager_refresh_index", &request_id, started_at, error)
-        }
-    }
-    result.map_err(Into::into)
+        request_id,
+        window_label,
+        "app_manager_refresh_index",
+        move || refresh_managed_apps_index(&app),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -218,21 +176,14 @@ pub async fn app_manager_set_startup(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerActionResultDto, InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start(
+    run_blocking_command(
         "app_manager_set_startup",
-        &request_id,
-        window_label.as_deref(),
-    );
-    let result = run_blocking("app_manager_set_startup", move || {
-        set_managed_app_startup(&app, input)
-    })
-    .await;
-    match &result {
-        Ok(_) => command_end_ok("app_manager_set_startup", &request_id, started_at),
-        Err(error) => command_end_error("app_manager_set_startup", &request_id, started_at, error),
-    }
-    result.map_err(Into::into)
+        request_id,
+        window_label,
+        "app_manager_set_startup",
+        move || set_managed_app_startup(&app, input),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -242,21 +193,14 @@ pub async fn app_manager_uninstall(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerActionResultDto, InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start(
+    run_blocking_command(
         "app_manager_uninstall",
-        &request_id,
-        window_label.as_deref(),
-    );
-    let result = run_blocking("app_manager_uninstall", move || {
-        uninstall_managed_app(&app, input)
-    })
-    .await;
-    match &result {
-        Ok(_) => command_end_ok("app_manager_uninstall", &request_id, started_at),
-        Err(error) => command_end_error("app_manager_uninstall", &request_id, started_at, error),
-    }
-    result.map_err(Into::into)
+        request_id,
+        window_label,
+        "app_manager_uninstall",
+        move || uninstall_managed_app(&app, input),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -266,26 +210,14 @@ pub async fn app_manager_open_uninstall_help(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerActionResultDto, InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start(
+    run_blocking_command(
         "app_manager_open_uninstall_help",
-        &request_id,
-        window_label.as_deref(),
-    );
-    let result = run_blocking("app_manager_open_uninstall_help", move || {
-        open_uninstall_help(&app, app_id)
-    })
-    .await;
-    match &result {
-        Ok(_) => command_end_ok("app_manager_open_uninstall_help", &request_id, started_at),
-        Err(error) => command_end_error(
-            "app_manager_open_uninstall_help",
-            &request_id,
-            started_at,
-            error,
-        ),
-    }
-    result.map_err(Into::into)
+        request_id,
+        window_label,
+        "app_manager_open_uninstall_help",
+        move || open_uninstall_help(&app, app_id),
+    )
+    .await
 }
 
 #[tauri::command]
@@ -294,24 +226,20 @@ pub fn app_manager_reveal_path(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<(), InvokeError> {
-    let request_id = normalize_request_id(request_id);
-    let started_at = command_start(
+    run_command_sync(
         "app_manager_reveal_path",
-        &request_id,
-        window_label.as_deref(),
-    );
+        request_id,
+        window_label,
+        move || {
+            let trimmed = path.trim();
+            if trimmed.is_empty() {
+                return Err(AppError::new(
+                    "app_manager_reveal_invalid",
+                    "定位失败：路径不能为空",
+                ));
+            }
 
-    let trimmed = path.trim();
-    if trimmed.is_empty() {
-        let error = AppError::new("app_manager_reveal_invalid", "定位失败：路径不能为空");
-        command_end_error("app_manager_reveal_path", &request_id, started_at, &error);
-        return Err(error.into());
-    }
-
-    let result = reveal_path(Path::new(trimmed));
-    match &result {
-        Ok(_) => command_end_ok("app_manager_reveal_path", &request_id, started_at),
-        Err(error) => command_end_error("app_manager_reveal_path", &request_id, started_at, error),
-    }
-    result.map_err(Into::into)
+            reveal_path(Path::new(trimmed))
+        },
+    )
 }

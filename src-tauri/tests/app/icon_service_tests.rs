@@ -69,8 +69,7 @@ fn resolve_macos_icon_source_prefers_plist_declared_icon() {
 fn resolve_macos_icon_source_fallback_prefers_app_icon_over_document() {
     let app_dir = create_temp_app_dir("Zed");
     let resources = app_dir.join("Contents").join("Resources");
-    fs::write(resources.join("Document.icns"), b"document")
-        .expect("failed to write Document.icns");
+    fs::write(resources.join("Document.icns"), b"document").expect("failed to write Document.icns");
     fs::write(resources.join("Zed.icns"), b"zed").expect("failed to write Zed.icns");
 
     let source = resolve_macos_icon_source(app_dir.as_path()).expect("source should exist");

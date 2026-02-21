@@ -91,6 +91,7 @@
   "launcher.status.lastDuration": "最近耗时：{value}",
   "launcher.status.version": "索引版本：{value}",
   "launcher.status.truncated": "触发截断：{value}",
+  "launcher.status.truncatedHint": "触发截断表示达到当前索引预算上限，不代表构建失败；可按需调整范围或阈值。",
   "launcher.status.lastError": "最近错误：{value}",
   "transfer.title": "文件传输",
   "transfer.desc": "配置默认下载目录、发现策略和安全策略。",

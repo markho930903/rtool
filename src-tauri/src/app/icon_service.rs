@@ -564,7 +564,9 @@ fn file_extension_icon(ext: &str) -> &'static str {
         "mp4" | "mov" | "mkv" | "avi" | "webm" => "i-noto:film-projector",
         "mp3" | "wav" | "flac" | "aac" | "ogg" => "i-noto:musical-notes",
         "zip" | "rar" | "7z" | "tar" | "gz" => "i-noto:file-folder",
-        "json" | "yaml" | "yml" | "toml" | "xml" | "ini" | "md" | "txt" => "i-noto:scroll",
+        "json" | "yaml" | "yml" | "toml" | "xml" | "ini" | "plist" | "md" | "txt" => {
+            "i-noto:scroll"
+        }
         "rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "go" | "java" | "c" | "cpp" | "h" | "hpp" => {
             "i-noto:desktop-computer"
         }

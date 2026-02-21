@@ -12,8 +12,8 @@ pub(super) fn platform_uninstall(item: &ManagedAppDto) -> AppResult<()> {
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = item;
-        Err(AppError::new(
-            "app_manager_uninstall_not_supported",
+        Err(app_error(
+            AppManagerErrorCode::UninstallNotSupported,
             "当前平台暂不支持卸载功能",
         ))
     }
@@ -23,15 +23,15 @@ pub(super) fn platform_open_uninstall_help(item: &ManagedAppDto) -> AppResult<()
     #[cfg(target_os = "macos")]
     {
         if item.path.trim().is_empty() {
-            return Err(AppError::new(
-                "app_manager_open_help_invalid",
+            return Err(app_error(
+                AppManagerErrorCode::OpenHelpInvalid,
                 "无有效应用路径",
             ));
         }
         open_with_command(
             "open",
             &["-R", item.path.as_str()],
-            "app_manager_open_help_failed",
+            AppManagerErrorCode::OpenHelpFailed,
         )
     }
     #[cfg(target_os = "windows")]
@@ -40,14 +40,14 @@ pub(super) fn platform_open_uninstall_help(item: &ManagedAppDto) -> AppResult<()
         open_with_command(
             "cmd",
             &["/C", "start", "", "ms-settings:appsfeatures"],
-            "app_manager_open_help_failed",
+            AppManagerErrorCode::OpenHelpFailed,
         )
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = item;
-        Err(AppError::new(
-            "app_manager_open_help_not_supported",
+        Err(app_error(
+            AppManagerErrorCode::OpenHelpNotSupported,
             "当前平台暂不支持该操作",
         ))
     }
@@ -61,14 +61,14 @@ pub(super) fn applescript_escape(value: &str) -> String {
 #[cfg(target_os = "macos")]
 pub(super) fn mac_uninstall(item: &ManagedAppDto) -> AppResult<()> {
     if item.path.trim().is_empty() {
-        return Err(AppError::new(
-            "app_manager_uninstall_invalid_path",
+        return Err(app_error(
+            AppManagerErrorCode::UninstallInvalidPath,
             "应用路径为空",
         ));
     }
     if !Path::new(item.path.as_str()).exists() {
-        return Err(AppError::new(
-            "app_manager_uninstall_not_found",
+        return Err(app_error(
+            AppManagerErrorCode::UninstallNotFound,
             "应用路径不存在，无法卸载",
         ));
     }
@@ -82,7 +82,10 @@ pub(super) fn mac_uninstall(item: &ManagedAppDto) -> AppResult<()> {
         .arg(script)
         .status()
         .with_context(|| format!("调用系统卸载失败: {}", item.path))
-        .with_code("app_manager_uninstall_failed", "调用系统卸载失败")
+        .with_code(
+            AppManagerErrorCode::UninstallFailed.as_str(),
+            "调用系统卸载失败",
+        )
         .with_ctx("appPath", item.path.clone())
         .with_ctx("appName", item.name.clone())?;
     if status.success() {
@@ -90,7 +93,7 @@ pub(super) fn mac_uninstall(item: &ManagedAppDto) -> AppResult<()> {
     }
 
     Err(
-        AppError::new("app_manager_uninstall_failed", "系统卸载执行失败")
+        app_error(AppManagerErrorCode::UninstallFailed, "系统卸载执行失败")
             .with_context("status", status.to_string())
             .with_context("appPath", item.path.clone())
             .with_context("appName", item.name.clone()),
@@ -130,7 +133,7 @@ pub(super) fn windows_uninstall(item: &ManagedAppDto) -> AppResult<()> {
     open_with_command(
         "cmd",
         &["/C", "start", "", "ms-settings:appsfeatures"],
-        "app_manager_uninstall_failed",
+        AppManagerErrorCode::UninstallFailed,
     )
 }
 

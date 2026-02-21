@@ -10,8 +10,43 @@ fn should_score_exact_match_higher_than_contains() {
 #[test]
 fn should_prioritize_builtin_category_weight() {
     let builtin = category_weight("builtin");
+    let directory = category_weight("directory");
     let file = category_weight("file");
-    assert!(builtin > file);
+    assert!(builtin > directory);
+    assert!(directory > file);
+}
+
+#[test]
+fn should_rank_directory_between_application_and_file() {
+    let application_rank = category_rank("application");
+    let directory_rank = category_rank("directory");
+    let file_rank = category_rank("file");
+    assert!(application_rank < directory_rank);
+    assert!(directory_rank < file_rank);
+}
+
+#[test]
+fn should_show_directory_when_query_empty() {
+    let directory_item = LauncherItemDto {
+        id: "dir.docs".into(),
+        title: "Documents".into(),
+        subtitle: "/Users/example".into(),
+        category: "directory".into(),
+        source: Some("目录".into()),
+        shortcut: None,
+        score: 0,
+        icon_kind: "iconify".into(),
+        icon_value: "i-noto:file-folder".into(),
+        action: LauncherActionDto::OpenDirectory {
+            path: "/Users/example/Documents".into(),
+        },
+    };
+
+    let scored = score_item(directory_item, "", "zh-CN");
+    assert!(scored.is_some());
+
+    let scored = scored.expect("directory should be visible on empty query");
+    assert_eq!(scored.category, "directory");
 }
 
 #[test]
@@ -93,4 +128,19 @@ fn should_hide_builtin_tools_when_query_empty() {
     assert!(score_item(hidden_tool.clone(), "", "zh-CN").is_none());
     assert!(score_item(hidden_tool, "base64", "zh-CN").is_some());
     assert!(score_item(visible_builtin, "", "zh-CN").is_some());
+}
+
+#[test]
+fn should_execute_palette_legacy_supported_action() {
+    let result = execute_palette_legacy("builtin.tools");
+    assert!(result.is_ok());
+    assert_eq!(result.ok(), Some("route:/tools".to_string()));
+}
+
+#[test]
+fn should_reject_palette_legacy_unknown_action() {
+    let result = execute_palette_legacy("unknown.action");
+    assert!(result.is_err());
+    let error = result.expect_err("palette action should return error");
+    assert_eq!(error.code, "palette_action_unsupported");
 }

@@ -19,12 +19,9 @@ fn should_cleanup_only_expired_logs() {
     let mut new_writer = fs::File::create(&new_file).expect("failed to create new log");
     writeln!(new_writer, "new").expect("failed to write new log");
 
-    let removed = cleanup_expired_logs_with_duration(
-        &log_dir,
-        Duration::from_millis(20),
-        SystemTime::now(),
-    )
-    .expect("cleanup failed");
+    let removed =
+        cleanup_expired_logs_with_duration(&log_dir, Duration::from_millis(20), SystemTime::now())
+            .expect("cleanup failed");
 
     assert_eq!(removed, 1);
     assert!(!old_file.exists());

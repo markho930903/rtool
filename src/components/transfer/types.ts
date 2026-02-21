@@ -9,6 +9,8 @@ export interface TransferSettings {
   pairingRequired: boolean;
 }
 
+export type TransferPeerTrustLevel = "unknown" | "online" | "trusted" | "other";
+
 export interface TransferPeer {
   deviceId: string;
   displayName: string;
@@ -16,7 +18,7 @@ export interface TransferPeer {
   listenPort: number;
   lastSeenAt: number;
   pairedAt: number | null;
-  trustLevel: string;
+  trustLevel: TransferPeerTrustLevel;
   failedAttempts: number;
   blockedUntil: number | null;
   pairingRequired: boolean;
@@ -29,6 +31,18 @@ export interface TransferFileInput {
   compressFolder?: boolean;
 }
 
+export type TransferDirection = "send" | "receive" | "unknown";
+
+export type TransferStatus = "queued" | "running" | "paused" | "failed" | "interrupted" | "canceled" | "success" | "unknown";
+
+export function isTransferRunningLikeStatus(status: TransferStatus): boolean {
+  return status === "queued" || status === "running";
+}
+
+export function isTransferRetryableStatus(status: TransferStatus): boolean {
+  return status === "failed" || status === "interrupted" || status === "canceled";
+}
+
 export interface TransferFile {
   id: string;
   sessionId: string;
@@ -39,7 +53,7 @@ export interface TransferFile {
   transferredBytes: number;
   chunkSize: number;
   chunkCount: number;
-  status: string;
+  status: TransferStatus;
   blake3: string | null;
   mimeType: string | null;
   previewKind: string | null;
@@ -49,10 +63,10 @@ export interface TransferFile {
 
 export interface TransferSession {
   id: string;
-  direction: string;
+  direction: TransferDirection;
   peerDeviceId: string;
   peerName: string;
-  status: string;
+  status: TransferStatus;
   totalBytes: number;
   transferredBytes: number;
   avgSpeedBps: number;
@@ -80,7 +94,7 @@ export interface TransferProgressSnapshot {
 export interface TransferHistoryFilter {
   cursor?: string;
   limit?: number;
-  status?: string;
+  status?: TransferStatus;
   peerDeviceId?: string;
 }
 

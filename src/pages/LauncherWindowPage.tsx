@@ -70,6 +70,10 @@ function categoryLabel(key: string, t: (key: string, options?: Record<string, un
     return t("category.application");
   }
 
+  if (key === "directory") {
+    return t("category.directory");
+  }
+
   if (key === "file") {
     return t("category.file");
   }
@@ -98,7 +102,7 @@ function groupItems(
     groups.get(key)?.items.push({ item, index });
   });
 
-  return ["builtin", "application", "file", "other"]
+  return ["builtin", "application", "directory", "file", "action", "other"]
     .map((key) => groups.get(key))
     .filter((group): group is GroupedCategory => Boolean(group));
 }
@@ -121,6 +125,7 @@ export default function LauncherWindowPage() {
   const inputRef = useRef<HTMLInputElement>(null);
   const launcherItemRefs = useRef<Map<string, HTMLLIElement>>(new Map());
   const [openCycle, setOpenCycle] = useState(1);
+  const [searchSeed, setSearchSeed] = useState(0);
   const [hasSearchedOnce, setHasSearchedOnce] = useState(false);
   const [alwaysOnTop, setAlwaysOnTop] = useState(false);
   const alwaysOnTopRef = useRef(false);
@@ -252,6 +257,7 @@ export default function LauncherWindowPage() {
         syncAlwaysOnTopState();
 
         setOpenCycle((value) => value + 1);
+        setSearchSeed((value) => value + 1);
         setHasSearchedOnce(false);
         reset();
         syncFromStorage();
@@ -259,7 +265,6 @@ export default function LauncherWindowPage() {
 
         window.setTimeout(() => {
           inputRef.current?.focus();
-          void searchWithBootMark(60);
         }, 40);
       });
 
@@ -283,6 +288,9 @@ export default function LauncherWindowPage() {
         }
 
         if (event.key === "Enter") {
+          if (event.isComposing || event.keyCode === 229) {
+            return;
+          }
           event.preventDefault();
           void executeSelected().then((result) => {
             if (result?.ok) {
@@ -338,7 +346,7 @@ export default function LauncherWindowPage() {
     }, 120);
 
     return () => window.clearTimeout(timer);
-  }, [enabled, query, searchWithBootMark]);
+  }, [enabled, query, searchSeed, searchWithBootMark]);
 
   if (!enabled) {
     return null;
@@ -352,7 +360,7 @@ export default function LauncherWindowPage() {
         <div className="flex min-w-0 flex-[1.4] flex-col border-r border-border-muted/85">
           <PaletteInput
             query={query}
-            loading={loading}
+            loading={false}
             onQueryChange={setQuery}
             inputRef={inputRef}
             trailingActions={
@@ -378,6 +386,23 @@ export default function LauncherWindowPage() {
           {error ? <div className="px-4 py-3 text-[13px] text-danger">{error}</div> : null}
 
           <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-1.5 pt-1">
+            {loading ? (
+              <div
+                className="relative sticky top-0 z-10 mb-2 h-[2px] overflow-hidden rounded bg-border-muted/65"
+                role="status"
+                aria-live="polite"
+              >
+                <span className="sr-only">{t("input.searching")}</span>
+                <span
+                  className="rtool-boot-shimmer-layer absolute inset-y-0 bg-gradient-to-r from-transparent via-shimmer-highlight/26 to-transparent"
+                  style={{
+                    left: "-30%",
+                    width: "30%",
+                    animation: "rtool-boot-shimmer 1s linear infinite",
+                  }}
+                />
+              </div>
+            ) : null}
             {loading && items.length === 0 ? (
               <div className="space-y-1.5 p-2">
                 {[0, 1, 2, 3, 4, 5].map((index) => (

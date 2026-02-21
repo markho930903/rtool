@@ -85,6 +85,7 @@ export function resolveFileIconByExtension(ext: string | null): string {
     ext === "yaml" ||
     ext === "yml" ||
     ext === "toml" ||
+    ext === "plist" ||
     ext === "xml" ||
     ext === "ini" ||
     ext === "md" ||

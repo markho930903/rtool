@@ -1,25 +1,31 @@
 use super::*;
 
-fn delete_path_with_mode(path: &Path, delete_mode: &str) -> AppResult<()> {
+fn delete_path_with_mode(path: &Path, delete_mode: AppManagerCleanupDeleteMode) -> AppResult<()> {
     match delete_mode {
-        "trash" => move_path_to_trash(path),
-        "permanent" => {
+        AppManagerCleanupDeleteMode::Trash => move_path_to_trash(path),
+        AppManagerCleanupDeleteMode::Permanent => {
             if path.is_dir() {
                 fs::remove_dir_all(path)
                     .with_context(|| format!("删除目录失败: {}", path.display()))
-                    .with_code("app_manager_cleanup_delete_failed", "删除目录失败")
+                    .with_code(
+                        AppManagerErrorCode::CleanupDeleteFailed.as_str(),
+                        "删除目录失败",
+                    )
                     .with_ctx("path", path.display().to_string())
-                    .with_ctx("deleteMode", delete_mode)
+                    .with_ctx("deleteMode", delete_mode.as_str())
             } else {
                 fs::remove_file(path)
                     .with_context(|| format!("删除文件失败: {}", path.display()))
-                    .with_code("app_manager_cleanup_delete_failed", "删除文件失败")
+                    .with_code(
+                        AppManagerErrorCode::CleanupDeleteFailed.as_str(),
+                        "删除文件失败",
+                    )
                     .with_ctx("path", path.display().to_string())
-                    .with_ctx("deleteMode", delete_mode)
+                    .with_ctx("deleteMode", delete_mode.as_str())
             }
         }
-        _ => Err(AppError::new(
-            "app_manager_cleanup_mode_invalid",
+        AppManagerCleanupDeleteMode::Unknown => Err(app_error(
+            AppManagerErrorCode::CleanupModeInvalid,
             "不支持的删除模式",
         )),
     }
@@ -37,14 +43,17 @@ fn move_path_to_trash(path: &Path) -> AppResult<()> {
         .arg(script)
         .status()
         .with_context(|| format!("调用 osascript 失败: {}", path.display()))
-        .with_code("app_manager_cleanup_delete_failed", "移入废纸篓失败")
+        .with_code(
+            AppManagerErrorCode::CleanupDeleteFailed.as_str(),
+            "移入废纸篓失败",
+        )
         .with_ctx("path", path.display().to_string())
         .with_ctx("deleteMode", "trash")?;
     if status.success() {
         return Ok(());
     }
     Err(
-        AppError::new("app_manager_cleanup_delete_failed", "移入废纸篓失败")
+        app_error(AppManagerErrorCode::CleanupDeleteFailed, "移入废纸篓失败")
             .with_context("status", status.to_string())
             .with_context("path", path.display().to_string())
             .with_context("deleteMode", "trash"),
@@ -71,14 +80,17 @@ fn move_path_to_trash(path: &Path) -> AppResult<()> {
         .args(["-NoProfile", "-Command", script.as_str()])
         .status()
         .with_context(|| format!("调用 powershell 失败: {}", path.display()))
-        .with_code("app_manager_cleanup_delete_failed", "移入回收站失败")
+        .with_code(
+            AppManagerErrorCode::CleanupDeleteFailed.as_str(),
+            "移入回收站失败",
+        )
         .with_ctx("path", path.display().to_string())
         .with_ctx("deleteMode", "trash")?;
     if status.success() {
         return Ok(());
     }
     Err(
-        AppError::new("app_manager_cleanup_delete_failed", "移入回收站失败")
+        app_error(AppManagerErrorCode::CleanupDeleteFailed, "移入回收站失败")
             .with_context("status", status.to_string())
             .with_context("path", path.display().to_string())
             .with_context("deleteMode", "trash"),
@@ -88,8 +100,8 @@ fn move_path_to_trash(path: &Path) -> AppResult<()> {
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
 fn move_path_to_trash(path: &Path) -> AppResult<()> {
     let _ = path;
-    Err(AppError::new(
-        "app_manager_cleanup_delete_failed",
+    Err(app_error(
+        AppManagerErrorCode::CleanupDeleteFailed,
         "当前平台不支持移入废纸篓",
     ))
 }
@@ -106,8 +118,8 @@ fn windows_registry_key_exists(reg_key: &str) -> bool {
 #[cfg(target_os = "windows")]
 fn windows_delete_registry_key(reg_key: &str) -> AppResult<()> {
     if !windows_registry_key_exists(reg_key) {
-        return Err(AppError::new(
-            "app_manager_cleanup_not_found",
+        return Err(app_error(
+            AppManagerErrorCode::CleanupNotFound,
             "注册表键不存在",
         ));
     }
@@ -115,13 +127,16 @@ fn windows_delete_registry_key(reg_key: &str) -> AppResult<()> {
         .args(["delete", reg_key, "/f"])
         .status()
         .with_context(|| format!("删除注册表键失败: {}", reg_key))
-        .with_code("app_manager_cleanup_delete_failed", "删除注册表键失败")
+        .with_code(
+            AppManagerErrorCode::CleanupDeleteFailed.as_str(),
+            "删除注册表键失败",
+        )
         .with_ctx("registryKey", reg_key.to_string())?;
     if status.success() {
         return Ok(());
     }
     Err(
-        AppError::new("app_manager_cleanup_delete_failed", "删除注册表键失败")
+        app_error(AppManagerErrorCode::CleanupDeleteFailed, "删除注册表键失败")
             .with_context("status", status.to_string())
             .with_context("registryKey", reg_key.to_string()),
     )
@@ -129,12 +144,15 @@ fn windows_delete_registry_key(reg_key: &str) -> AppResult<()> {
 
 #[cfg(target_os = "windows")]
 fn windows_delete_registry_value(spec: &str) -> AppResult<()> {
-    let (reg_key, value_name) = spec
-        .rsplit_once("::")
-        .ok_or_else(|| AppError::new("app_manager_cleanup_path_invalid", "注册表值路径格式无效"))?;
+    let (reg_key, value_name) = spec.rsplit_once("::").ok_or_else(|| {
+        app_error(
+            AppManagerErrorCode::CleanupPathInvalid,
+            "注册表值路径格式无效",
+        )
+    })?;
     if !windows_registry_value_exists(reg_key, value_name) {
-        return Err(AppError::new(
-            "app_manager_cleanup_not_found",
+        return Err(app_error(
+            AppManagerErrorCode::CleanupNotFound,
             "注册表值不存在",
         ));
     }
@@ -142,34 +160,46 @@ fn windows_delete_registry_value(spec: &str) -> AppResult<()> {
         .args(["delete", reg_key, "/v", value_name, "/f"])
         .status()
         .with_context(|| format!("删除注册表值失败: {}::{}", reg_key, value_name))
-        .with_code("app_manager_cleanup_delete_failed", "删除注册表值失败")
+        .with_code(
+            AppManagerErrorCode::CleanupDeleteFailed.as_str(),
+            "删除注册表值失败",
+        )
         .with_ctx("registryKey", reg_key.to_string())
         .with_ctx("registryValue", value_name.to_string())?;
     if status.success() {
         return Ok(());
     }
     Err(
-        AppError::new("app_manager_cleanup_delete_failed", "删除注册表值失败")
+        app_error(AppManagerErrorCode::CleanupDeleteFailed, "删除注册表值失败")
             .with_context("status", status.to_string())
             .with_context("registryKey", reg_key.to_string())
             .with_context("registryValue", value_name.to_string()),
     )
 }
 
-fn delete_residue_item(item_kind: &str, item_path: &str, delete_mode: &str) -> AppResult<()> {
+fn delete_residue_item(
+    item_kind: AppManagerResidueKind,
+    item_path: &str,
+    delete_mode: AppManagerCleanupDeleteMode,
+) -> AppResult<()> {
     #[cfg(target_os = "windows")]
     {
         match item_kind {
-            "registry_key" => return windows_delete_registry_key(item_path),
-            "registry_value" => return windows_delete_registry_value(item_path),
+            AppManagerResidueKind::RegistryKey => return windows_delete_registry_key(item_path),
+            AppManagerResidueKind::RegistryValue => {
+                return windows_delete_registry_value(item_path);
+            }
             _ => {}
         }
     }
 
     #[cfg(not(target_os = "windows"))]
-    if matches!(item_kind, "registry_key" | "registry_value") {
-        return Err(AppError::new(
-            "app_manager_cleanup_not_supported",
+    if matches!(
+        item_kind,
+        AppManagerResidueKind::RegistryKey | AppManagerResidueKind::RegistryValue
+    ) {
+        return Err(app_error(
+            AppManagerErrorCode::CleanupNotSupported,
             "当前平台不支持注册表清理",
         ));
     }
@@ -183,10 +213,10 @@ pub(super) fn execute_cleanup_plan(
     scan_result: &AppManagerResidueScanResultDto,
     input: AppManagerCleanupInputDto,
 ) -> AppResult<AppManagerCleanupResultDto> {
-    let delete_mode = input.delete_mode.to_ascii_lowercase();
-    if delete_mode != "trash" && delete_mode != "permanent" {
-        return Err(AppError::new(
-            "app_manager_cleanup_mode_invalid",
+    let delete_mode = input.delete_mode;
+    if matches!(delete_mode, AppManagerCleanupDeleteMode::Unknown) {
+        return Err(app_error(
+            AppManagerErrorCode::CleanupModeInvalid,
             "删除模式仅支持 trash 或 permanent",
         ));
     }
@@ -200,23 +230,23 @@ pub(super) fn execute_cleanup_plan(
     let mut failed = Vec::new();
 
     if input.include_main_app {
-        if app_item.source == "rtool" {
+        if app_item.source == AppManagerSource::Rtool {
             skipped.push(AppManagerCleanupItemResultDto {
                 item_id: "main-app".to_string(),
                 path: app_item.path.clone(),
-                kind: "main_app".to_string(),
-                status: "skipped".to_string(),
-                reason_code: "self_uninstall_forbidden".to_string(),
+                kind: AppManagerResidueKind::MainApp,
+                status: AppManagerCleanupStatus::Skipped,
+                reason_code: AppManagerCleanupReasonCode::SelfUninstallForbidden,
                 message: "当前运行中的应用不可在此流程卸载".to_string(),
                 size_bytes: main_app_size_bytes,
             });
         } else {
             let confirmed_fingerprint = input.confirmed_fingerprint.clone().ok_or_else(|| {
-                AppError::new("app_manager_fingerprint_missing", "缺少应用确认指纹")
+                app_error(AppManagerErrorCode::FingerprintMissing, "缺少应用确认指纹")
             })?;
             if confirmed_fingerprint != app_item.fingerprint {
-                return Err(AppError::new(
-                    "app_manager_fingerprint_mismatch",
+                return Err(app_error(
+                    AppManagerErrorCode::FingerprintMismatch,
                     "应用信息已变化，请刷新后重试",
                 ));
             }
@@ -227,9 +257,9 @@ pub(super) fn execute_cleanup_plan(
                     deleted.push(AppManagerCleanupItemResultDto {
                         item_id: "main-app".to_string(),
                         path: app_item.path.clone(),
-                        kind: "main_app".to_string(),
-                        status: "deleted".to_string(),
-                        reason_code: "ok".to_string(),
+                        kind: AppManagerResidueKind::MainApp,
+                        status: AppManagerCleanupStatus::Deleted,
+                        reason_code: AppManagerCleanupReasonCode::Ok,
                         message: "主程序卸载流程已执行".to_string(),
                         size_bytes: main_app_size_bytes,
                     });
@@ -243,15 +273,17 @@ pub(super) fn execute_cleanup_plan(
                     failed.push(AppManagerCleanupItemResultDto {
                         item_id: "main-app".to_string(),
                         path: app_item.path.clone(),
-                        kind: "main_app".to_string(),
-                        status: "failed".to_string(),
-                        reason_code: error.code.clone(),
+                        kind: AppManagerResidueKind::MainApp,
+                        status: AppManagerCleanupStatus::Failed,
+                        reason_code: AppManagerCleanupReasonCode::from_error_code(
+                            error.code.as_str(),
+                        ),
                         message: detail,
                         size_bytes: main_app_size_bytes,
                     });
                     if !skip_on_error {
-                        return Err(AppError::new(
-                            "app_manager_cleanup_failed",
+                        return Err(app_error(
+                            AppManagerErrorCode::CleanupFailed,
                             "主程序卸载失败，已中止清理",
                         ));
                     }
@@ -273,45 +305,46 @@ pub(super) fn execute_cleanup_plan(
 
             if item
                 .readonly_reason_code
-                .as_deref()
-                .is_some_and(|reason| reason == "managed_by_policy")
+                .is_some_and(|reason| reason == AppReadonlyReasonCode::ManagedByPolicy)
             {
                 skipped.push(AppManagerCleanupItemResultDto {
                     item_id: item.item_id.clone(),
                     path: item.path.clone(),
-                    kind: item.kind.clone(),
-                    status: "skipped".to_string(),
-                    reason_code: "managed_by_policy".to_string(),
+                    kind: item.kind,
+                    status: AppManagerCleanupStatus::Skipped,
+                    reason_code: AppManagerCleanupReasonCode::ManagedByPolicy,
                     message: "系统策略托管项，已跳过".to_string(),
                     size_bytes: Some(item.size_bytes),
                 });
                 continue;
             }
 
-            let is_registry_item = matches!(item.kind.as_str(), "registry_key" | "registry_value");
+            let is_registry_item = matches!(
+                item.kind,
+                AppManagerResidueKind::RegistryKey | AppManagerResidueKind::RegistryValue
+            );
             if !is_registry_item && !Path::new(item.path.as_str()).exists() {
                 skipped.push(AppManagerCleanupItemResultDto {
                     item_id: item.item_id.clone(),
                     path: item.path.clone(),
-                    kind: item.kind.clone(),
-                    status: "skipped".to_string(),
-                    reason_code: "not_found".to_string(),
+                    kind: item.kind,
+                    status: AppManagerCleanupStatus::Skipped,
+                    reason_code: AppManagerCleanupReasonCode::NotFound,
                     message: "路径不存在，已跳过".to_string(),
                     size_bytes: Some(item.size_bytes),
                 });
                 continue;
             }
 
-            match delete_residue_item(item.kind.as_str(), item.path.as_str(), delete_mode.as_str())
-            {
+            match delete_residue_item(item.kind, item.path.as_str(), delete_mode) {
                 Ok(_) => {
                     released_size_bytes = released_size_bytes.saturating_add(item.size_bytes);
                     deleted.push(AppManagerCleanupItemResultDto {
                         item_id: item.item_id.clone(),
                         path: item.path.clone(),
-                        kind: item.kind.clone(),
-                        status: "deleted".to_string(),
-                        reason_code: "ok".to_string(),
+                        kind: item.kind,
+                        status: AppManagerCleanupStatus::Deleted,
+                        reason_code: AppManagerCleanupReasonCode::Ok,
                         message: "删除成功".to_string(),
                         size_bytes: Some(item.size_bytes),
                     });
@@ -325,15 +358,17 @@ pub(super) fn execute_cleanup_plan(
                     failed.push(AppManagerCleanupItemResultDto {
                         item_id: item.item_id.clone(),
                         path: item.path.clone(),
-                        kind: item.kind.clone(),
-                        status: "failed".to_string(),
-                        reason_code: error.code.clone(),
+                        kind: item.kind,
+                        status: AppManagerCleanupStatus::Failed,
+                        reason_code: AppManagerCleanupReasonCode::from_error_code(
+                            error.code.as_str(),
+                        ),
                         message: detail,
                         size_bytes: Some(item.size_bytes),
                     });
                     if !skip_on_error {
-                        return Err(AppError::new(
-                            "app_manager_cleanup_failed",
+                        return Err(app_error(
+                            AppManagerErrorCode::CleanupFailed,
                             "残留清理失败，已按配置中止",
                         ));
                     }

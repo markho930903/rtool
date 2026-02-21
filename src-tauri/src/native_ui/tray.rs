@@ -78,11 +78,13 @@ pub(crate) fn refresh_tray_menu<R: Runtime>(app: &AppHandle<R>, locale: &str) {
 
 fn run_tray_action(app: &AppHandle, action: LauncherActionDto, action_name: &str) {
     let result = execute_launcher_action(app, &action);
-    if !result.ok {
+    if let Err(error) = result {
         tracing::warn!(
             event = "tray_action_failed",
             action = action_name,
-            message = result.message
+            error_code = error.code.as_str(),
+            error_message = error.message.as_str(),
+            error_detail = error.causes.first().map(String::as_str).unwrap_or_default()
         );
     }
 }

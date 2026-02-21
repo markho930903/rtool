@@ -110,16 +110,21 @@ export const usePaletteStore = create<PaletteStore>((set, get) => ({
     if (!selected) {
       return null;
     }
+    try {
+      const result = await invokeWithLog<PaletteActionResult>("palette_execute", {
+        actionId: selected.id,
+      });
 
-    const result = await invokeWithLog<PaletteActionResult>("palette_execute", {
-      actionId: selected.id,
-    });
+      set({
+        lastAction: result,
+        error: result.ok ? null : result.message,
+      });
 
-    set({
-      lastAction: result,
-      error: result.ok ? null : result.message,
-    });
-
-    return result;
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      set({ error: message });
+      return null;
+    }
   },
 }));

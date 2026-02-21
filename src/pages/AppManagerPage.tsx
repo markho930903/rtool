@@ -2,9 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
+  AppManagerIconKind,
   AppManagerCleanupItemResult,
+  AppManagerPathType,
+  AppManagerQueryCategory,
   AppManagerResidueGroup,
   AppManagerResidueItem,
+  AppManagerScanWarning,
+  AppReadonlyReasonCode,
   ManagedApp,
 } from "@/components/app-manager/types";
 import { LoadingIndicator } from "@/components/loading";
@@ -36,13 +41,25 @@ function formatBytes(value?: number | null): string {
   return `${size.toFixed(fractionDigits)} ${units[unitIndex]}`;
 }
 
+function warningMessageKey(code: AppManagerScanWarning["code"]): string {
+  return `cleanup.warning.${code}`;
+}
+
+function warningDetailMessageKey(code: NonNullable<AppManagerScanWarning["detailCode"]>): string {
+  return `cleanup.warningDetail.${code}`;
+}
+
+function cleanupResultReasonMessageKey(code: AppManagerCleanupItemResult["reasonCode"]): string {
+  return `result.reason.${code}`;
+}
+
 interface RelatedLocationEntry {
   id: string;
   path: string;
   name: string;
   sizeBytes?: number | null;
-  pathType?: "file" | "directory" | "unknown" | string;
-  readonlyReasonCode?: string;
+  pathType?: AppManagerPathType;
+  readonlyReasonCode?: AppReadonlyReasonCode;
   source: "main" | "scan";
 }
 
@@ -83,11 +100,17 @@ function isAppBundlePath(path: string): boolean {
   return normalizePathKey(path).replace(/\/+$/, "").endsWith(".app");
 }
 
+const APP_MANAGER_CATEGORY_VALUES: AppManagerQueryCategory[] = ["all", "application", "startup", "rtool"];
+
+function isAppManagerQueryCategory(value: string): value is AppManagerQueryCategory {
+  return APP_MANAGER_CATEGORY_VALUES.includes(value as AppManagerQueryCategory);
+}
+
 function resolveRelatedEntryIcon(
   entry: RelatedLocationEntry,
   selectedApp: ManagedApp | null,
 ): {
-  iconKind?: string;
+  iconKind?: AppManagerIconKind;
   iconValue?: string;
   fallbackIcon: string;
 } {
@@ -133,6 +156,7 @@ function ResultRows({
   rows: AppManagerCleanupItemResult[];
   kindClassName: string;
 }) {
+  const { t } = useTranslation("app_manager");
   if (rows.length === 0) {
     return null;
   }
@@ -147,7 +171,10 @@ function ResultRows({
           >
             <div className="break-all">{row.path}</div>
             <div className="mt-0.5 text-[11px] opacity-80">
-              {row.reasonCode} · {row.message}
+              {t(cleanupResultReasonMessageKey(row.reasonCode), {
+                defaultValue: t("result.reason.unknown", { defaultValue: row.reasonCode }),
+              })}{" "}
+              · {row.message}
             </div>
           </div>
         ))}
@@ -261,6 +288,7 @@ export default function AppManagerPage() {
       { value: "all", label: t("filters.category.all") },
       { value: "application", label: t("filters.category.application") },
       { value: "startup", label: t("filters.category.startup") },
+      { value: "rtool", label: t("filters.category.rtool") },
     ],
     [t],
   );
@@ -504,7 +532,11 @@ export default function AppManagerPage() {
               size="sm"
               className="gap-3"
               optionClassName="items-center text-xs text-text-primary"
-              onValueChange={(value) => setCategory(value)}
+              onValueChange={(value) => {
+                if (isAppManagerQueryCategory(value)) {
+                  setCategory(value);
+                }
+              }}
             />
             <div className="rounded-lg border border-border-muted bg-surface-soft px-2.5 py-1.5">
               <SwitchField
@@ -927,7 +959,23 @@ export default function AppManagerPage() {
                       {selectedScanResult.warnings.length > 0 ? (
                         <div className="space-y-1 rounded-md border border-info/45 bg-info/10 px-3 py-2 text-xs text-info">
                           {selectedScanResult.warnings.map((warning, index) => (
-                            <div key={`${warning.code}-${index}`}>{warning.message}</div>
+                            <div key={`${warning.code}-${index}`} className="space-y-0.5">
+                              <div>
+                                {t(warningMessageKey(warning.code), {
+                                  path: warning.path ?? "-",
+                                  defaultValue: t("cleanup.warning.unknown", {
+                                    path: warning.path ?? "-",
+                                  }),
+                                })}
+                              </div>
+                              {warning.detailCode ? (
+                                <div className="opacity-80">
+                                  {t(warningDetailMessageKey(warning.detailCode), {
+                                    defaultValue: t("cleanup.warningDetail.unknown"),
+                                  })}
+                                </div>
+                              ) : null}
+                            </div>
                           ))}
                         </div>
                       ) : null}

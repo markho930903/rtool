@@ -1,5 +1,6 @@
 use crate::app::launcher_service::{execute_palette_legacy, search_palette_legacy};
-use crate::core::models::{ActionResultDto, PaletteItemDto};
+use crate::core::AppResult;
+use crate::core::models::PaletteItemDto;
 use tauri::AppHandle;
 
 pub fn search_palette(app: &AppHandle, query: &str) -> Vec<PaletteItemDto> {
@@ -14,6 +15,6 @@ pub fn search_palette(app: &AppHandle, query: &str) -> Vec<PaletteItemDto> {
         .collect()
 }
 
-pub fn execute_palette_action(action_id: &str) -> ActionResultDto {
+pub fn execute_palette_action(action_id: &str) -> AppResult<String> {
     execute_palette_legacy(action_id)
 }

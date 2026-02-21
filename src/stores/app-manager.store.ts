@@ -2,9 +2,11 @@ import { create } from "zustand";
 
 import type {
   AppManagerActionResult,
+  AppManagerCleanupDeleteMode,
   AppManagerCleanupInput,
   AppManagerCleanupResult,
   AppManagerExportScanResult,
+  AppManagerQueryCategory,
   AppManagerResidueScanResult,
   ManagedApp,
   ManagedAppDetail,
@@ -72,7 +74,7 @@ interface AppManagerState {
   exportLoadingById: Record<string, boolean>;
   openExportDirLoadingById: Record<string, boolean>;
   keyword: string;
-  category: string;
+  category: AppManagerQueryCategory;
   nextCursor: string | null;
   indexedAt: number | null;
   error: string | null;
@@ -87,14 +89,14 @@ interface AppManagerState {
   cleanupResultById: Record<string, AppManagerCleanupResult>;
   exportResultById: Record<string, AppManagerExportScanResult>;
   selectedResidueIdsByAppId: Record<string, string[]>;
-  deleteModeByAppId: Record<string, "trash" | "permanent">;
+  deleteModeByAppId: Record<string, AppManagerCleanupDeleteMode>;
   includeMainAppByAppId: Record<string, boolean>;
   experimentalThirdPartyStartup: boolean;
 }
 
 interface AppManagerActions {
   setKeyword: (keyword: string) => void;
-  setCategory: (category: string) => void;
+  setCategory: (category: AppManagerQueryCategory) => void;
   setExperimentalThirdPartyStartup: (enabled: boolean) => void;
   selectApp: (appId: string) => Promise<void>;
   loadFirstPage: () => Promise<void>;
@@ -105,7 +107,7 @@ interface AppManagerActions {
   toggleResidueItem: (appId: string, itemId: string, checked: boolean) => void;
   selectRecommendedResidues: (appId: string) => void;
   clearResidueSelection: (appId: string) => void;
-  setDeleteMode: (appId: string, mode: "trash" | "permanent") => void;
+  setDeleteMode: (appId: string, mode: AppManagerCleanupDeleteMode) => void;
   setIncludeMainApp: (appId: string, includeMainApp: boolean) => void;
   exportScanResult: (appId: string) => Promise<AppManagerExportScanResult | null>;
   openExportDirectory: (appId: string) => Promise<void>;

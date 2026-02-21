@@ -14,10 +14,10 @@ use tokio::sync::watch;
 use tokio::time::{Instant, MissedTickBehavior, interval, sleep};
 
 use crate::core::models::{
-    TransferClearHistoryInputDto, TransferFileDto, TransferFileInputDto, TransferHistoryFilterDto,
-    TransferHistoryPageDto, TransferPairingCodeDto, TransferPeerDto, TransferProgressSnapshotDto,
-    TransferSendFilesInputDto, TransferSessionDto, TransferSettingsDto,
-    TransferUpdateSettingsInputDto,
+    TransferClearHistoryInputDto, TransferDirection, TransferFileDto, TransferFileInputDto,
+    TransferHistoryFilterDto, TransferHistoryPageDto, TransferPairingCodeDto, TransferPeerDto,
+    TransferPeerTrustLevel, TransferProgressSnapshotDto, TransferSendFilesInputDto,
+    TransferSessionDto, TransferSettingsDto, TransferStatus, TransferUpdateSettingsInputDto,
 };
 use crate::core::{AppError, AppResult, ResultExt};
 use crate::infrastructure::db::DbPool;
@@ -58,6 +58,51 @@ const TRANSFER_HISTORY_SYNC_EVENT: &str = "rtool://transfer/history_sync";
 const PAIR_CODE_EXPIRE_MS: i64 = 120_000;
 const CHUNK_ACK_TIMEOUT_MS: u64 = 3_000;
 const MAX_CHUNK_RETRY: u8 = 3;
+
+fn lock_mutex<'a, T>(lock: &'a Mutex<T>, name: &'static str) -> std::sync::MutexGuard<'a, T> {
+    match lock.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            tracing::warn!(
+                event = "transfer_lock_poisoned",
+                lock = name,
+                access = "mutex"
+            );
+            poisoned.into_inner()
+        }
+    }
+}
+
+fn read_lock<'a, T>(lock: &'a RwLock<T>, name: &'static str) -> std::sync::RwLockReadGuard<'a, T> {
+    match lock.read() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            tracing::warn!(
+                event = "transfer_lock_poisoned",
+                lock = name,
+                access = "read"
+            );
+            poisoned.into_inner()
+        }
+    }
+}
+
+fn write_lock<'a, T>(
+    lock: &'a RwLock<T>,
+    name: &'static str,
+) -> std::sync::RwLockWriteGuard<'a, T> {
+    match lock.write() {
+        Ok(guard) => guard,
+        Err(poisoned) => {
+            tracing::warn!(
+                event = "transfer_lock_poisoned",
+                lock = name,
+                access = "write"
+            );
+            poisoned.into_inner()
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 struct PairCodeEntry {
@@ -123,7 +168,7 @@ impl TransferService {
     }
 
     pub fn get_settings(&self) -> TransferSettingsDto {
-        self.settings.read().expect("settings read").clone()
+        read_lock(self.settings.as_ref(), "settings").clone()
     }
 
     pub fn update_settings(
@@ -165,7 +210,7 @@ impl TransferService {
         }
 
         save_settings(&self.db_pool, &next)?;
-        *self.settings.write().expect("settings write") = next.clone();
+        *write_lock(self.settings.as_ref(), "settings") = next.clone();
         Ok(next)
     }
 
@@ -173,7 +218,7 @@ impl TransferService {
         let code = generate_pair_code();
         let expires_at = now_millis() + PAIR_CODE_EXPIRE_MS;
 
-        *self.pair_code.write().expect("pair code write") = Some(PairCodeEntry {
+        *write_lock(self.pair_code.as_ref(), "pair_code") = Some(PairCodeEntry {
             code: code.clone(),
             expires_at,
         });
@@ -224,7 +269,7 @@ impl TransferService {
             run_listen_loop(stop_b, peers, local_device_id).await;
         });
 
-        let mut tasks = self.discovery_tasks.lock().expect("tasks lock");
+        let mut tasks = lock_mutex(self.discovery_tasks.as_ref(), "discovery_tasks");
         tasks.push(task_broadcast);
         tasks.push(task_listen);
 
@@ -246,7 +291,7 @@ impl TransferService {
     pub fn stop_discovery(&self) {
         self.discovery_stop.store(true, Ordering::Relaxed);
 
-        let mut tasks = self.discovery_tasks.lock().expect("tasks lock");
+        let mut tasks = lock_mutex(self.discovery_tasks.as_ref(), "discovery_tasks");
         for task in tasks.drain(..) {
             task.abort();
         }
@@ -321,7 +366,7 @@ impl TransferService {
                     transferred_bytes: 0,
                     chunk_size,
                     chunk_count,
-                    status: "queued".to_string(),
+                    status: TransferStatus::Queued,
                     blake3: Some(hash),
                     mime_type,
                     preview_kind,
@@ -336,10 +381,13 @@ impl TransferService {
 
         let session = TransferSessionDto {
             id: session_id.clone(),
-            direction: input.direction.unwrap_or_else(|| "send".to_string()),
+            direction: match input.direction.unwrap_or(TransferDirection::Send) {
+                TransferDirection::Unknown => TransferDirection::Send,
+                value => value,
+            },
             peer_device_id: peer.device_id.clone(),
             peer_name: peer.display_name.clone(),
-            status: "queued".to_string(),
+            status: TransferStatus::Queued,
             total_bytes,
             transferred_bytes: 0,
             avg_speed_bps: 0,
@@ -366,9 +414,7 @@ impl TransferService {
         .await?;
 
         self.register_session_control(session.id.as_str());
-        self.session_pair_codes
-            .write()
-            .expect("pair code map")
+        write_lock(self.session_pair_codes.as_ref(), "session_pair_codes")
             .insert(session.id.clone(), input.pair_code.clone());
 
         let service = self.clone();
@@ -413,40 +459,40 @@ impl TransferService {
     }
 
     pub fn pause_session(&self, session_id: &str) -> AppResult<()> {
-        let controls = self.session_controls.read().expect("session controls read");
+        let controls = read_lock(self.session_controls.as_ref(), "session_controls");
         let control = controls
             .get(session_id)
             .ok_or_else(|| AppError::new("transfer_session_not_running", "会话未运行，无法暂停"))?;
         let _ = control.paused_tx.send(true);
         let mut session = ensure_session_exists(&self.db_pool, session_id)?;
-        session.status = "paused".to_string();
+        session.status = TransferStatus::Paused;
         insert_session(&self.db_pool, &session)?;
         self.maybe_emit_session_snapshot(&session, None, 0, None, true, None, None, None, None);
         Ok(())
     }
 
     pub fn resume_session(&self, session_id: &str) -> AppResult<()> {
-        let controls = self.session_controls.read().expect("session controls read");
+        let controls = read_lock(self.session_controls.as_ref(), "session_controls");
         let control = controls
             .get(session_id)
             .ok_or_else(|| AppError::new("transfer_session_not_running", "会话未运行，无法继续"))?;
         let _ = control.paused_tx.send(false);
         let mut session = ensure_session_exists(&self.db_pool, session_id)?;
-        session.status = "running".to_string();
+        session.status = TransferStatus::Running;
         insert_session(&self.db_pool, &session)?;
         self.maybe_emit_session_snapshot(&session, None, 0, None, true, None, None, None, None);
         Ok(())
     }
 
     pub fn cancel_session(&self, session_id: &str) -> AppResult<()> {
-        let controls = self.session_controls.read().expect("session controls read");
+        let controls = read_lock(self.session_controls.as_ref(), "session_controls");
         let control = controls
             .get(session_id)
             .ok_or_else(|| AppError::new("transfer_session_not_running", "会话未运行，无法取消"))?;
         control.canceled.store(true, Ordering::Relaxed);
 
         let mut session = ensure_session_exists(&self.db_pool, session_id)?;
-        session.status = "canceled".to_string();
+        session.status = TransferStatus::Canceled;
         session.finished_at = Some(now_millis());
         insert_session(&self.db_pool, &session)?;
         self.maybe_emit_session_snapshot(&session, None, 0, None, true, None, None, None, None);
@@ -458,17 +504,14 @@ impl TransferService {
             AppError::new("transfer_session_not_retryable", "该会话当前状态不支持重试")
         })?;
 
-        if session.direction != "send" {
+        if session.direction != TransferDirection::Send {
             return Err(AppError::new(
                 "transfer_session_retry_direction_invalid",
                 "当前仅支持重试发送会话",
             ));
         }
 
-        let pair_code = self
-            .session_pair_codes
-            .read()
-            .expect("pair code map read")
+        let pair_code = read_lock(self.session_pair_codes.as_ref(), "session_pair_codes")
             .get(session_id)
             .cloned()
             .ok_or_else(|| {
@@ -493,7 +536,7 @@ impl TransferService {
             peer_device_id: session.peer_device_id,
             pair_code,
             files: inputs,
-            direction: Some("send".to_string()),
+            direction: Some(TransferDirection::Send),
             session_id: Some(session.id),
         })
         .await
@@ -621,10 +664,7 @@ impl TransferService {
         let should_emit = if force {
             true
         } else {
-            let mut guard = self
-                .session_last_emit_ms
-                .write()
-                .expect("session emit map write");
+            let mut guard = write_lock(self.session_last_emit_ms.as_ref(), "session_last_emit_ms");
             let interval = i64::from(settings.event_emit_interval_ms.max(50));
             let last = guard.get(session.id.as_str()).copied().unwrap_or_default();
             if now - last >= interval {
@@ -675,7 +715,7 @@ impl TransferService {
                 listen_port: peer.listen_port,
                 last_seen_at: peer.last_seen_at,
                 paired_at: None,
-                trust_level: "online".to_string(),
+                trust_level: TransferPeerTrustLevel::Online,
                 failed_attempts: 0,
                 blocked_until: None,
                 pairing_required: peer.pairing_required,
@@ -686,33 +726,22 @@ impl TransferService {
 
     fn register_session_control(&self, session_id: &str) {
         let (paused_tx, _) = watch::channel(false);
-        self.session_controls
-            .write()
-            .expect("session controls write")
-            .insert(
-                session_id.to_string(),
-                RuntimeSessionControl {
-                    paused_tx,
-                    canceled: Arc::new(AtomicBool::new(false)),
-                },
-            );
+        write_lock(self.session_controls.as_ref(), "session_controls").insert(
+            session_id.to_string(),
+            RuntimeSessionControl {
+                paused_tx,
+                canceled: Arc::new(AtomicBool::new(false)),
+            },
+        );
     }
 
     fn unregister_session_control(&self, session_id: &str) {
-        self.session_controls
-            .write()
-            .expect("session controls write")
-            .remove(session_id);
-        self.session_last_emit_ms
-            .write()
-            .expect("session emit map write")
-            .remove(session_id);
+        write_lock(self.session_controls.as_ref(), "session_controls").remove(session_id);
+        write_lock(self.session_last_emit_ms.as_ref(), "session_last_emit_ms").remove(session_id);
     }
 
     fn read_session_control(&self, session_id: &str) -> Option<RuntimeSessionControl> {
-        self.session_controls
-            .read()
-            .expect("session controls read")
+        read_lock(self.session_controls.as_ref(), "session_controls")
             .get(session_id)
             .map(|value| RuntimeSessionControl {
                 paused_tx: value.paused_tx.clone(),
@@ -780,7 +809,7 @@ impl TransferService {
             return Ok(());
         }
 
-        let current = self.pair_code.read().expect("pair code read").clone();
+        let current = read_lock(self.pair_code.as_ref(), "pair_code").clone();
         let Some(entry) = current else {
             return Err(AppError::new(
                 "transfer_pair_code_missing",
@@ -835,7 +864,7 @@ impl TransferService {
         let mut session = self
             .blocking_ensure_session_exists(session_id.to_string())
             .await?;
-        session.status = "failed".to_string();
+        session.status = TransferStatus::Failed;
         session.error_code = Some(error.code.clone());
         session.error_message = Some(error.message.clone());
         session.finished_at = Some(now_millis());

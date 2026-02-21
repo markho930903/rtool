@@ -1,9 +1,18 @@
-export type PaletteCategory = "builtin" | "application" | "file" | "action" | "clipboard" | "tool" | "system";
+export type PaletteCategory =
+  | "builtin"
+  | "application"
+  | "directory"
+  | "file"
+  | "action"
+  | "clipboard"
+  | "tool"
+  | "system";
 
 export type LauncherAction =
   | { kind: "open_builtin_route"; route: string }
   | { kind: "open_builtin_tool"; toolId: string }
   | { kind: "open_builtin_window"; windowLabel: string }
+  | { kind: "open_directory"; path: string }
   | { kind: "open_file"; path: string }
   | { kind: "open_application"; path: string };
 

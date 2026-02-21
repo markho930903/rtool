@@ -132,7 +132,7 @@ impl TransferService {
         let mut session = self
             .blocking_ensure_session_exists(session_id.to_string())
             .await?;
-        session.status = "running".to_string();
+        session.status = TransferStatus::Running;
         session.started_at = Some(now_millis());
         self.blocking_upsert_session_progress(session.clone())
             .await?;
@@ -157,7 +157,7 @@ impl TransferService {
             &mut writer,
             &TransferFrame::Manifest {
                 session_id: session.id.clone(),
-                direction: session.direction.clone(),
+                direction: session.direction.as_str().to_string(),
                 save_dir: session.save_dir.clone(),
                 files: manifest_files,
             },
@@ -211,7 +211,7 @@ impl TransferService {
                 .cloned()
                 .unwrap_or_else(|| missing_chunks(bitmap.as_slice(), file.chunk_count));
             missing.sort_unstable();
-            file.status = "running".to_string();
+            file.status = TransferStatus::Running;
             file.transferred_bytes = completed_bytes(
                 bitmap.as_slice(),
                 file.chunk_count,
@@ -394,7 +394,7 @@ impl TransferService {
                                     runtime.file.chunk_size,
                                     runtime.file.size_bytes,
                                 );
-                                runtime.file.status = "running".to_string();
+                                runtime.file.status = TransferStatus::Running;
                                 if runtime.file.transferred_bytes > previous {
                                     session.transferred_bytes = session
                                         .transferred_bytes
@@ -417,7 +417,7 @@ impl TransferService {
                             }
 
                             if runtime.remaining_chunks == 0 && !runtime.file_done_sent {
-                                runtime.file.status = "success".to_string();
+                                runtime.file.status = TransferStatus::Success;
                                 runtime.file.transferred_bytes = runtime.file.size_bytes;
                                 session.files[file_idx] = runtime.file.clone();
                                 dirty_files.insert(
@@ -552,7 +552,7 @@ impl TransferService {
         )
         .await?;
 
-        session.status = "success".to_string();
+        session.status = TransferStatus::Success;
         session.transferred_bytes = session.total_bytes;
         session.avg_speed_bps = calculate_speed(session.transferred_bytes, start_at);
         session.finished_at = Some(now_millis());

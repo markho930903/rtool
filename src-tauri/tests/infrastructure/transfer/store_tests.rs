@@ -15,7 +15,8 @@ fn setup_temp_db(prefix: &str) -> (DbPool, std::path::PathBuf) {
 #[test]
 fn load_settings_should_include_tuning_defaults() {
     let (pool, path) = setup_temp_db("settings-defaults");
-    let settings = load_settings(&pool, "/tmp/downloads".to_string()).expect("load transfer settings");
+    let settings =
+        load_settings(&pool, "/tmp/downloads".to_string()).expect("load transfer settings");
     assert!(settings.pipeline_v2_enabled);
     assert!(settings.codec_v2_enabled);
     assert_eq!(settings.db_flush_interval_ms, 400);
@@ -30,10 +31,10 @@ fn upsert_files_batch_should_persist_multi_rows() {
     let (pool, path) = setup_temp_db("batch-upsert");
     let session = TransferSessionDto {
         id: "session-batch".to_string(),
-        direction: "send".to_string(),
+        direction: TransferDirection::Send,
         peer_device_id: "peer-1".to_string(),
         peer_name: "peer".to_string(),
-        status: "running".to_string(),
+        status: TransferStatus::Running,
         total_bytes: 10,
         transferred_bytes: 0,
         avg_speed_bps: 0,
@@ -58,7 +59,7 @@ fn upsert_files_batch_should_persist_multi_rows() {
         transferred_bytes: 4,
         chunk_size: 4,
         chunk_count: 2,
-        status: "running".to_string(),
+        status: TransferStatus::Running,
         blake3: None,
         mime_type: None,
         preview_kind: None,
@@ -75,7 +76,7 @@ fn upsert_files_batch_should_persist_multi_rows() {
         transferred_bytes: 8,
         chunk_size: 4,
         chunk_count: 2,
-        status: "success".to_string(),
+        status: TransferStatus::Success,
         blake3: None,
         mime_type: None,
         preview_kind: None,

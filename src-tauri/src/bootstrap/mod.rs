@@ -1,6 +1,7 @@
 mod invoke;
 mod setup;
 
+use crate::app::launcher_index_service::stop_background_indexer;
 use crate::constants::{
     MAIN_WINDOW_LABEL, SHORTCUT_CLIPBOARD_WINDOW, SHORTCUT_CLIPBOARD_WINDOW_COMPACT,
     SHORTCUT_LAUNCHER_FALLBACK, SHORTCUT_LAUNCHER_PRIMARY,
@@ -96,11 +97,23 @@ impl AppBootstrap {
                 }
             });
 
-        invoke::with_invoke_handler(builder)
-            .run(tauri::generate_context!())
+        let app = invoke::with_invoke_handler(builder)
+            .build(tauri::generate_context!())
             .unwrap_or_else(|error| {
-                log_error_fallback(&format!("error while running tauri application: {}", error));
-                panic!("error while running tauri application: {}", error);
+                log_error_fallback(&format!(
+                    "error while building tauri application: {}",
+                    error
+                ));
+                std::process::exit(1);
             });
+
+        app.run(|_, event| {
+            if matches!(
+                event,
+                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
+            ) {
+                stop_background_indexer();
+            }
+        });
     }
 }

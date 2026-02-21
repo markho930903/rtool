@@ -88,16 +88,21 @@ export const useLauncherStore = create<LauncherStore>((set, get) => ({
     if (!selected?.action) {
       return null;
     }
+    try {
+      const result = await invokeWithLog<PaletteActionResult>("launcher_execute", {
+        action: selected.action as LauncherAction,
+      });
 
-    const result = await invokeWithLog<PaletteActionResult>("launcher_execute", {
-      action: selected.action as LauncherAction,
-    });
+      set({
+        lastAction: result,
+        error: result.ok ? null : result.message,
+      });
 
-    set({
-      lastAction: result,
-      error: result.ok ? null : result.message,
-    });
-
-    return result;
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      set({ error: message });
+      return null;
+    }
   },
 }));

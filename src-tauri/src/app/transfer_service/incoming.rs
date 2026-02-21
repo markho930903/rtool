@@ -157,14 +157,10 @@ impl TransferService {
 
         let mut session = TransferSessionDto {
             id: session_id.clone(),
-            direction: if direction == "receive" {
-                "send".to_string()
-            } else {
-                "receive".to_string()
-            },
+            direction: TransferDirection::from_remote_manifest(direction.as_str()),
             peer_device_id: peer_device_id.clone(),
             peer_name: peer_name.clone(),
-            status: "running".to_string(),
+            status: TransferStatus::Running,
             total_bytes,
             transferred_bytes: 0,
             avg_speed_bps: 0,
@@ -225,7 +221,7 @@ impl TransferService {
                 ),
                 chunk_size: manifest_file.chunk_size,
                 chunk_count: manifest_file.chunk_count,
-                status: "running".to_string(),
+                status: TransferStatus::Running,
                 blake3: Some(manifest_file.blake3),
                 mime_type: manifest_file.mime_type,
                 preview_kind: None,
@@ -319,7 +315,7 @@ impl TransferService {
                             runtime.file.chunk_size,
                             runtime.file.size_bytes,
                         );
-                        runtime.file.status = "running".to_string();
+                        runtime.file.status = TransferStatus::Running;
                         if runtime.file.transferred_bytes > previous {
                             session.transferred_bytes = session
                                 .transferred_bytes
@@ -405,7 +401,7 @@ impl TransferService {
                             runtime.file.chunk_size,
                             runtime.file.size_bytes,
                         );
-                        runtime.file.status = "running".to_string();
+                        runtime.file.status = TransferStatus::Running;
                         if runtime.file.transferred_bytes > previous {
                             session.transferred_bytes = session
                                 .transferred_bytes
@@ -471,7 +467,7 @@ impl TransferService {
                     })
                     .await?;
                     if source_hash != blake3 {
-                        runtime.file.status = "failed".to_string();
+                        runtime.file.status = TransferStatus::Failed;
                         self.blocking_insert_or_update_file(
                             runtime.file.clone(),
                             empty_bitmap(runtime.file.chunk_count),
@@ -509,7 +505,7 @@ impl TransferService {
                     runtime.file.target_path = Some(final_path.to_string_lossy().to_string());
                     runtime.file.preview_data = runtime.file.target_path.clone();
                     runtime.file.transferred_bytes = runtime.file.size_bytes;
-                    runtime.file.status = "success".to_string();
+                    runtime.file.status = TransferStatus::Success;
                     session.files[file_idx] = runtime.file.clone();
                     dirty_files.insert(
                         runtime.file.id.clone(),
@@ -570,11 +566,11 @@ impl TransferService {
                         .map(|value| value.transferred_bytes)
                         .sum();
                     if ok {
-                        session.status = "success".to_string();
+                        session.status = TransferStatus::Success;
                         session.error_code = None;
                         session.error_message = None;
                     } else {
-                        session.status = "failed".to_string();
+                        session.status = TransferStatus::Failed;
                         session.error_code = Some("remote_failed".to_string());
                         session.error_message = error;
                     }
@@ -600,7 +596,7 @@ impl TransferService {
                 }
                 TransferFrame::Ping { .. } => {}
                 TransferFrame::Error { code, message } => {
-                    session.status = "failed".to_string();
+                    session.status = TransferStatus::Failed;
                     session.error_code = Some(code);
                     session.error_message = Some(message);
                     session.finished_at = Some(now_millis());

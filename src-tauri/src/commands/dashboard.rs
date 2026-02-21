@@ -1,4 +1,4 @@
-use super::{command_end_ok, command_end_status, command_start, normalize_request_id};
+use super::{command_end_error, command_end_ok, command_start, normalize_request_id};
 use crate::app::state::AppState;
 use crate::core::InvokeError;
 use crate::core::models::{AppRuntimeInfoDto, DashboardSnapshotDto, SystemInfoDto};
@@ -97,46 +97,9 @@ pub async fn dashboard_snapshot(
     })
     .await;
 
-    match result {
-        Ok(snapshot) => {
-            command_end_ok("dashboard_snapshot", &request_id, started_at);
-            Ok(snapshot)
-        }
-        Err(error) => {
-            command_end_status(
-                "dashboard_snapshot",
-                &request_id,
-                started_at,
-                false,
-                Some(error.code.as_str()),
-                Some(error.message.as_str()),
-            );
-            Ok(DashboardSnapshotDto {
-                sampled_at: 0,
-                app: AppRuntimeInfoDto {
-                    app_name: env!("CARGO_PKG_NAME").to_string(),
-                    app_version: env!("CARGO_PKG_VERSION").to_string(),
-                    build_mode: if cfg!(debug_assertions) {
-                        "debug".to_string()
-                    } else {
-                        "release".to_string()
-                    },
-                    uptime_seconds,
-                    process_memory_bytes: None,
-                    database_size_bytes: None,
-                },
-                system: SystemInfoDto {
-                    os_name: None,
-                    os_version: None,
-                    kernel_version: None,
-                    arch: None,
-                    host_name: None,
-                    cpu_brand: None,
-                    cpu_cores: None,
-                    total_memory_bytes: None,
-                    used_memory_bytes: None,
-                },
-            })
-        }
+    match &result {
+        Ok(_) => command_end_ok("dashboard_snapshot", &request_id, started_at),
+        Err(error) => command_end_error("dashboard_snapshot", &request_id, started_at, error),
     }
+    result.map_err(Into::into)
 }

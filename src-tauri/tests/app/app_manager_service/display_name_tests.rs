@@ -7,11 +7,8 @@ fn resolve_display_name_prefers_readable_stem_over_short_alias() {
     push_display_name_candidate(&mut candidates, Some("Code".to_string()), 90);
     push_display_name_candidate(&mut candidates, Some("Visual Studio Code".to_string()), 85);
 
-    let name = resolve_application_display_name(
-        path,
-        "/Applications/Visual Studio Code.app",
-        candidates,
-    );
+    let name =
+        resolve_application_display_name(path, "/Applications/Visual Studio Code.app", candidates);
     assert_eq!(name, "Visual Studio Code");
 }
 

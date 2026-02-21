@@ -28,8 +28,7 @@ pub(super) fn build_self_item(app: &AppHandle) -> Option<ManagedAppDto> {
     let id = stable_app_id("rtool", app_path.as_str());
     let (startup_enabled, startup_scope, startup_editable) =
         platform_detect_startup_state(id.as_str(), executable.as_path());
-    let readonly_reason_code =
-        startup_readonly_reason_code(startup_scope.as_str(), startup_editable);
+    let readonly_reason_code = startup_readonly_reason_code(startup_scope, startup_editable);
     let icon = resolve_builtin_icon("i-noto:rocket");
     let bundle_or_app_id = Some(app.package_info().name.to_string());
     let aliases = collect_app_path_aliases_from_parts(
@@ -37,7 +36,11 @@ pub(super) fn build_self_item(app: &AppHandle) -> Option<ManagedAppDto> {
         app_path.as_str(),
         bundle_or_app_id.as_deref(),
     );
-    let identity = build_app_identity(normalize_path_key(app_path.as_str()), aliases, "path");
+    let identity = build_app_identity(
+        normalize_path_key(app_path.as_str()),
+        aliases,
+        AppManagerIdentitySource::Path,
+    );
 
     let mut item = ManagedAppDto {
         id,
@@ -46,9 +49,9 @@ pub(super) fn build_self_item(app: &AppHandle) -> Option<ManagedAppDto> {
         bundle_or_app_id,
         version: Some(app.package_info().version.to_string()),
         publisher: None,
-        platform: platform_name().to_string(),
-        source: "rtool".to_string(),
-        icon_kind: icon.kind,
+        platform: AppManagerPlatform::current(),
+        source: AppManagerSource::Rtool,
+        icon_kind: AppManagerIconKind::from_raw(icon.kind.as_str()),
         icon_value: icon.value,
         estimated_size_bytes: try_get_path_size_bytes(size_path.as_path()),
         startup_enabled,
@@ -63,30 +66,11 @@ pub(super) fn build_self_item(app: &AppHandle) -> Option<ManagedAppDto> {
             true,
         ),
         identity,
-        risk_level: "high".to_string(),
+        risk_level: AppManagerRiskLevel::High,
         fingerprint: String::new(),
     };
     item.fingerprint = fingerprint_for_app(&item);
     Some(item)
-}
-
-pub(super) fn platform_name() -> &'static str {
-    #[cfg(target_os = "macos")]
-    {
-        "macos"
-    }
-    #[cfg(target_os = "windows")]
-    {
-        "windows"
-    }
-    #[cfg(target_os = "linux")]
-    {
-        "linux"
-    }
-    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
-    {
-        "unknown"
-    }
 }
 
 pub(super) fn collect_platform_apps(app: &AppHandle) -> Vec<ManagedAppDto> {
@@ -198,14 +182,17 @@ pub(super) fn build_macos_app_item(app: &AppHandle, app_path: &Path) -> Option<M
     let icon = resolve_application_icon(app, app_path);
     let (startup_enabled, startup_scope, startup_editable) =
         platform_detect_startup_state(id.as_str(), app_path);
-    let readonly_reason_code =
-        startup_readonly_reason_code(startup_scope.as_str(), startup_editable);
+    let readonly_reason_code = startup_readonly_reason_code(startup_scope, startup_editable);
     let aliases =
         collect_app_path_aliases_from_parts(name.as_str(), path_str.as_str(), bundle.as_deref());
     let identity = if let Some(bundle_id) = bundle.as_deref() {
-        build_app_identity(bundle_id, aliases, "bundle_id")
+        build_app_identity(bundle_id, aliases, AppManagerIdentitySource::BundleId)
     } else {
-        build_app_identity(normalize_path_key(path_str.as_str()), aliases, "path")
+        build_app_identity(
+            normalize_path_key(path_str.as_str()),
+            aliases,
+            AppManagerIdentitySource::Path,
+        )
     };
     let mut item = ManagedAppDto {
         id,
@@ -214,9 +201,9 @@ pub(super) fn build_macos_app_item(app: &AppHandle, app_path: &Path) -> Option<M
         bundle_or_app_id: bundle,
         version,
         publisher,
-        platform: "macos".to_string(),
-        source: "application".to_string(),
-        icon_kind: icon.kind,
+        platform: AppManagerPlatform::Macos,
+        source: AppManagerSource::Application,
+        icon_kind: AppManagerIconKind::from_raw(icon.kind.as_str()),
         icon_value: icon.value,
         estimated_size_bytes: try_get_path_size_bytes(size_path.as_path()),
         startup_enabled,
@@ -224,10 +211,10 @@ pub(super) fn build_macos_app_item(app: &AppHandle, app_path: &Path) -> Option<M
         startup_editable,
         readonly_reason_code,
         uninstall_supported: true,
-        uninstall_kind: Some("finder_trash".to_string()),
+        uninstall_kind: Some(AppManagerUninstallKind::FinderTrash),
         capabilities: build_app_capabilities(true, true, true),
         identity,
-        risk_level: "medium".to_string(),
+        risk_level: AppManagerRiskLevel::Medium,
         fingerprint: String::new(),
     };
     item.fingerprint = fingerprint_for_app(&item);
@@ -471,8 +458,7 @@ pub(super) fn windows_build_item_from_uninstall_entry(
     let icon = resolve_application_icon(app, path);
     let (startup_enabled, startup_scope, startup_editable) =
         platform_detect_startup_state(id.as_str(), path);
-    let readonly_reason_code =
-        startup_readonly_reason_code(startup_scope.as_str(), startup_editable);
+    let readonly_reason_code = startup_readonly_reason_code(startup_scope, startup_editable);
     let aliases = collect_app_path_aliases_from_parts(name.as_str(), path_str.as_str(), None);
 
     let mut item = ManagedAppDto {
@@ -482,9 +468,9 @@ pub(super) fn windows_build_item_from_uninstall_entry(
         bundle_or_app_id: None,
         version: entry.display_version.clone(),
         publisher: entry.publisher.clone(),
-        platform: "windows".to_string(),
-        source: "application".to_string(),
-        icon_kind: icon.kind,
+        platform: AppManagerPlatform::Windows,
+        source: AppManagerSource::Application,
+        icon_kind: AppManagerIconKind::from_raw(icon.kind.as_str()),
         icon_value: icon.value,
         estimated_size_bytes: try_get_path_size_bytes(size_path.as_path()),
         startup_enabled,
@@ -492,10 +478,14 @@ pub(super) fn windows_build_item_from_uninstall_entry(
         startup_editable,
         readonly_reason_code,
         uninstall_supported: true,
-        uninstall_kind: Some("registry_command".to_string()),
+        uninstall_kind: Some(AppManagerUninstallKind::RegistryCommand),
         capabilities: build_app_capabilities(true, true, true),
-        identity: build_app_identity(entry.registry_key.as_str(), aliases, "registry"),
-        risk_level: "medium".to_string(),
+        identity: build_app_identity(
+            entry.registry_key.as_str(),
+            aliases,
+            AppManagerIdentitySource::Registry,
+        ),
+        risk_level: AppManagerRiskLevel::Medium,
         fingerprint: String::new(),
     };
     item.fingerprint = fingerprint_for_app(&item);

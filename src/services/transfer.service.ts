@@ -1,5 +1,6 @@
 import { invokeWithLog } from "@/services/invoke";
 import type {
+  TransferDirection,
   TransferFileInput,
   TransferHistoryFilter,
   TransferHistoryPage,
@@ -24,7 +25,7 @@ export interface TransferSendFilesInput {
   peerDeviceId: string;
   pairCode: string;
   files: TransferFileInput[];
-  direction?: string;
+  direction?: TransferDirection;
   sessionId?: string;
 }
 

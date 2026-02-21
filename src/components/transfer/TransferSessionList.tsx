@@ -1,7 +1,11 @@
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui";
-import type { TransferSession } from "@/components/transfer/types";
+import {
+  isTransferRetryableStatus,
+  isTransferRunningLikeStatus,
+  type TransferSession,
+} from "@/components/transfer/types";
 
 interface TransferSessionListProps {
   sessions: TransferSession[];
@@ -46,10 +50,9 @@ export default function TransferSessionList(props: TransferSessionListProps) {
 
         {props.sessions.map((session) => {
           const percent = progressPercent(session);
-          const isRunning = session.status === "running" || session.status === "queued";
+          const isRunning = isTransferRunningLikeStatus(session.status);
           const isPaused = session.status === "paused";
-          const canRetry =
-            session.status === "failed" || session.status === "interrupted" || session.status === "canceled";
+          const canRetry = isTransferRetryableStatus(session.status);
 
           return (
             <article key={session.id} className="rounded-3 border border-border-muted p-3">

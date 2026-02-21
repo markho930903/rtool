@@ -6,6 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn should_map_common_file_extensions() {
     assert_eq!(file_extension_icon("pdf"), "i-noto:page-facing-up");
     assert_eq!(file_extension_icon("rs"), "i-noto:desktop-computer");
+    assert_eq!(file_extension_icon("plist"), "i-noto:scroll");
     assert_eq!(file_extension_icon("zip"), "i-noto:file-folder");
     assert_eq!(file_extension_icon("unknown"), FALLBACK_FILE_ICON);
 }

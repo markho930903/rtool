@@ -2,8 +2,76 @@ export type AppReadonlyReasonCode =
   | "permission_denied"
   | "managed_by_policy"
   | "feature_disabled"
-  | "unknown"
-  | string;
+  | "unknown";
+
+export type AppManagerScope = "user" | "system" | "unknown";
+export type AppManagerPathType = "file" | "directory" | "unknown";
+export type AppManagerStartupScope = "user" | "system" | "none" | "unknown";
+export type AppManagerIdentitySource = "bundle_id" | "registry" | "path" | "unknown";
+export type AppManagerSource = "rtool" | "application" | "unknown";
+export type AppManagerCategory = "all" | "rtool" | "application" | "startup" | "unknown";
+export type AppManagerQueryCategory = Exclude<AppManagerCategory, "unknown">;
+export type AppManagerPlatform = "macos" | "windows" | "linux" | "unknown";
+export type AppManagerIconKind = "raster" | "iconify" | "unknown";
+export type AppManagerUninstallKind = "finder_trash" | "registry_command" | "unknown";
+export type AppManagerResidueKind =
+  | "install"
+  | "app_support"
+  | "cache"
+  | "preferences"
+  | "logs"
+  | "startup"
+  | "app_data"
+  | "registry_key"
+  | "registry_value"
+  | "main_app"
+  | "unknown";
+export type AppManagerResidueConfidence = "exact" | "high" | "medium" | "unknown";
+export type AppManagerRiskLevel = "low" | "medium" | "high" | "unknown";
+export type AppManagerResidueMatchReason =
+  | "related_root"
+  | "bundle_id"
+  | "startup_label"
+  | "startup_shortcut"
+  | "uninstall_registry"
+  | "startup_registry"
+  | "run_registry"
+  | "unknown";
+export type AppManagerScanWarningCode =
+  | "app_manager_size_metadata_read_failed"
+  | "app_manager_size_estimate_truncated"
+  | "app_manager_size_read_dir_failed"
+  | "app_manager_size_read_dir_entry_failed"
+  | "app_manager_size_read_file_type_failed"
+  | "app_manager_size_read_metadata_failed"
+  | "unknown";
+export type AppManagerScanWarningDetailCode =
+  | "permission_denied"
+  | "not_found"
+  | "interrupted"
+  | "invalid_data"
+  | "timed_out"
+  | "would_block"
+  | "limit_reached"
+  | "io_other"
+  | "unknown";
+export type AppManagerActionCode =
+  | "app_manager_refreshed"
+  | "app_manager_startup_updated"
+  | "app_manager_uninstall_started"
+  | "app_manager_uninstall_help_opened"
+  | "unknown";
+export type AppManagerCleanupReasonCode =
+  | "ok"
+  | "self_uninstall_forbidden"
+  | "managed_by_policy"
+  | "not_found"
+  | "app_manager_cleanup_delete_failed"
+  | "app_manager_cleanup_not_found"
+  | "app_manager_cleanup_path_invalid"
+  | "app_manager_cleanup_not_supported"
+  | "app_manager_uninstall_failed"
+  | "unknown";
 
 export interface AppManagerCapabilities {
   startup: boolean;
@@ -14,7 +82,7 @@ export interface AppManagerCapabilities {
 export interface AppManagerIdentity {
   primaryId: string;
   aliases: string[];
-  identitySource: "bundle_id" | "registry" | "path" | string;
+  identitySource: AppManagerIdentitySource;
 }
 
 export interface ManagedApp {
@@ -24,26 +92,26 @@ export interface ManagedApp {
   bundleOrAppId?: string;
   version?: string;
   publisher?: string;
-  platform: string;
-  source: string;
-  iconKind: "raster" | "iconify" | string;
+  platform: AppManagerPlatform;
+  source: AppManagerSource;
+  iconKind: AppManagerIconKind;
   iconValue: string;
   estimatedSizeBytes?: number | null;
   startupEnabled: boolean;
-  startupScope: "user" | "system" | "none" | "unknown" | string;
+  startupScope: AppManagerStartupScope;
   startupEditable: boolean;
   readonlyReasonCode?: AppReadonlyReasonCode;
   uninstallSupported: boolean;
-  uninstallKind?: string;
+  uninstallKind?: AppManagerUninstallKind;
   capabilities: AppManagerCapabilities;
   identity: AppManagerIdentity;
-  riskLevel: "low" | "medium" | "high" | string;
+  riskLevel: AppManagerRiskLevel;
   fingerprint: string;
 }
 
 export interface AppManagerQuery {
   keyword?: string;
-  category?: string;
+  category?: AppManagerQueryCategory;
   limit?: number;
   cursor?: string;
 }
@@ -56,7 +124,7 @@ export interface AppManagerPage {
 
 export interface AppManagerActionResult {
   ok: boolean;
-  code: string;
+  code: AppManagerActionCode;
   message: string;
   detail?: string;
 }
@@ -75,9 +143,9 @@ export interface AppRelatedRoot {
   id: string;
   label: string;
   path: string;
-  pathType?: "file" | "directory" | "unknown" | string;
-  scope: "user" | "system" | string;
-  kind: string;
+  pathType?: AppManagerPathType;
+  scope: AppManagerScope;
+  kind: AppManagerResidueKind;
   exists: boolean;
   readonly: boolean;
   readonlyReasonCode?: AppReadonlyReasonCode;
@@ -99,14 +167,14 @@ export interface ManagedAppDetail {
 export interface AppManagerResidueItem {
   itemId: string;
   path: string;
-  pathType?: "file" | "directory" | "unknown" | string;
-  kind: string;
-  scope: "user" | "system" | string;
+  pathType?: AppManagerPathType;
+  kind: AppManagerResidueKind;
+  scope: AppManagerScope;
   sizeBytes: number;
-  matchReason: string;
-  confidence: "exact" | "high" | "medium" | string;
+  matchReason: AppManagerResidueMatchReason;
+  confidence: AppManagerResidueConfidence;
   evidence: string[];
-  riskLevel: "low" | "medium" | "high" | string;
+  riskLevel: AppManagerRiskLevel;
   recommended: boolean;
   readonly: boolean;
   readonlyReasonCode?: AppReadonlyReasonCode;
@@ -115,16 +183,16 @@ export interface AppManagerResidueItem {
 export interface AppManagerResidueGroup {
   groupId: string;
   label: string;
-  scope: "user" | "system" | string;
-  kind: string;
+  scope: AppManagerScope;
+  kind: AppManagerResidueKind;
   totalSizeBytes: number;
   items: AppManagerResidueItem[];
 }
 
 export interface AppManagerScanWarning {
-  code: string;
-  message: string;
-  detail?: string;
+  code: AppManagerScanWarningCode;
+  path?: string;
+  detailCode?: AppManagerScanWarningDetailCode;
 }
 
 export interface AppManagerResidueScanResult {
@@ -137,25 +205,28 @@ export interface AppManagerResidueScanResult {
 export interface AppManagerCleanupInput {
   appId: string;
   selectedItemIds: string[];
-  deleteMode: "trash" | "permanent";
+  deleteMode: AppManagerCleanupDeleteMode;
   includeMainApp: boolean;
   skipOnError?: boolean;
   confirmedFingerprint?: string;
 }
 
+export type AppManagerCleanupDeleteMode = "trash" | "permanent";
+export type AppManagerCleanupDeleteModeResult = AppManagerCleanupDeleteMode | "unknown";
+
 export interface AppManagerCleanupItemResult {
   itemId: string;
   path: string;
-  kind: string;
-  status: "deleted" | "skipped" | "failed" | string;
-  reasonCode: string;
+  kind: AppManagerResidueKind;
+  status: "deleted" | "skipped" | "failed" | "unknown";
+  reasonCode: AppManagerCleanupReasonCode;
   message: string;
   sizeBytes?: number;
 }
 
 export interface AppManagerCleanupResult {
   appId: string;
-  deleteMode: "trash" | "permanent" | string;
+  deleteMode: AppManagerCleanupDeleteModeResult;
   releasedSizeBytes: number;
   deleted: AppManagerCleanupItemResult[];
   skipped: AppManagerCleanupItemResult[];

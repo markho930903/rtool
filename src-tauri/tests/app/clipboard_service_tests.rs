@@ -19,7 +19,10 @@ fn should_load_default_clipboard_settings() {
     let settings = service.get_settings();
     assert_eq!(settings.max_items, CLIPBOARD_MAX_ITEMS_DEFAULT);
     assert!(settings.size_cleanup_enabled);
-    assert_eq!(settings.max_total_size_mb, CLIPBOARD_MAX_TOTAL_SIZE_MB_DEFAULT);
+    assert_eq!(
+        settings.max_total_size_mb,
+        CLIPBOARD_MAX_TOTAL_SIZE_MB_DEFAULT
+    );
 
     let _ = std::fs::remove_file(db_path);
 }

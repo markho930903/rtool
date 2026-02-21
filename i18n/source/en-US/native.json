@@ -10,6 +10,7 @@
   "window.launcher.title": "Launcher",
   "launcher.source.builtin": "Builtin",
   "launcher.source.application": "Application",
+  "launcher.source.directory": "Directory",
   "launcher.source.file": "File",
   "launcher.builtin.dashboard.title": "Open Dashboard",
   "launcher.builtin.dashboard.subtitle": "Navigate to home page",

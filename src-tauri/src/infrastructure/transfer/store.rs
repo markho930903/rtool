@@ -1,8 +1,9 @@
 use rusqlite::{OptionalExtension, params};
 
 use crate::core::models::{
-    TransferFileDto, TransferHistoryFilterDto, TransferHistoryPageDto, TransferPeerDto,
-    TransferSessionDto, TransferSettingsDto,
+    TransferDirection, TransferFileDto, TransferHistoryFilterDto, TransferHistoryPageDto,
+    TransferPeerDto, TransferPeerTrustLevel, TransferSessionDto, TransferSettingsDto,
+    TransferStatus,
 };
 use crate::core::{AppError, AppResult};
 use crate::infrastructure::db::{DbPool, get_app_setting, set_app_setting};
@@ -46,6 +47,36 @@ fn parse_u32(value: Option<String>, default: u32) -> u32 {
     value
         .and_then(|raw| raw.parse::<u32>().ok())
         .unwrap_or(default)
+}
+
+fn parse_transfer_status(raw: String) -> TransferStatus {
+    let status = TransferStatus::from_db(raw.as_str());
+    if status == TransferStatus::Unknown {
+        tracing::warn!(event = "transfer_status_unknown", status = raw.as_str());
+    }
+    status
+}
+
+fn parse_transfer_direction(raw: String) -> TransferDirection {
+    let direction = TransferDirection::from_db(raw.as_str());
+    if direction == TransferDirection::Unknown {
+        tracing::warn!(
+            event = "transfer_direction_unknown",
+            direction = raw.as_str()
+        );
+    }
+    direction
+}
+
+fn parse_transfer_trust_level(raw: String) -> TransferPeerTrustLevel {
+    let trust_level = TransferPeerTrustLevel::from_db(raw.as_str());
+    if trust_level == TransferPeerTrustLevel::Other {
+        tracing::warn!(
+            event = "transfer_peer_trust_level_unknown",
+            trust_level = raw.as_str()
+        );
+    }
+    trust_level
 }
 
 pub fn load_settings(
@@ -209,7 +240,7 @@ pub fn upsert_peer(pool: &DbPool, peer: &TransferPeerDto) -> AppResult<()> {
             peer.display_name,
             peer.last_seen_at,
             peer.paired_at,
-            peer.trust_level,
+            peer.trust_level.as_str(),
             peer.failed_attempts,
             peer.blocked_until,
         ],
@@ -224,9 +255,13 @@ pub fn mark_peer_pair_success(pool: &DbPool, device_id: &str, paired_at: i64) ->
          SET paired_at = ?2,
              failed_attempts = 0,
              blocked_until = NULL,
-             trust_level = 'trusted'
+             trust_level = ?3
          WHERE device_id = ?1",
-        params![device_id, paired_at],
+        params![
+            device_id,
+            paired_at,
+            TransferPeerTrustLevel::Trusted.as_str()
+        ],
     )?;
     Ok(())
 }
@@ -239,11 +274,11 @@ pub fn mark_peer_pair_failure(
     let conn = pool.get()?;
     conn.execute(
         "INSERT INTO transfer_peers (device_id, display_name, last_seen_at, paired_at, trust_level, failed_attempts, blocked_until)
-         VALUES (?1, ?1, 0, NULL, 'unknown', 1, ?2)
+         VALUES (?1, ?1, 0, NULL, ?3, 1, ?2)
          ON CONFLICT(device_id) DO UPDATE SET
            failed_attempts = transfer_peers.failed_attempts + 1,
            blocked_until = ?2",
-        params![device_id, blocked_until],
+        params![device_id, blocked_until, TransferPeerTrustLevel::Unknown.as_str()],
     )?;
     Ok(())
 }
@@ -264,7 +299,7 @@ pub fn list_stored_peers(pool: &DbPool) -> AppResult<Vec<TransferPeerDto>> {
             listen_port: 0,
             last_seen_at: row.get(2)?,
             paired_at: row.get(3)?,
-            trust_level: row.get(4)?,
+            trust_level: parse_transfer_trust_level(row.get(4)?),
             failed_attempts: row.get::<_, u32>(5)?,
             blocked_until: row.get(6)?,
             pairing_required: true,
@@ -302,10 +337,10 @@ pub fn insert_session(pool: &DbPool, session: &TransferSessionDto) -> AppResult<
           cleanup_after_at = excluded.cleanup_after_at",
         params![
             session.id,
-            session.direction,
+            session.direction.as_str(),
             session.peer_device_id,
             session.peer_name,
-            session.status,
+            session.status.as_str(),
             to_db_i64(session.total_bytes),
             to_db_i64(session.transferred_bytes),
             to_db_i64(session.avg_speed_bps),
@@ -357,7 +392,7 @@ pub fn insert_or_update_file(
             file.mime_type,
             file.preview_kind,
             file.preview_data,
-            file.status,
+            file.status.as_str(),
             if file.is_folder_archive { 1 } else { 0 },
         ],
     )?;
@@ -406,7 +441,7 @@ pub fn upsert_files_batch(pool: &DbPool, items: &[TransferFilePersistItem]) -> A
                 file.mime_type,
                 file.preview_kind,
                 file.preview_data,
-                file.status,
+                file.status.as_str(),
                 if file.is_folder_archive { 1 } else { 0 },
             ])?;
         }
@@ -440,10 +475,10 @@ pub fn upsert_session_progress(pool: &DbPool, session: &TransferSessionDto) -> A
           cleanup_after_at = excluded.cleanup_after_at",
         params![
             session.id,
-            session.direction,
+            session.direction.as_str(),
             session.peer_device_id,
             session.peer_name,
-            session.status,
+            session.status.as_str(),
             to_db_i64(session.total_bytes),
             to_db_i64(session.transferred_bytes),
             to_db_i64(session.avg_speed_bps),
@@ -489,10 +524,10 @@ pub fn get_session(pool: &DbPool, session_id: &str) -> AppResult<Option<Transfer
             |row| {
                 Ok(TransferSessionDto {
                     id: row.get(0)?,
-                    direction: row.get(1)?,
+                    direction: parse_transfer_direction(row.get(1)?),
                     peer_device_id: row.get(2)?,
                     peer_name: row.get(3)?,
-                    status: row.get(4)?,
+                    status: parse_transfer_status(row.get(4)?),
                     total_bytes: from_db_i64(row.get(5)?),
                     transferred_bytes: from_db_i64(row.get(6)?),
                     avg_speed_bps: from_db_i64(row.get(7)?),
@@ -538,7 +573,7 @@ pub fn list_session_files(pool: &DbPool, session_id: &str) -> AppResult<Vec<Tran
             transferred_bytes: from_db_i64(row.get(6)?),
             chunk_size: row.get(7)?,
             chunk_count: row.get(8)?,
-            status: row.get(9)?,
+            status: parse_transfer_status(row.get(9)?),
             blake3: row.get(10)?,
             mime_type: row.get(11)?,
             preview_kind: row.get(12)?,
@@ -561,7 +596,10 @@ pub fn list_history(
     let conn = pool.get()?;
     let limit = filter.limit.unwrap_or(30).clamp(1, HISTORY_LIMIT_MAX) as i64;
     let cursor = filter.cursor.clone().unwrap_or_default();
-    let status = filter.status.clone().unwrap_or_default();
+    let status = filter
+        .status
+        .map(|value| value.as_str().to_string())
+        .unwrap_or_default();
     let peer = filter.peer_device_id.clone().unwrap_or_default();
 
     let mut statement = conn.prepare(
@@ -578,10 +616,10 @@ pub fn list_history(
     let rows = statement.query_map(params![cursor, status, peer, limit], |row| {
         Ok(TransferSessionDto {
             id: row.get(0)?,
-            direction: row.get(1)?,
+            direction: parse_transfer_direction(row.get(1)?),
             peer_device_id: row.get(2)?,
             peer_name: row.get(3)?,
-            status: row.get(4)?,
+            status: parse_transfer_status(row.get(4)?),
             total_bytes: from_db_i64(row.get(5)?),
             transferred_bytes: from_db_i64(row.get(6)?),
             avg_speed_bps: from_db_i64(row.get(7)?),
@@ -653,7 +691,7 @@ pub fn list_failed_sessions(
     let Some(value) = session else {
         return Ok(None);
     };
-    if value.status != "failed" && value.status != "interrupted" && value.status != "canceled" {
+    if !value.status.is_retryable() {
         return Ok(None);
     }
     Ok(Some(value))
@@ -679,7 +717,7 @@ pub fn merge_online_peers(
                 listen_port: peer.listen_port,
                 last_seen_at: peer.last_seen_at,
                 paired_at: None,
-                trust_level: "unknown".to_string(),
+                trust_level: TransferPeerTrustLevel::Unknown,
                 failed_attempts: 0,
                 blocked_until: None,
                 pairing_required: peer.pairing_required,

@@ -24,6 +24,10 @@ function categoryKey(category: string): string {
     return "category.application";
   }
 
+  if (category === "directory") {
+    return "category.directory";
+  }
+
   if (category === "file") {
     return "category.file";
   }
@@ -52,6 +56,10 @@ function actionKey(kind: string | undefined): string {
     return "action.openFile";
   }
 
+  if (kind === "open_directory") {
+    return "action.openDirectory";
+  }
+
   if (kind === "open_application") {
     return "action.openApplication";
   }
@@ -62,6 +70,10 @@ function actionKey(kind: string | undefined): string {
 function inferItemKind(item: PaletteItem): ItemKind {
   const actionKind = item.action?.kind;
   if (actionKind === "open_file") {
+    return "file";
+  }
+
+  if (actionKind === "open_directory") {
     return "file";
   }
 
@@ -78,6 +90,10 @@ function inferItemKind(item: PaletteItem): ItemKind {
   }
 
   if (item.category === "file") {
+    return "file";
+  }
+
+  if (item.category === "directory") {
     return "file";
   }
 

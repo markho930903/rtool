@@ -1,12 +1,18 @@
 use crate::app::icon_service::{resolve_application_icon, resolve_builtin_icon};
 use crate::core::models::{
-    AppManagerActionResultDto, AppManagerCapabilitiesDto, AppManagerCleanupInputDto,
-    AppManagerCleanupItemResultDto, AppManagerCleanupResultDto, AppManagerDetailQueryDto,
-    AppManagerExportScanInputDto, AppManagerExportScanResultDto, AppManagerIdentityDto,
-    AppManagerPageDto, AppManagerQueryDto, AppManagerResidueGroupDto, AppManagerResidueItemDto,
-    AppManagerResidueScanInputDto, AppManagerResidueScanResultDto, AppManagerScanWarningDto,
-    AppManagerStartupUpdateInputDto, AppManagerUninstallInputDto, AppRelatedRootDto,
-    AppSizeSummaryDto, ManagedAppDetailDto, ManagedAppDto,
+    AppManagerActionCode, AppManagerActionResultDto, AppManagerCapabilitiesDto,
+    AppManagerCleanupDeleteMode, AppManagerCleanupInputDto, AppManagerCleanupItemResultDto,
+    AppManagerCleanupReasonCode, AppManagerCleanupResultDto, AppManagerCleanupStatus,
+    AppManagerDetailQueryDto, AppManagerExportScanInputDto, AppManagerExportScanResultDto,
+    AppManagerIconKind, AppManagerIdentityDto, AppManagerIdentitySource, AppManagerPageDto,
+    AppManagerPathType, AppManagerPlatform, AppManagerQueryDto, AppManagerResidueConfidence,
+    AppManagerResidueGroupDto, AppManagerResidueItemDto, AppManagerResidueKind,
+    AppManagerResidueMatchReason, AppManagerResidueScanInputDto, AppManagerResidueScanResultDto,
+    AppManagerRiskLevel, AppManagerScanWarningCode, AppManagerScanWarningDetailCode,
+    AppManagerScanWarningDto, AppManagerScope, AppManagerSource, AppManagerStartupScope,
+    AppManagerStartupUpdateInputDto, AppManagerUninstallInputDto, AppManagerUninstallKind,
+    AppReadonlyReasonCode, AppRelatedRootDto, AppSizeSummaryDto, ManagedAppDetailDto,
+    ManagedAppDto,
 };
 use crate::core::{AppError, AppResult, ResultExt};
 use anyhow::Context;
@@ -52,6 +58,80 @@ const SIZE_ESTIMATE_MAX_DEPTH: usize = 3;
 const SIZE_ESTIMATE_MAX_DIRS: usize = 2_000;
 const SIZE_WARNING_LIMIT: usize = 24;
 
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum AppManagerErrorCode {
+    NotFound,
+    StartupReadOnly,
+    ExportDirFailed,
+    ExportSerializeFailed,
+    ExportWriteFailed,
+    FingerprintMismatch,
+    UninstallUnsupported,
+    UninstallSelfForbidden,
+    UninstallNotSupported,
+    OpenHelpInvalid,
+    OpenHelpFailed,
+    OpenHelpNotSupported,
+    UninstallInvalidPath,
+    UninstallNotFound,
+    UninstallFailed,
+    StartupNotSupported,
+    StartupPathMissing,
+    StartupPathInvalid,
+    StartupDirCreateFailed,
+    StartupWriteFailed,
+    StartupDeleteFailed,
+    StartupUpdateFailed,
+    CleanupDeleteFailed,
+    CleanupModeInvalid,
+    CleanupNotFound,
+    CleanupPathInvalid,
+    CleanupNotSupported,
+    FingerprintMissing,
+    CleanupFailed,
+}
+
+impl AppManagerErrorCode {
+    pub(super) fn as_str(self) -> &'static str {
+        match self {
+            Self::NotFound => "app_manager_not_found",
+            Self::StartupReadOnly => "app_manager_startup_read_only",
+            Self::ExportDirFailed => "app_manager_export_dir_failed",
+            Self::ExportSerializeFailed => "app_manager_export_serialize_failed",
+            Self::ExportWriteFailed => "app_manager_export_write_failed",
+            Self::FingerprintMismatch => "app_manager_fingerprint_mismatch",
+            Self::UninstallUnsupported => "app_manager_uninstall_unsupported",
+            Self::UninstallSelfForbidden => "app_manager_uninstall_self_forbidden",
+            Self::UninstallNotSupported => "app_manager_uninstall_not_supported",
+            Self::OpenHelpInvalid => "app_manager_open_help_invalid",
+            Self::OpenHelpFailed => "app_manager_open_help_failed",
+            Self::OpenHelpNotSupported => "app_manager_open_help_not_supported",
+            Self::UninstallInvalidPath => "app_manager_uninstall_invalid_path",
+            Self::UninstallNotFound => "app_manager_uninstall_not_found",
+            Self::UninstallFailed => "app_manager_uninstall_failed",
+            Self::StartupNotSupported => "app_manager_startup_not_supported",
+            Self::StartupPathMissing => "app_manager_startup_path_missing",
+            Self::StartupPathInvalid => "app_manager_startup_path_invalid",
+            Self::StartupDirCreateFailed => "app_manager_startup_dir_create_failed",
+            Self::StartupWriteFailed => "app_manager_startup_write_failed",
+            Self::StartupDeleteFailed => "app_manager_startup_delete_failed",
+            Self::StartupUpdateFailed => "app_manager_startup_update_failed",
+            Self::CleanupDeleteFailed => "app_manager_cleanup_delete_failed",
+            Self::CleanupModeInvalid => "app_manager_cleanup_mode_invalid",
+            Self::CleanupNotFound => "app_manager_cleanup_not_found",
+            Self::CleanupPathInvalid => "app_manager_cleanup_path_invalid",
+            Self::CleanupNotSupported => "app_manager_cleanup_not_supported",
+            Self::FingerprintMissing => "app_manager_fingerprint_missing",
+            Self::CleanupFailed => "app_manager_cleanup_failed",
+        }
+    }
+}
+
+fn app_error(code: AppManagerErrorCode, message: impl Into<String>) -> AppError {
+    AppError::new(code.as_str(), message.into())
+}
+
 #[derive(Debug, Clone)]
 struct AppIndexCache {
     refreshed_at: Option<Instant>,
@@ -67,9 +147,9 @@ struct ResidueScanCacheEntry {
 
 #[derive(Debug, Clone)]
 pub(super) struct PathSizeWarning {
-    pub(super) code: &'static str,
+    pub(super) code: AppManagerScanWarningCode,
     pub(super) path: String,
-    pub(super) detail: String,
+    pub(super) detail_code: AppManagerScanWarningDetailCode,
 }
 
 #[derive(Debug, Clone)]
@@ -373,26 +453,29 @@ fn fingerprint_for_app(item: &ManagedAppDto) -> String {
 
 fn make_action_result(
     ok: bool,
-    code: impl Into<String>,
+    code: AppManagerActionCode,
     message: impl Into<String>,
     detail: Option<String>,
 ) -> AppManagerActionResultDto {
     AppManagerActionResultDto {
         ok,
-        code: code.into(),
+        code,
         message: message.into(),
         detail,
     }
 }
 
-fn startup_readonly_reason_code(startup_scope: &str, startup_editable: bool) -> Option<String> {
+fn startup_readonly_reason_code(
+    startup_scope: AppManagerStartupScope,
+    startup_editable: bool,
+) -> Option<AppReadonlyReasonCode> {
     if startup_editable {
         return None;
     }
-    if startup_scope.eq_ignore_ascii_case("system") {
-        return Some("managed_by_policy".to_string());
+    if matches!(startup_scope, AppManagerStartupScope::System) {
+        return Some(AppReadonlyReasonCode::ManagedByPolicy);
     }
-    Some("permission_denied".to_string())
+    Some(AppReadonlyReasonCode::PermissionDenied)
 }
 
 pub(super) fn resolve_app_size_path(path: &Path) -> PathBuf {
@@ -420,9 +503,9 @@ pub(super) fn resolve_app_size_path(path: &Path) -> PathBuf {
 
 fn append_path_size_warning(
     warnings: &mut Vec<PathSizeWarning>,
-    code: &'static str,
+    code: AppManagerScanWarningCode,
     path: &Path,
-    detail: impl Into<String>,
+    detail_code: AppManagerScanWarningDetailCode,
 ) {
     if warnings.len() >= SIZE_WARNING_LIMIT {
         return;
@@ -437,7 +520,7 @@ fn append_path_size_warning(
     warnings.push(PathSizeWarning {
         code,
         path: path_value,
-        detail: detail.into(),
+        detail_code,
     });
 }
 
@@ -462,9 +545,9 @@ fn walk_path_size_bytes(
                 if collect_warnings {
                     append_path_size_warning(
                         &mut warnings,
-                        "metadata_read_failed",
+                        AppManagerScanWarningCode::AppManagerSizeMetadataReadFailed,
                         path,
-                        error.to_string(),
+                        AppManagerScanWarningDetailCode::from_io_error_kind(error.kind()),
                     );
                     return Some(PathSizeComputation {
                         size_bytes: 0,
@@ -485,9 +568,9 @@ fn walk_path_size_bytes(
             if collect_warnings {
                 append_path_size_warning(
                     &mut warnings,
-                    "size_estimate_truncated",
+                    AppManagerScanWarningCode::AppManagerSizeEstimateTruncated,
                     path,
-                    format!("limit={}", max_dirs.unwrap_or_default()),
+                    AppManagerScanWarningDetailCode::LimitReached,
                 );
             }
             break;
@@ -500,9 +583,9 @@ fn walk_path_size_bytes(
                 if collect_warnings {
                     append_path_size_warning(
                         &mut warnings,
-                        "read_dir_failed",
+                        AppManagerScanWarningCode::AppManagerSizeReadDirFailed,
                         dir.as_path(),
-                        error.to_string(),
+                        AppManagerScanWarningDetailCode::from_io_error_kind(error.kind()),
                     );
                 }
                 continue;
@@ -516,9 +599,9 @@ fn walk_path_size_bytes(
                     if collect_warnings {
                         append_path_size_warning(
                             &mut warnings,
-                            "read_dir_entry_failed",
+                            AppManagerScanWarningCode::AppManagerSizeReadDirEntryFailed,
                             dir.as_path(),
-                            error.to_string(),
+                            AppManagerScanWarningDetailCode::from_io_error_kind(error.kind()),
                         );
                     }
                     continue;
@@ -531,9 +614,9 @@ fn walk_path_size_bytes(
                     if collect_warnings {
                         append_path_size_warning(
                             &mut warnings,
-                            "read_file_type_failed",
+                            AppManagerScanWarningCode::AppManagerSizeReadFileTypeFailed,
                             entry_path.as_path(),
-                            error.to_string(),
+                            AppManagerScanWarningDetailCode::from_io_error_kind(error.kind()),
                         );
                     }
                     continue;
@@ -562,9 +645,9 @@ fn walk_path_size_bytes(
                     if collect_warnings {
                         append_path_size_warning(
                             &mut warnings,
-                            "read_metadata_failed",
+                            AppManagerScanWarningCode::AppManagerSizeReadMetadataFailed,
                             entry_path.as_path(),
-                            error.to_string(),
+                            AppManagerScanWarningDetailCode::from_io_error_kind(error.kind()),
                         );
                     }
                 }
@@ -659,12 +742,12 @@ fn build_app_capabilities(
 fn build_app_identity(
     primary_id: impl Into<String>,
     aliases: Vec<String>,
-    identity_source: &str,
+    identity_source: AppManagerIdentitySource,
 ) -> AppManagerIdentityDto {
     AppManagerIdentityDto {
         primary_id: primary_id.into(),
         aliases,
-        identity_source: identity_source.to_string(),
+        identity_source,
     }
 }
 
@@ -717,16 +800,20 @@ fn windows_powershell_escape(value: &str) -> String {
     value.replace('\'', "''")
 }
 
-fn open_with_command(command: &str, args: &[&str], error_code: &str) -> AppResult<()> {
+fn open_with_command(
+    command: &str,
+    args: &[&str],
+    error_code: AppManagerErrorCode,
+) -> AppResult<()> {
     let status = Command::new(command)
         .args(args)
         .status()
         .with_context(|| format!("failed to execute command: {} {:?}", command, args))
-        .with_code(error_code, "系统操作失败")?;
+        .with_code(error_code.as_str(), "系统操作失败")?;
     if status.success() {
         return Ok(());
     }
-    Err(AppError::new(error_code, "系统操作失败")
+    Err(app_error(error_code, "系统操作失败")
         .with_context("status", status.to_string())
         .with_context("command", command)
         .with_context("args", args.join(" ")))
@@ -749,6 +836,10 @@ mod path_size_tests;
 #[cfg(test)]
 #[path = "../../../tests/app/app_manager_service/display_name_tests.rs"]
 mod display_name_tests;
+
+#[cfg(test)]
+#[path = "../../../tests/app/app_manager_service/query_contract_tests.rs"]
+mod query_contract_tests;
 
 #[cfg(all(test, target_os = "macos"))]
 #[path = "../../../tests/app/app_manager_service/macos_tests.rs"]

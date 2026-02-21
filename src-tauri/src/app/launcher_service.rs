@@ -1,11 +1,10 @@
 use crate::app::icon_service::{
     resolve_application_icon, resolve_builtin_icon, resolve_file_type_icon,
 };
+use crate::app::launcher_index_service::search_indexed_items;
 use crate::app::state::AppState;
 use crate::core::i18n::{DEFAULT_RESOLVED_LOCALE, ResolvedAppLocale, t};
-use crate::core::models::{
-    ActionResultDto, ClipboardWindowOpenedPayload, LauncherActionDto, LauncherItemDto,
-};
+use crate::core::models::{ClipboardWindowOpenedPayload, LauncherActionDto, LauncherItemDto};
 use crate::core::{AppError, AppResult, ResultExt};
 use anyhow::Context;
 use serde::Serialize;
@@ -25,13 +24,12 @@ const MAX_RESULT_LIMIT: usize = 120;
 const MAX_APP_ITEMS: usize = 300;
 const MAX_FILE_ITEMS: usize = 600;
 const APP_SCAN_DEPTH: usize = 4;
-const FILE_SCAN_DEPTH: usize = 3;
+const FILE_SCAN_DEPTH: usize = 8;
 
 struct LauncherCache {
     refreshed_at: Option<Instant>,
     locale: Option<String>,
     application_items: Vec<LauncherItemDto>,
-    file_items: Vec<LauncherItemDto>,
 }
 
 impl LauncherCache {
@@ -40,7 +38,6 @@ impl LauncherCache {
             refreshed_at: None,
             locale: None,
             application_items: Vec::new(),
-            file_items: Vec::new(),
         }
     }
 
@@ -57,7 +54,6 @@ impl LauncherCache {
 
     fn refresh(&mut self, app: &AppHandle, locale: &str) {
         self.application_items = collect_application_items(app, locale);
-        self.file_items = collect_file_items(app, locale);
         self.refreshed_at = Some(Instant::now());
         self.locale = Some(locale.to_string());
     }
@@ -79,7 +75,6 @@ pub fn invalidate_launcher_cache() {
         cache.refreshed_at = None;
         cache.locale = None;
         cache.application_items.clear();
-        cache.file_items.clear();
     }
 }
 
@@ -92,6 +87,10 @@ fn current_locale(app: &AppHandle) -> ResolvedAppLocale {
 pub fn search_launcher(app: &AppHandle, query: &str, limit: Option<u16>) -> Vec<LauncherItemDto> {
     let normalized = normalize_query(query);
     let locale = current_locale(app);
+    let result_limit = limit
+        .map(usize::from)
+        .unwrap_or(DEFAULT_RESULT_LIMIT)
+        .clamp(1, MAX_RESULT_LIMIT);
     let mut items = builtin_items(&locale);
 
     if let Ok(mut cache) = launcher_cache().lock() {
@@ -99,7 +98,31 @@ pub fn search_launcher(app: &AppHandle, query: &str, limit: Option<u16>) -> Vec<
             cache.refresh(app, &locale);
         }
         items.extend(cache.application_items.iter().cloned());
-        items.extend(cache.file_items.iter().cloned());
+    }
+
+    let mut index_used = false;
+    if let Some(state) = app.try_state::<AppState>() {
+        match search_indexed_items(app, &state.db_pool, &normalized, &locale, result_limit) {
+            Ok(result) => {
+                if result.ready || !result.items.is_empty() {
+                    items.extend(result.items);
+                    index_used = true;
+                } else {
+                    tracing::debug!(event = "launcher_index_not_ready_fallback_scan");
+                }
+            }
+            Err(error) => {
+                tracing::warn!(
+                    event = "launcher_index_search_failed_fallback_scan",
+                    error = error.to_string()
+                );
+            }
+        }
+    }
+
+    if !index_used {
+        tracing::debug!(event = "launcher_fallback_scan_used");
+        items.extend(collect_file_items(app, &locale));
     }
 
     let mut matched: Vec<LauncherItemDto> = items
@@ -115,12 +138,7 @@ pub fn search_launcher(app: &AppHandle, query: &str, limit: Option<u16>) -> Vec<
             .then_with(|| left.title.cmp(&right.title))
     });
 
-    let limit = limit
-        .map(usize::from)
-        .unwrap_or(DEFAULT_RESULT_LIMIT)
-        .clamp(1, MAX_RESULT_LIMIT);
-
-    matched.truncate(limit);
+    matched.truncate(result_limit);
     matched
 }
 
@@ -128,8 +146,8 @@ fn should_hide_item_without_query(item: &LauncherItemDto) -> bool {
     matches!(&item.action, LauncherActionDto::OpenBuiltinTool { .. })
 }
 
-pub fn execute_launcher_action(app: &AppHandle, action: &LauncherActionDto) -> ActionResultDto {
-    let result: AppResult<String> = match action {
+pub fn execute_launcher_action(app: &AppHandle, action: &LauncherActionDto) -> AppResult<String> {
+    match action {
         LauncherActionDto::OpenBuiltinRoute { route } => {
             open_main_with_route(app, route.clone()).map(|_| format!("route:{route}"))
         }
@@ -163,21 +181,11 @@ pub fn execute_launcher_action(app: &AppHandle, action: &LauncherActionDto) -> A
                 }
                 Ok(format!("window:{window_label}"))
             }),
-        LauncherActionDto::OpenFile { path } | LauncherActionDto::OpenApplication { path } => {
+        LauncherActionDto::OpenDirectory { path }
+        | LauncherActionDto::OpenFile { path }
+        | LauncherActionDto::OpenApplication { path } => {
             open_path(Path::new(path)).map(|_| format!("path:{path}"))
         }
-    };
-
-    match result {
-        Ok(message) => ActionResultDto { ok: true, message },
-        Err(error) => ActionResultDto {
-            ok: false,
-            message: error
-                .causes
-                .first()
-                .cloned()
-                .unwrap_or_else(|| error.message.clone()),
-        },
     }
 }
 
@@ -230,7 +238,7 @@ pub fn search_palette_legacy(app: &AppHandle, query: &str) -> Vec<LauncherItemDt
         .collect()
 }
 
-pub fn execute_palette_legacy(action_id: &str) -> ActionResultDto {
+pub fn execute_palette_legacy(action_id: &str) -> AppResult<String> {
     let message = match action_id {
         "action.open-tools" => "route:/tools",
         "action.open-transfer" => "route:/transfer",
@@ -238,13 +246,15 @@ pub fn execute_palette_legacy(action_id: &str) -> ActionResultDto {
         "builtin.tools" => "route:/tools",
         "builtin.transfer" => "route:/transfer",
         "builtin.dashboard" => "route:/",
-        _ => "unsupported_action",
+        _ => {
+            return Err(
+                AppError::new("palette_action_unsupported", "不支持的命令动作")
+                    .with_context("actionId", action_id),
+            );
+        }
     };
 
-    ActionResultDto {
-        ok: message != "unsupported_action",
-        message: message.to_string(),
-    }
+    Ok(message.to_string())
 }
 
 fn open_main_with_route(app: &AppHandle, route: String) -> AppResult<()> {
@@ -572,6 +582,7 @@ fn category_weight(category: &str) -> i32 {
     match category {
         "builtin" => 240,
         "application" => 160,
+        "directory" => 140,
         "file" => 120,
         _ => 80,
     }
@@ -581,8 +592,9 @@ fn category_rank(category: &str) -> i32 {
     match category {
         "builtin" => 0,
         "application" => 1,
-        "file" => 2,
-        _ => 3,
+        "directory" => 2,
+        "file" => 3,
+        _ => 4,
     }
 }
 
@@ -642,8 +654,8 @@ fn collect_file_items(app: &AppHandle, locale: &str) -> Vec<LauncherItemDto> {
             break;
         }
 
-        scan_root(&root, FILE_SCAN_DEPTH, MAX_FILE_ITEMS, |path, is_dir| {
-            if is_dir || is_hidden(path) {
+        scan_root(&root, FILE_SCAN_DEPTH, MAX_FILE_ITEMS, |path, _is_dir| {
+            if is_hidden(path) {
                 return None;
             }
             Some(path.to_path_buf())
@@ -670,18 +682,38 @@ fn collect_file_items(app: &AppHandle, locale: &str) -> Vec<LauncherItemDto> {
                 .map(|parent| parent.to_string_lossy().to_string())
                 .unwrap_or_else(|| key.clone());
 
-            let icon = resolve_file_type_icon(app, &path);
+            let is_directory = path.is_dir();
+            let (category, source, action, icon_kind, icon_value) = if is_directory {
+                let icon = resolve_builtin_icon("i-noto:file-folder");
+                (
+                    "directory".to_string(),
+                    t(locale, "launcher.source.directory"),
+                    LauncherActionDto::OpenDirectory { path: key.clone() },
+                    icon.kind,
+                    icon.value,
+                )
+            } else {
+                let icon = resolve_file_type_icon(app, &path);
+                (
+                    "file".to_string(),
+                    t(locale, "launcher.source.file"),
+                    LauncherActionDto::OpenFile { path: key.clone() },
+                    icon.kind,
+                    icon.value,
+                )
+            };
+
             items.push(LauncherItemDto {
-                id: stable_id("file", &key),
+                id: stable_id(if is_directory { "dir" } else { "file" }, &key),
                 title,
                 subtitle,
-                category: "file".to_string(),
-                source: Some(t(locale, "launcher.source.file")),
+                category,
+                source: Some(source),
                 shortcut: None,
                 score: 0,
-                icon_kind: icon.kind,
-                icon_value: icon.value,
-                action: LauncherActionDto::OpenFile { path: key },
+                icon_kind,
+                icon_value,
+                action,
             });
         });
     }

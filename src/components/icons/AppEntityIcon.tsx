@@ -1,7 +1,8 @@
 import { cx } from "@/components/ui/utils";
+import type { AppManagerIconKind } from "@/components/app-manager/types";
 
 interface AppEntityIconProps {
-  iconKind?: string;
+  iconKind?: AppManagerIconKind;
   iconValue?: string;
   fallbackIcon?: string;
   imgClassName?: string;

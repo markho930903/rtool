@@ -10,6 +10,7 @@
   "window.launcher.title": "启动器",
   "launcher.source.builtin": "内置",
   "launcher.source.application": "应用",
+  "launcher.source.directory": "目录",
   "launcher.source.file": "文件",
   "launcher.builtin.dashboard.title": "打开仪表盘",
   "launcher.builtin.dashboard.subtitle": "跳转到主页面",

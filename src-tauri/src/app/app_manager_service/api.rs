@@ -11,12 +11,7 @@ pub fn list_managed_apps(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(|value| value.to_ascii_lowercase());
-    let normalized_category = query
-        .category
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| value.to_ascii_lowercase());
+    let normalized_category = query.category;
     let limit = query
         .limit
         .map(|value| value as usize)
@@ -32,33 +27,10 @@ pub fn list_managed_apps(
         .items
         .iter()
         .filter(|item| {
-            if let Some(category) = normalized_category.as_deref() {
-                if category == "rtool" && item.source != "rtool" {
-                    return false;
-                }
-                if category == "application" && item.source != "application" {
-                    return false;
-                }
-                if category == "startup" && !item.startup_enabled {
-                    return false;
-                }
+            if !normalized_category.matches_item(item) {
+                return false;
             }
-            if let Some(keyword) = normalized_keyword.as_deref() {
-                let name = item.name.to_ascii_lowercase();
-                let path = item.path.to_ascii_lowercase();
-                let publisher = item
-                    .publisher
-                    .clone()
-                    .unwrap_or_default()
-                    .to_ascii_lowercase();
-                if !name.contains(keyword)
-                    && !path.contains(keyword)
-                    && !publisher.contains(keyword)
-                {
-                    return false;
-                }
-            }
-            true
+            item_matches_keyword(item, normalized_keyword.as_deref())
         })
         .cloned()
         .collect();
@@ -67,7 +39,7 @@ pub fn list_managed_apps(
         right
             .startup_enabled
             .cmp(&left.startup_enabled)
-            .then_with(|| left.source.cmp(&right.source))
+            .then_with(|| left.source.sort_rank().cmp(&right.source.sort_rank()))
             .then_with(|| left.name.cmp(&right.name))
     });
 
@@ -99,7 +71,7 @@ pub fn refresh_managed_apps_index(app: &AppHandle) -> AppResult<AppManagerAction
     let cache = load_or_refresh_index(app, true)?;
     Ok(make_action_result(
         true,
-        "app_manager_refreshed",
+        AppManagerActionCode::AppManagerRefreshed,
         "应用索引已刷新",
         Some(format!("count={}", cache.items.len())),
     ))
@@ -115,11 +87,11 @@ pub fn set_managed_app_startup(
         .iter()
         .find(|candidate| candidate.id == input.app_id)
         .cloned()
-        .ok_or_else(|| AppError::new("app_manager_not_found", "应用不存在或索引已过期"))?;
+        .ok_or_else(|| app_error(AppManagerErrorCode::NotFound, "应用不存在或索引已过期"))?;
 
     if !item.startup_editable {
-        return Err(AppError::new(
-            "app_manager_startup_read_only",
+        return Err(app_error(
+            AppManagerErrorCode::StartupReadOnly,
             "当前应用启动项为只读，无法修改",
         ));
     }
@@ -138,7 +110,7 @@ pub fn set_managed_app_startup(
     };
     Ok(make_action_result(
         true,
-        "app_manager_startup_updated",
+        AppManagerActionCode::AppManagerStartupUpdated,
         message,
         Some(item.name),
     ))
@@ -154,7 +126,7 @@ pub fn get_managed_app_detail(
         .iter()
         .find(|candidate| candidate.id == query.app_id)
         .cloned()
-        .ok_or_else(|| AppError::new("app_manager_not_found", "应用不存在或索引已过期"))?;
+        .ok_or_else(|| app_error(AppManagerErrorCode::NotFound, "应用不存在或索引已过期"))?;
 
     Ok(build_app_detail(item))
 }
@@ -170,7 +142,7 @@ pub fn scan_managed_app_residue(
         .iter()
         .find(|candidate| candidate.id == input.app_id)
         .cloned()
-        .ok_or_else(|| AppError::new("app_manager_not_found", "应用不存在或索引已过期"))?;
+        .ok_or_else(|| app_error(AppManagerErrorCode::NotFound, "应用不存在或索引已过期"))?;
 
     let result = build_residue_scan_result(&item);
     {
@@ -199,7 +171,7 @@ pub fn cleanup_managed_app_residue(
         .iter()
         .find(|candidate| candidate.id == input.app_id)
         .cloned()
-        .ok_or_else(|| AppError::new("app_manager_not_found", "应用不存在或索引已过期"))?;
+        .ok_or_else(|| app_error(AppManagerErrorCode::NotFound, "应用不存在或索引已过期"))?;
 
     let scan_result = {
         let scan_cache = residue_scan_cache()
@@ -227,7 +199,7 @@ pub fn export_managed_app_scan_result(
         .iter()
         .find(|candidate| candidate.id == input.app_id)
         .cloned()
-        .ok_or_else(|| AppError::new("app_manager_not_found", "应用不存在或索引已过期"))?;
+        .ok_or_else(|| app_error(AppManagerErrorCode::NotFound, "应用不存在或索引已过期"))?;
 
     let scan_result = {
         let scan_cache = residue_scan_cache()
@@ -243,7 +215,10 @@ pub fn export_managed_app_scan_result(
     let export_dir = export_root_dir();
     fs::create_dir_all(&export_dir)
         .with_context(|| format!("创建导出目录失败: {}", export_dir.display()))
-        .with_code("app_manager_export_dir_failed", "创建导出目录失败")
+        .with_code(
+            AppManagerErrorCode::ExportDirFailed.as_str(),
+            "创建导出目录失败",
+        )
         .with_ctx("exportDir", export_dir.display().to_string())?;
 
     let stem = sanitize_file_stem(item.name.as_str());
@@ -257,11 +232,17 @@ pub fn export_managed_app_scan_result(
     });
     let content = serde_json::to_string_pretty(&payload)
         .with_context(|| format!("序列化导出内容失败: app_id={}", input.app_id))
-        .with_code("app_manager_export_serialize_failed", "序列化导出内容失败")
+        .with_code(
+            AppManagerErrorCode::ExportSerializeFailed.as_str(),
+            "序列化导出内容失败",
+        )
         .with_ctx("appId", input.app_id.clone())?;
     fs::write(&file_path, content)
         .with_context(|| format!("写入导出文件失败: {}", file_path.display()))
-        .with_code("app_manager_export_write_failed", "写入导出文件失败")
+        .with_code(
+            AppManagerErrorCode::ExportWriteFailed.as_str(),
+            "写入导出文件失败",
+        )
         .with_ctx("appId", input.app_id.clone())
         .with_ctx("filePath", file_path.display().to_string())?;
 
@@ -282,25 +263,25 @@ pub fn uninstall_managed_app(
         .iter()
         .find(|candidate| candidate.id == input.app_id)
         .cloned()
-        .ok_or_else(|| AppError::new("app_manager_not_found", "应用不存在或索引已过期"))?;
+        .ok_or_else(|| app_error(AppManagerErrorCode::NotFound, "应用不存在或索引已过期"))?;
 
     if item.fingerprint != input.confirmed_fingerprint {
-        return Err(AppError::new(
-            "app_manager_fingerprint_mismatch",
+        return Err(app_error(
+            AppManagerErrorCode::FingerprintMismatch,
             "应用信息已变化，请刷新后重试",
         ));
     }
 
     if !item.uninstall_supported {
-        return Err(AppError::new(
-            "app_manager_uninstall_unsupported",
+        return Err(app_error(
+            AppManagerErrorCode::UninstallUnsupported,
             "该应用不支持在当前平台直接卸载",
         ));
     }
 
-    if item.source == "rtool" {
-        return Err(AppError::new(
-            "app_manager_uninstall_self_forbidden",
+    if item.source == AppManagerSource::Rtool {
+        return Err(app_error(
+            AppManagerErrorCode::UninstallSelfForbidden,
             "不支持卸载当前运行中的应用",
         ));
     }
@@ -310,7 +291,7 @@ pub fn uninstall_managed_app(
 
     Ok(make_action_result(
         true,
-        "app_manager_uninstall_started",
+        AppManagerActionCode::AppManagerUninstallStarted,
         "已触发系统卸载流程",
         Some(item.name),
     ))
@@ -326,13 +307,29 @@ pub fn open_uninstall_help(
         .iter()
         .find(|candidate| candidate.id == app_id)
         .cloned()
-        .ok_or_else(|| AppError::new("app_manager_not_found", "应用不存在或索引已过期"))?;
+        .ok_or_else(|| app_error(AppManagerErrorCode::NotFound, "应用不存在或索引已过期"))?;
 
     platform_open_uninstall_help(&item)?;
     Ok(make_action_result(
         true,
-        "app_manager_uninstall_help_opened",
+        AppManagerActionCode::AppManagerUninstallHelpOpened,
         "已打开系统卸载入口",
         Some(item.name),
     ))
+}
+
+fn item_matches_keyword(item: &ManagedAppDto, keyword: Option<&str>) -> bool {
+    let Some(keyword) = keyword else {
+        return true;
+    };
+    contains_ignore_ascii_case(item.name.as_str(), keyword)
+        || contains_ignore_ascii_case(item.path.as_str(), keyword)
+        || item
+            .publisher
+            .as_deref()
+            .is_some_and(|publisher| contains_ignore_ascii_case(publisher, keyword))
+}
+
+fn contains_ignore_ascii_case(haystack: &str, needle_lower: &str) -> bool {
+    haystack.to_ascii_lowercase().contains(needle_lower)
 }

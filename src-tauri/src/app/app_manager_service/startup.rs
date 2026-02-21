@@ -1,6 +1,9 @@
 use super::*;
 
-pub(super) fn platform_detect_startup_state(app_id: &str, app_path: &Path) -> (bool, String, bool) {
+pub(super) fn platform_detect_startup_state(
+    app_id: &str,
+    app_path: &Path,
+) -> (bool, AppManagerStartupScope, bool) {
     #[cfg(target_os = "macos")]
     {
         let user_label_enabled = mac_startup_file_path(app_id).is_some_and(|path| path.exists());
@@ -17,12 +20,12 @@ pub(super) fn platform_detect_startup_state(app_id: &str, app_path: &Path) -> (b
             .any(|blob| blob.contains(target.as_str()) || blob.contains(escaped_target.as_str()));
 
         if system_match {
-            return (true, "system".to_string(), false);
+            return (true, AppManagerStartupScope::System, false);
         }
         if user_label_enabled || user_match {
-            return (true, "user".to_string(), true);
+            return (true, AppManagerStartupScope::User, true);
         }
-        (false, "none".to_string(), true)
+        (false, AppManagerStartupScope::None, true)
     }
     #[cfg(target_os = "windows")]
     {
@@ -36,18 +39,18 @@ pub(super) fn platform_detect_startup_state(app_id: &str, app_path: &Path) -> (b
             app_path,
         );
         if system_enabled {
-            return (true, "system".to_string(), false);
+            return (true, AppManagerStartupScope::System, false);
         }
         if user_enabled {
-            return (true, "user".to_string(), true);
+            return (true, AppManagerStartupScope::User, true);
         }
-        (false, "none".to_string(), true)
+        (false, AppManagerStartupScope::None, true)
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
         let _ = app_id;
         let _ = app_path;
-        (false, "none".to_string(), false)
+        (false, AppManagerStartupScope::None, false)
     }
 }
 
@@ -65,8 +68,8 @@ pub(super) fn platform_set_startup(app_id: &str, app_path: &Path, enabled: bool)
         let _ = app_id;
         let _ = app_path;
         let _ = enabled;
-        Err(AppError::new(
-            "app_manager_startup_not_supported",
+        Err(app_error(
+            AppManagerErrorCode::StartupNotSupported,
             "当前平台暂不支持启动项修改",
         ))
     }
@@ -176,21 +179,21 @@ pub(super) fn xml_escape(value: &str) -> String {
 #[cfg(target_os = "macos")]
 pub(super) fn mac_set_startup(app_id: &str, app_path: &Path, enabled: bool) -> AppResult<()> {
     let startup_path = mac_startup_file_path(app_id).ok_or_else(|| {
-        AppError::new(
-            "app_manager_startup_path_missing",
+        app_error(
+            AppManagerErrorCode::StartupPathMissing,
             "无法定位启动项目录，请检查 HOME 环境",
         )
     })?;
 
     if enabled {
         let parent = startup_path.parent().ok_or_else(|| {
-            AppError::new("app_manager_startup_path_invalid", "启动项路径无效")
+            app_error(AppManagerErrorCode::StartupPathInvalid, "启动项路径无效")
                 .with_context("startupFile", startup_path.to_string_lossy().to_string())
         })?;
         fs::create_dir_all(parent)
             .with_context(|| format!("创建启动项目录失败: {}", parent.display()))
             .with_code(
-                "app_manager_startup_dir_create_failed",
+                AppManagerErrorCode::StartupDirCreateFailed.as_str(),
                 "创建启动项目录失败",
             )
             .with_ctx("startupDir", parent.display().to_string())?;
@@ -233,7 +236,10 @@ pub(super) fn mac_set_startup(app_id: &str, app_path: &Path, enabled: bool) -> A
 
         fs::write(startup_path.as_path(), plist)
             .with_context(|| format!("写入启动项失败: {}", startup_path.display()))
-            .with_code("app_manager_startup_write_failed", "写入启动项失败")
+            .with_code(
+                AppManagerErrorCode::StartupWriteFailed.as_str(),
+                "写入启动项失败",
+            )
             .with_ctx("startupFile", startup_path.display().to_string())
             .with_ctx("appId", app_id.to_string())?;
         return Ok(());
@@ -243,7 +249,7 @@ pub(super) fn mac_set_startup(app_id: &str, app_path: &Path, enabled: bool) -> A
         Ok(_) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(
-            AppError::new("app_manager_startup_delete_failed", "删除启动项失败")
+            app_error(AppManagerErrorCode::StartupDeleteFailed, "删除启动项失败")
                 .with_source(error)
                 .with_context("startupFile", startup_path.display().to_string())
                 .with_context("appId", app_id.to_string()),
@@ -315,12 +321,15 @@ pub(super) fn windows_set_startup(app_id: &str, app_path: &Path, enabled: bool) 
             ])
             .status()
             .with_context(|| format!("写入注册表启动项失败: {}", value_name))
-            .with_code("app_manager_startup_update_failed", "更新启动项失败")
+            .with_code(
+                AppManagerErrorCode::StartupUpdateFailed.as_str(),
+                "更新启动项失败",
+            )
             .with_ctx("valueName", value_name.clone())
             .with_ctx("appPath", app_path.to_string_lossy().to_string())?;
         if !status.success() {
             return Err(
-                AppError::new("app_manager_startup_update_failed", "更新启动项失败")
+                app_error(AppManagerErrorCode::StartupUpdateFailed, "更新启动项失败")
                     .with_context("status", status.to_string())
                     .with_context("valueName", value_name.clone())
                     .with_context("appPath", app_path.to_string_lossy().to_string()),
@@ -339,12 +348,15 @@ pub(super) fn windows_set_startup(app_id: &str, app_path: &Path, enabled: bool) 
         ])
         .status()
         .with_context(|| format!("删除注册表启动项失败: {}", value_name))
-        .with_code("app_manager_startup_update_failed", "更新启动项失败")
+        .with_code(
+            AppManagerErrorCode::StartupUpdateFailed.as_str(),
+            "更新启动项失败",
+        )
         .with_ctx("valueName", value_name.clone())
         .with_ctx("appPath", app_path.to_string_lossy().to_string())?;
     if !status.success() {
         return Err(
-            AppError::new("app_manager_startup_update_failed", "更新启动项失败")
+            app_error(AppManagerErrorCode::StartupUpdateFailed, "更新启动项失败")
                 .with_context("status", status.to_string())
                 .with_context("valueName", value_name.clone())
                 .with_context("appPath", app_path.to_string_lossy().to_string()),

@@ -1,13 +1,45 @@
 use super::*;
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use app_infra::db::{
+    get_app_setting, init_db, is_launcher_fts_rebuild_pending, new_db_pool, set_app_setting,
+};
+use rusqlite::params;
 use uuid::Uuid;
 
 fn create_temp_dir(prefix: &str) -> PathBuf {
     let path = std::env::temp_dir().join(format!("rtool-{prefix}-{}", Uuid::new_v4()));
     fs::create_dir_all(&path).expect("create temp dir");
     path
+}
+
+fn unique_temp_db_path(prefix: &str) -> PathBuf {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time before UNIX_EPOCH")
+        .as_millis();
+    std::env::temp_dir().join(format!("rtool-{prefix}-{}-{now}.db", std::process::id()))
+}
+
+fn setup_temp_db(prefix: &str) -> PathBuf {
+    let path = unique_temp_db_path(prefix);
+    init_db(path.as_path()).expect("init db");
+    path
+}
+
+fn normalized_path(path: &Path) -> String {
+    normalize_path_for_match(path)
+}
+
+fn contains_root(candidates: &[PathBuf], expected: &Path) -> bool {
+    let expected_norm = normalized_path(expected);
+    candidates
+        .iter()
+        .map(|candidate| normalized_path(candidate.as_path()))
+        .any(|candidate| candidate == expected_norm)
 }
 
 #[test]
@@ -43,6 +75,7 @@ fn should_build_file_entry_with_extension() {
         file_path.as_path(),
         IndexedEntryKind::File,
         root.to_string_lossy().as_ref(),
+        None,
     )
     .expect("build entry");
     assert_eq!(entry.kind, IndexedEntryKind::File);
@@ -73,39 +106,175 @@ fn should_parse_index_entry_kind_from_db_value() {
 }
 
 #[test]
-fn legacy_default_full_disk_settings_should_migrate() {
-    let legacy = LauncherSearchSettingsRecord::default().normalize();
-    assert!(is_legacy_default_full_disk_profile(&legacy));
-    assert_eq!(legacy.max_items_per_root, DEFAULT_MAX_ITEMS_PER_ROOT);
-
-    let migrated = migrate_legacy_default_full_disk_profile(legacy.clone());
-    assert_eq!(migrated.max_items_per_root, legacy.max_total_items);
-    assert_eq!(migrated.max_total_items, legacy.max_total_items);
-    assert_eq!(migrated.roots, legacy.roots);
-    assert_eq!(migrated.exclude_patterns, legacy.exclude_patterns);
-
-    let custom = LauncherSearchSettingsRecord {
-        max_items_per_root: DEFAULT_MAX_ITEMS_PER_ROOT + 1,
-        ..legacy.clone()
-    };
-    let custom_migrated = migrate_legacy_default_full_disk_profile(custom.clone());
-    assert_eq!(custom_migrated, custom);
-}
-
-#[test]
 fn single_root_full_disk_uses_effective_total_budget() {
-    let settings = migrate_legacy_default_full_disk_profile(
-        LauncherSearchSettingsRecord::default().normalize(),
-    );
+    let settings = LauncherSearchSettingsRecord {
+        roots: vec!["/".to_string()],
+        ..LauncherSearchSettingsRecord::default().normalize()
+    };
     let remaining_total = 12_345usize;
 
     let effective = resolve_effective_max_items_per_root(
         settings.max_items_per_root as usize,
         remaining_total,
-        is_default_full_disk_profile(&settings),
+        has_single_system_root_scope(&settings),
     );
 
     assert_eq!(effective, remaining_total);
+}
+
+#[test]
+fn default_root_candidates_should_cover_all_platform_profiles() {
+    let home = PathBuf::from("/Users/tester");
+    let app_data = PathBuf::from("C:/Users/tester/AppData/Roaming");
+    let program_data = PathBuf::from("C:/ProgramData");
+
+    let macos = build_default_search_root_candidates(
+        ScopePlatform::Macos,
+        Some(home.as_path()),
+        None,
+        None,
+    );
+    assert!(contains_root(&macos, home.as_path()));
+    assert!(contains_root(&macos, home.join("Desktop").as_path()));
+    assert!(contains_root(&macos, home.join("Documents").as_path()));
+    assert!(contains_root(&macos, home.join("Downloads").as_path()));
+    assert!(contains_root(&macos, Path::new("/Applications")));
+    assert!(contains_root(&macos, home.join("Applications").as_path()));
+    assert!(contains_root(&macos, Path::new("/")));
+
+    let windows = build_default_search_root_candidates(
+        ScopePlatform::Windows,
+        Some(Path::new("C:/Users/tester")),
+        Some(app_data.as_path()),
+        Some(program_data.as_path()),
+    );
+    assert!(contains_root(&windows, Path::new("C:/Users/tester")));
+    assert!(contains_root(
+        &windows,
+        Path::new("C:/Users/tester/Desktop")
+    ));
+    assert!(contains_root(
+        &windows,
+        Path::new("C:/Users/tester/Documents")
+    ));
+    assert!(contains_root(
+        &windows,
+        Path::new("C:/Users/tester/Downloads")
+    ));
+    assert!(contains_root(
+        &windows,
+        app_data
+            .join("Microsoft/Windows/Start Menu/Programs")
+            .as_path()
+    ));
+    assert!(contains_root(
+        &windows,
+        program_data
+            .join("Microsoft/Windows/Start Menu/Programs")
+            .as_path()
+    ));
+    assert!(contains_root(&windows, Path::new("A:\\")));
+    assert!(contains_root(&windows, Path::new("Z:\\")));
+
+    let linux = build_default_search_root_candidates(
+        ScopePlatform::Linux,
+        Some(home.as_path()),
+        None,
+        None,
+    );
+    assert_eq!(linux.len(), 1);
+    assert!(contains_root(&linux, Path::new("/")));
+}
+
+#[test]
+fn load_or_init_settings_should_force_scope_policy_roots_migration() {
+    let db_path = setup_temp_db("launcher-scope-policy");
+    let db_pool = new_db_pool(db_path.as_path()).expect("new db pool");
+
+    let custom = LauncherSearchSettingsRecord {
+        roots: vec!["/tmp/custom-root".to_string()],
+        exclude_patterns: vec!["node_modules".to_string()],
+        max_scan_depth: 6,
+        max_items_per_root: 9_999,
+        max_total_items: 18_888,
+        refresh_interval_secs: 777,
+    }
+    .normalize();
+    let serialized = serde_json::to_string(&custom).expect("serialize settings");
+    set_app_setting(&db_pool, SEARCH_SETTINGS_KEY, serialized.as_str()).expect("seed settings");
+    set_app_setting(&db_pool, LAUNCHER_SCOPE_POLICY_APPLIED_KEY, "stale")
+        .expect("seed scope state");
+
+    let migrated = load_or_init_settings(&db_pool).expect("migrate settings");
+    assert_eq!(migrated.roots, default_search_roots());
+    assert_eq!(migrated.exclude_patterns, custom.exclude_patterns);
+    assert_eq!(migrated.max_scan_depth, custom.max_scan_depth);
+    assert_eq!(migrated.max_items_per_root, custom.max_items_per_root);
+    assert_eq!(migrated.max_total_items, custom.max_total_items);
+    assert_eq!(migrated.refresh_interval_secs, custom.refresh_interval_secs);
+
+    let stored_state =
+        get_app_setting(&db_pool, LAUNCHER_SCOPE_POLICY_APPLIED_KEY).expect("read scope state");
+    assert_eq!(
+        stored_state.as_deref(),
+        Some(LAUNCHER_SCOPE_POLICY_APPLIED_VALUE)
+    );
+
+    let second = load_or_init_settings(&db_pool).expect("second read");
+    assert_eq!(second, migrated);
+
+    let _ = fs::remove_file(db_path);
+}
+
+#[test]
+fn scan_warning_aggregator_should_limit_sample_paths() {
+    let mut aggregator = ScanWarningAggregator::default();
+    for index in 0..10 {
+        let path = PathBuf::from(format!("/tmp/sample-{index}"));
+        aggregator.record(ScanWarningKind::ReadDir, path.as_path());
+    }
+
+    assert_eq!(aggregator.read_dir_failed, 10);
+    assert_eq!(aggregator.read_dir_samples.len(), SCAN_WARNING_SAMPLE_LIMIT);
+}
+
+#[test]
+fn run_pending_fts_rebuild_should_handle_pending_and_skip_paths() {
+    let db_path = setup_temp_db("launcher-fts-pending");
+    let db_pool = new_db_pool(db_path.as_path()).expect("new db pool");
+
+    run_pending_fts_rebuild(&db_pool).expect("skip when pending is false");
+    assert!(!is_launcher_fts_rebuild_pending(&db_pool).expect("pending false"));
+
+    {
+        let conn = db_pool.get().expect("db conn");
+        conn.execute(
+            "INSERT INTO launcher_index_entries_v2 (
+                path, kind, name, parent, ext, mtime, size, source_root, searchable_text, scan_token
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![
+                "/tmp/demo.bin",
+                "file",
+                "demo.bin",
+                "/tmp",
+                "bin",
+                0_i64,
+                10_i64,
+                "/tmp",
+                "demo bin",
+                "seed"
+            ],
+        )
+        .expect("insert launcher row");
+    }
+    set_app_setting(&db_pool, "db.migration.launcher_fts_v2_rebuild", "pending")
+        .expect("set pending migration");
+    assert!(is_launcher_fts_rebuild_pending(&db_pool).expect("pending true"));
+
+    run_pending_fts_rebuild(&db_pool).expect("run pending rebuild");
+    assert!(!is_launcher_fts_rebuild_pending(&db_pool).expect("pending false after rebuild"));
+
+    let _ = fs::remove_file(db_path);
 }
 
 #[test]
@@ -151,15 +320,9 @@ fn truncation_log_classification_should_be_expected_for_default_profile() {
         TruncationLogLevel::Info
     );
 
-    let migrated = migrate_legacy_default_full_disk_profile(legacy.clone());
-    assert_eq!(
-        classify_truncation_log_level(&migrated),
-        TruncationLogLevel::Info
-    );
-
     let custom = LauncherSearchSettingsRecord {
         roots: vec!["/tmp".to_string()],
-        ..migrated
+        ..legacy
     };
     assert_eq!(
         classify_truncation_log_level(&custom),

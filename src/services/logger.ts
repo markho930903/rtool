@@ -201,10 +201,10 @@ async function emitClientLog(level: LogLevel, scope: string, message: string, me
   try {
     await invoke("client_log", {
       level,
-      requestId,
       scope: sanitizeString(scope),
       message: sanitizedMessage,
       metadata: sanitizedMetadata,
+      requestId,
     });
   } catch {
     // 防止日志上报失败导致业务逻辑受影响

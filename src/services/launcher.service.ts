@@ -1,44 +1,17 @@
+import type {
+  LauncherIndexStatusDto as LauncherIndexStatus,
+  LauncherRebuildResultDto as LauncherRebuildResult,
+  LauncherSearchSettingsDto as LauncherSearchSettings,
+  LauncherUpdateSearchSettingsInputDto as LauncherUpdateSearchSettingsInput,
+} from "@/contracts";
 import { invokeWithLog } from "@/services/invoke";
 
-export interface LauncherSearchSettings {
-  roots: string[];
-  excludePatterns: string[];
-  maxScanDepth: number;
-  maxItemsPerRoot: number;
-  maxTotalItems: number;
-  refreshIntervalSecs: number;
-}
-
-export interface LauncherUpdateSearchSettingsInput {
-  roots?: string[];
-  excludePatterns?: string[];
-  maxScanDepth?: number;
-  maxItemsPerRoot?: number;
-  maxTotalItems?: number;
-  refreshIntervalSecs?: number;
-}
-
-export interface LauncherIndexStatus {
-  ready: boolean;
-  building: boolean;
-  indexedItems: number;
-  indexedRoots: number;
-  lastBuildMs?: number | null;
-  lastDurationMs?: number | null;
-  lastError?: string | null;
-  refreshIntervalSecs: number;
-  indexVersion: string;
-  truncated: boolean;
-}
-
-export interface LauncherRebuildResult {
-  success: boolean;
-  durationMs: number;
-  indexedItems: number;
-  indexedRoots: number;
-  truncated: boolean;
-  ready: boolean;
-}
+export type {
+  LauncherIndexStatus,
+  LauncherRebuildResult,
+  LauncherSearchSettings,
+  LauncherUpdateSearchSettingsInput,
+};
 
 export async function launcherGetSearchSettings(): Promise<LauncherSearchSettings> {
   return invokeWithLog<LauncherSearchSettings>("launcher_get_search_settings");

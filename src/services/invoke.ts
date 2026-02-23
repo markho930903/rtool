@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
+import type { CommandKey } from "@/contracts";
 import { logDebug, logError, logInfo } from "@/services/logger";
 
 interface InvokeWithLogOptions {
@@ -93,7 +94,7 @@ function resolveErrorMessage(error: unknown, payload: InvokeErrorPayload | null)
 }
 
 export async function invokeWithLog<T>(
-  command: string,
+  command: CommandKey,
   payload?: Record<string, unknown>,
   options?: InvokeWithLogOptions,
 ): Promise<T> {
@@ -101,7 +102,7 @@ export async function invokeWithLog<T>(
   const windowLabel = resolveWindowLabel();
   const startedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
 
-  const requestPayload: Record<string, unknown> = {
+  const requestPayload = {
     ...(payload ?? {}),
     requestId,
     windowLabel,

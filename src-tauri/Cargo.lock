@@ -769,6 +769,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "clipboard"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arboard",
+ "base64 0.22.1",
+ "blake3",
+ "core",
+ "image",
+ "infra",
+ "serde_json",
+ "sysinfo",
+ "tracing",
+]
+
+[[package]]
 name = "clipboard-rs"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -838,6 +854,19 @@ checksum = "4ddef33a339a91ea89fb53151bd0a4689cfce27055c291dfa69945475d22c747"
 dependencies = [
  "time",
  "version_check",
+]
+
+[[package]]
+name = "core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arboard",
+ "r2d2",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tracing",
 ]
 
 [[package]]
@@ -2335,6 +2364,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "infra"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "blake3",
+ "chacha20poly1305",
+ "core",
+ "r2d2",
+ "r2d2_sqlite",
+ "rand 0.10.0",
+ "regex",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "uuid",
+ "walkdir",
+ "wincode",
+ "zip",
+]
+
+[[package]]
 name = "inout"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2512,6 +2567,23 @@ dependencies = [
  "html5ever",
  "indexmap 2.13.0",
  "selectors",
+]
+
+[[package]]
+name = "launcher-app"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "core",
+ "infra",
+ "regex",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tracing",
+ "uuid",
+ "walkdir",
 ]
 
 [[package]]
@@ -4122,34 +4194,12 @@ dependencies = [
 name = "rtool"
 version = "0.1.0"
 dependencies = [
- "active-win-pos-rs",
- "anyhow",
- "arboard",
- "base64 0.22.1",
- "blake3",
- "chacha20poly1305",
- "image",
- "r2d2",
- "r2d2_sqlite",
- "rand 0.10.0",
- "regex",
- "rusqlite",
- "serde",
- "serde_json",
- "sysinfo",
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard",
  "tauri-plugin-global-shortcut",
  "tauri-plugin-opener",
- "tokio",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "uuid",
- "walkdir",
- "wincode",
- "zip",
+ "tauri-shell",
 ]
 
 [[package]]
@@ -5043,6 +5093,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "tauri-shell"
+version = "0.1.0"
+dependencies = [
+ "active-win-pos-rs",
+ "anyhow",
+ "arboard",
+ "base64 0.22.1",
+ "blake3",
+ "clipboard",
+ "core",
+ "image",
+ "infra",
+ "launcher-app",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tauri",
+ "tauri-plugin-clipboard",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-opener",
+ "tokio",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "transfer",
+]
+
+[[package]]
 name = "tauri-utils"
 version = "2.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5484,6 +5562,23 @@ dependencies = [
  "tracing-core",
  "tracing-log",
  "tracing-serde",
+]
+
+[[package]]
+name = "transfer"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "blake3",
+ "core",
+ "infra",
+ "rand 0.10.0",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

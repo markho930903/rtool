@@ -1,5 +1,12 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
+import type {
+  LogConfigDto,
+  LogEntryDto,
+  LogPageDto,
+  LogQueryDto,
+} from "@/contracts";
+import { normalizeDto } from "@/services/contracts-adapter";
 import { invokeWithLog } from "@/services/invoke";
 
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
@@ -45,40 +52,43 @@ export interface LoggingConfig {
 }
 
 export async function fetchLogPage(query?: LogQuery): Promise<LogPage> {
-  return invokeWithLog<LogPage>(
+  const dto = await invokeWithLog<LogPageDto>(
     "logging_query",
     {
-      query,
+      query: query as LogQueryDto | undefined,
     },
     {
       silent: true,
     },
   );
+  return normalizeDto<LogPage>(dto);
 }
 
 export async function fetchLoggingConfig(): Promise<LoggingConfig> {
-  return invokeWithLog<LoggingConfig>("logging_get_config", undefined, {
+  const dto = await invokeWithLog<LogConfigDto>("logging_get_config", undefined, {
     silent: true,
   });
+  return normalizeDto<LoggingConfig>(dto);
 }
 
 export async function saveLoggingConfig(config: LoggingConfig): Promise<LoggingConfig> {
-  return invokeWithLog<LoggingConfig>(
+  const dto = await invokeWithLog<LogConfigDto>(
     "logging_update_config",
     {
-      config,
+      config: config as LogConfigDto,
     },
     {
       silent: true,
     },
   );
+  return normalizeDto<LoggingConfig>(dto);
 }
 
 export async function exportLogs(query?: LogQuery, outputPath?: string): Promise<string> {
   return invokeWithLog<string>(
     "logging_export_jsonl",
     {
-      query,
+      query: query as LogQueryDto | undefined,
       outputPath,
     },
     {
@@ -88,7 +98,7 @@ export async function exportLogs(query?: LogQuery, outputPath?: string): Promise
 }
 
 export async function subscribeLogStream(onEntry: (entry: LogEntry) => void): Promise<UnlistenFn> {
-  return listen<LogEntry>("rtool://logging/stream", (event) => {
-    onEntry(event.payload);
+  return listen<LogEntryDto>("rtool://logging/stream", (event) => {
+    onEntry(normalizeDto<LogEntry>(event.payload));
   });
 }

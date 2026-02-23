@@ -81,15 +81,30 @@ rtool/
 │   ├── pages/             # 页面组件
 │   ├── stores/            # Zustand 状态管理
 │   ├── services/          # 业务服务
+│   ├── contracts/         # 手动维护的 TS 契约单一事实源
 │   ├── hooks/             # React Hooks
 │   ├── i18n/              # 国际化配置
 │   └── styles/            # 样式文件
 ├── src-tauri/             # Tauri/Rust 后端
 │   ├── src/
-│   │   ├── commands/      # Tauri 命令
-│   │   ├── core/          # 核心模块
-│   │   └── infrastructure/# 基础设施
-│   └── Cargo.toml
+│   │   ├── main.rs        # 薄入口
+│   │   └── lib.rs         # 薄桥接
+│   ├── crates/
+│   │   ├── core/          # 协议/DTO/错误模型
+│   │   ├── infra/         # DB/日志/平台能力
+│   │   ├── launcher-app/  # 启动器与应用管理领域
+│   │   │   └── src/
+│   │   │       ├── launcher_service.rs
+│   │   │       ├── launcher_index_service.rs
+│   │   │       ├── icon_service.rs
+│   │   │       ├── palette_service.rs
+│   │   │       └── app_manager_service/
+│   │   ├── clipboard/     # 剪贴板领域
+│   │   │   └── src/clipboard_service.rs
+│   │   ├── transfer/      # 传输领域
+│   │   │   └── src/transfer_service/
+│   │   └── tauri-shell/   # Tauri 壳层（命令注册与平台适配）
+│   └── Cargo.toml         # workspace
 └── package.json
 ```
 
@@ -98,6 +113,18 @@ rtool/
 - 前端代码格式化：`pnpm format`
 - 代码检查：`pnpm lint`
 - 国际化检查：`pnpm i18n:check`
+- 契约维护：`src/contracts/index.ts`（手动同步后端 DTO 与命令名）
+
+## 启动器索引策略
+
+- 策略状态键：`launcher.search.scope_policy_applied`
+- 当前状态：`applied`
+- 迁移规则：状态未生效时，启动器会一次性强制覆盖历史 `roots`（仅覆盖 roots，其他阈值配置保持不变）
+
+平台默认范围：
+
+- Windows/macOS：`用户常用目录 + 应用目录 + 系统根目录`
+- Linux：保守默认行为（不扩展为 Win/mac 的完整三层集合）
 
 ## 许可证
 

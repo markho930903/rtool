@@ -1,4 +1,13 @@
-import { invokeWithLog } from "@/services/invoke";
+import type {
+  TransferHistoryFilterDto,
+  TransferHistoryPageDto,
+  TransferPairingCodeDto,
+  TransferPeerDto,
+  TransferSendFilesInputDto,
+  TransferSessionDto,
+  TransferSettingsDto,
+  TransferUpdateSettingsInputDto,
+} from "@/contracts";
 import type {
   TransferDirection,
   TransferFileInput,
@@ -9,6 +18,8 @@ import type {
   TransferSession,
   TransferSettings,
 } from "@/components/transfer/types";
+import { normalizeDto } from "@/services/contracts-adapter";
+import { invokeWithLog } from "@/services/invoke";
 
 export interface TransferUpdateSettingsInput {
   defaultDownloadDir?: string;
@@ -30,15 +41,20 @@ export interface TransferSendFilesInput {
 }
 
 export async function transferGetSettings(): Promise<TransferSettings> {
-  return invokeWithLog<TransferSettings>("transfer_get_settings");
+  const dto = await invokeWithLog<TransferSettingsDto>("transfer_get_settings");
+  return normalizeDto<TransferSettings>(dto);
 }
 
 export async function transferUpdateSettings(input: TransferUpdateSettingsInput): Promise<TransferSettings> {
-  return invokeWithLog<TransferSettings>("transfer_update_settings", { input });
+  const dto = await invokeWithLog<TransferSettingsDto>("transfer_update_settings", {
+    input: input as TransferUpdateSettingsInputDto,
+  });
+  return normalizeDto<TransferSettings>(dto);
 }
 
 export async function transferGeneratePairingCode(): Promise<TransferPairingCode> {
-  return invokeWithLog<TransferPairingCode>("transfer_generate_pairing_code");
+  const dto = await invokeWithLog<TransferPairingCodeDto>("transfer_generate_pairing_code");
+  return normalizeDto<TransferPairingCode>(dto);
 }
 
 export async function transferStartDiscovery(): Promise<void> {
@@ -50,11 +66,15 @@ export async function transferStopDiscovery(): Promise<void> {
 }
 
 export async function transferListPeers(): Promise<TransferPeer[]> {
-  return invokeWithLog<TransferPeer[]>("transfer_list_peers");
+  const dto = await invokeWithLog<TransferPeerDto[]>("transfer_list_peers");
+  return normalizeDto<TransferPeer[]>(dto);
 }
 
 export async function transferSendFiles(input: TransferSendFilesInput): Promise<TransferSession> {
-  return invokeWithLog<TransferSession>("transfer_send_files", { input });
+  const dto = await invokeWithLog<TransferSessionDto>("transfer_send_files", {
+    input: input as TransferSendFilesInputDto,
+  });
+  return normalizeDto<TransferSession>(dto);
 }
 
 export async function transferPauseSession(sessionId: string): Promise<void> {
@@ -70,13 +90,15 @@ export async function transferCancelSession(sessionId: string): Promise<void> {
 }
 
 export async function transferRetrySession(sessionId: string): Promise<TransferSession> {
-  return invokeWithLog<TransferSession>("transfer_retry_session", { sessionId });
+  const dto = await invokeWithLog<TransferSessionDto>("transfer_retry_session", { sessionId });
+  return normalizeDto<TransferSession>(dto);
 }
 
 export async function transferListHistory(filter?: TransferHistoryFilter): Promise<TransferHistoryPage> {
-  return invokeWithLog<TransferHistoryPage>("transfer_list_history", {
-    filter,
+  const dto = await invokeWithLog<TransferHistoryPageDto>("transfer_list_history", {
+    filter: filter as TransferHistoryFilterDto | undefined,
   });
+  return normalizeDto<TransferHistoryPage>(dto);
 }
 
 export async function transferClearHistory(all = false, olderThanDays = 30): Promise<void> {

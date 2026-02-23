@@ -1,21 +1,14 @@
 import type { AppLocale, LocalePreference } from "@/i18n/types";
+import type {
+  ImportLocaleResult as ImportLocaleFileResult,
+  LocaleCatalogList as BackendLocaleCatalogList,
+  LocaleNamespaces,
+  LocaleStateDto as BackendLocaleState,
+  ReloadLocalesResult,
+} from "@/contracts";
 import { invokeWithLog } from "@/services/invoke";
 
-export interface BackendLocaleState {
-  preference: LocalePreference;
-  resolved: AppLocale;
-}
-
-export interface LocaleNamespaces {
-  locale: string;
-  namespaces: string[];
-}
-
-export interface BackendLocaleCatalogList {
-  builtinLocales: LocaleNamespaces[];
-  overlayLocales: LocaleNamespaces[];
-  effectiveLocales: LocaleNamespaces[];
-}
+export type { BackendLocaleCatalogList, BackendLocaleState, ImportLocaleFileResult, ReloadLocalesResult };
 
 export interface ImportLocaleFilePayload {
   locale: string;
@@ -24,20 +17,16 @@ export interface ImportLocaleFilePayload {
   replace?: boolean;
 }
 
-export interface ImportLocaleFileResult {
-  success: boolean;
-  locale: string;
-  namespace: string;
-  importedKeys: number;
-  warnings: string[];
-  effectiveLocaleNamespaces: string[];
+export function toAppLocale(locale: string): AppLocale {
+  return locale as AppLocale;
 }
 
-export interface ReloadLocalesResult {
-  success: boolean;
-  overlayLocales: LocaleNamespaces[];
-  reloadedFiles: number;
-  warnings: string[];
+export function toLocalePreference(preference: string): LocalePreference {
+  return preference as LocalePreference;
+}
+
+export function mapLocaleNamespaces(input: LocaleNamespaces[]): LocaleNamespaces[] {
+  return input;
 }
 
 export async function fetchBackendLocaleState(): Promise<BackendLocaleState> {

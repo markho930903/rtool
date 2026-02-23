@@ -1,5 +1,5 @@
 use super::*;
-use crate::infrastructure::db;
+use app_infra::db;
 
 fn unique_temp_db_path(prefix: &str) -> PathBuf {
     let now = SystemTime::now()

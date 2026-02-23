@@ -1,5 +1,5 @@
 use super::*;
-use crate::infrastructure::db::{init_db, new_db_pool};
+use crate::db::{init_db, new_db_pool};
 
 fn setup_temp_db(prefix: &str) -> (DbPool, std::path::PathBuf) {
     let millis = std::time::SystemTime::now()

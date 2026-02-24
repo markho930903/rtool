@@ -972,5 +972,5 @@ pub fn ensure_session_exists(pool: &DbPool, session_id: &str) -> AppResult<Trans
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/infrastructure/transfer/store_tests.rs"]
+#[path = "../../tests/transfer/store_tests.rs"]
 mod tests;

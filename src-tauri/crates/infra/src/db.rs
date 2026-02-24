@@ -826,5 +826,5 @@ pub fn set_app_setting(pool: &DbPool, key: &str, value: &str) -> AppResult<()> {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/infrastructure/db_tests.rs"]
+#[path = "../tests/infrastructure/db_tests.rs"]
 mod tests;

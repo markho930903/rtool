@@ -484,21 +484,21 @@ fn home_dir() -> Option<PathBuf> {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/app/app_manager/residue_tests.rs"]
+#[path = "../../tests/app_manager/residue_tests.rs"]
 mod residue_tests;
 
 #[cfg(test)]
-#[path = "../../../../tests/app/app_manager/path_size_tests.rs"]
+#[path = "../../tests/app_manager/path_size_tests.rs"]
 mod path_size_tests;
 
 #[cfg(test)]
-#[path = "../../../../tests/app/app_manager/display_name_tests.rs"]
+#[path = "../../tests/app_manager/display_name_tests.rs"]
 mod display_name_tests;
 
 #[cfg(test)]
-#[path = "../../../../tests/app/app_manager/query_contract_tests.rs"]
+#[path = "../../tests/app_manager/query_contract_tests.rs"]
 mod query_contract_tests;
 
 #[cfg(all(test, target_os = "macos"))]
-#[path = "../../../../tests/app/app_manager/macos_tests.rs"]
+#[path = "../../tests/app_manager/macos_tests.rs"]
 mod tests;

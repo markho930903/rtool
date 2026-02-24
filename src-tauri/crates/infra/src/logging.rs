@@ -1063,5 +1063,5 @@ pub fn export_log_entries(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/infrastructure/logging_tests.rs"]
+#[path = "../tests/infrastructure/logging_tests.rs"]
 mod tests;

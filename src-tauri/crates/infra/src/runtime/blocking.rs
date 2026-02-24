@@ -39,5 +39,5 @@ fn join_error_detail(error: &tokio::task::JoinError) -> String {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/infrastructure/runtime/blocking_tests.rs"]
+#[path = "../../tests/runtime/blocking_tests.rs"]
 mod tests;

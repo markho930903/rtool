@@ -591,5 +591,5 @@ fn file_extension_icon(ext: &str) -> &'static str {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/app/icon_service_tests.rs"]
+#[path = "../../tests/launcher/icon_service_tests.rs"]
 mod tests;

@@ -1669,5 +1669,5 @@ fn escape_like_pattern(value: &str) -> String {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/app/launcher_index_service_tests.rs"]
+#[path = "../../tests/launcher/launcher_index_service_tests.rs"]
 mod tests;

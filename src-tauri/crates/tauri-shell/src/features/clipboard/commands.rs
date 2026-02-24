@@ -568,7 +568,7 @@ pub async fn clipboard_copy_back(
 }
 
 #[cfg(test)]
-#[path = "../../../../../tests/commands/clipboard_tests.rs"]
+#[path = "../../../tests/commands/clipboard_tests.rs"]
 mod tests;
 
 #[tauri::command]

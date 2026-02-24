@@ -699,5 +699,5 @@ fn io_to_error(error: io::Error) -> AppError {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/infrastructure/transfer/protocol_tests.rs"]
+#[path = "../../tests/transfer/protocol_tests.rs"]
 mod tests;

@@ -379,5 +379,5 @@ where
 pub type AppResult<T> = Result<T, AppError>;
 
 #[cfg(test)]
-#[path = "../../../tests/core/errors_tests.rs"]
+#[path = "../tests/core/errors_tests.rs"]
 mod tests;

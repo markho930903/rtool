@@ -189,5 +189,5 @@ pub async fn logging_export_jsonl(
 }
 
 #[cfg(test)]
-#[path = "../../../../../tests/commands/logging_tests.rs"]
+#[path = "../../../tests/commands/logging_tests.rs"]
 mod tests;

@@ -6,6 +6,8 @@ import type {
   AppManagerCleanupInput,
   AppManagerCleanupResult,
   AppManagerExportScanResult,
+  AppManagerIndexState,
+  AppManagerIndexUpdatedPayload,
   AppManagerQueryCategory,
   AppManagerResidueScanResult,
   ManagedApp,
@@ -25,6 +27,13 @@ import {
 } from "@/services/app-manager.service";
 
 const EXPERIMENTAL_THIRD_PARTY_STARTUP_KEY = "rtool.appManager.experimentalThirdPartyStartup";
+const APP_MANAGER_PAGE_SIZE = 80;
+const DETAIL_CACHE_TTL_MS = 60_000;
+const DETAIL_CACHE_MAX = 80;
+const SNAPSHOT_FETCH_LIMIT = 300;
+
+let listInFlight: Promise<void> | null = null;
+const detailInFlight = new Map<string, Promise<void>>();
 
 function readExperimentalThirdPartyStartup(): boolean {
   if (typeof window === "undefined") {
@@ -62,13 +71,64 @@ function deduplicateItemIds(values: string[]): string[] {
   return [...set];
 }
 
+function matchesKeyword(item: ManagedApp, keyword: string): boolean {
+  const normalized = keyword.trim().toLowerCase();
+  if (!normalized) {
+    return true;
+  }
+  const fields = [
+    item.name,
+    item.path,
+    item.bundleOrAppId,
+    item.publisher,
+    item.identity.primaryId,
+    ...item.identity.aliases,
+  ]
+    .filter(Boolean)
+    .map((value) => String(value).toLowerCase());
+  return fields.some((value) => value.includes(normalized));
+}
+
+function matchesCategory(item: ManagedApp, category: AppManagerQueryCategory): boolean {
+  if (category === "all") {
+    return true;
+  }
+  if (category === "startup") {
+    return item.startupEnabled;
+  }
+  if (category === "rtool") {
+    return item.source === "rtool";
+  }
+  return item.source === "application";
+}
+
+function filteredItems(allItems: ManagedApp[], keyword: string, category: AppManagerQueryCategory): ManagedApp[] {
+  return allItems.filter((item) => matchesCategory(item, category) && matchesKeyword(item, keyword));
+}
+
+function nextCursorFor(total: number, loaded: number): string | null {
+  return loaded < total ? String(loaded) : null;
+}
+
+function withDetailSize(item: ManagedApp, detail: ManagedAppDetail): ManagedApp {
+  const sizeBytes = detail.sizeSummary.appBytes ?? item.sizeBytes ?? null;
+  return {
+    ...item,
+    sizeBytes,
+    sizeAccuracy: sizeBytes === null ? item.sizeAccuracy : "exact",
+    sizeComputedAt: Math.floor(Date.now() / 1000),
+  };
+}
+
 interface AppManagerState {
+  allItems: ManagedApp[];
   items: ManagedApp[];
   loading: boolean;
   loadingMore: boolean;
   refreshing: boolean;
   actionLoadingById: Record<string, boolean>;
   detailLoadingById: Record<string, boolean>;
+  detailInFlightById: Record<string, boolean>;
   scanLoadingById: Record<string, boolean>;
   cleanupLoadingById: Record<string, boolean>;
   exportLoadingById: Record<string, boolean>;
@@ -77,6 +137,10 @@ interface AppManagerState {
   category: AppManagerQueryCategory;
   nextCursor: string | null;
   indexedAt: number | null;
+  revision: number;
+  indexState: AppManagerIndexState;
+  snapshotLoaded: boolean;
+  indexDirty: boolean;
   error: string | null;
   detailError: string | null;
   scanError: string | null;
@@ -85,6 +149,7 @@ interface AppManagerState {
   lastActionResult: AppManagerActionResult | null;
   selectedAppId: string | null;
   detailById: Record<string, ManagedAppDetail>;
+  detailLoadedAtById: Record<string, number>;
   scanResultById: Record<string, AppManagerResidueScanResult>;
   cleanupResultById: Record<string, AppManagerCleanupResult>;
   exportResultById: Record<string, AppManagerExportScanResult>;
@@ -98,8 +163,10 @@ interface AppManagerActions {
   setKeyword: (keyword: string) => void;
   setCategory: (category: AppManagerQueryCategory) => void;
   setExperimentalThirdPartyStartup: (enabled: boolean) => void;
+  handleIndexUpdated: (payload: AppManagerIndexUpdatedPayload, inAppManagerRoute?: boolean) => void;
   selectApp: (appId: string) => Promise<void>;
-  loadFirstPage: () => Promise<void>;
+  ensureSnapshotLoaded: (force?: boolean) => Promise<void>;
+  loadFirstPage: (force?: boolean) => Promise<void>;
   loadMore: () => Promise<void>;
   refreshIndex: () => Promise<void>;
   loadDetail: (appId: string, force?: boolean) => Promise<void>;
@@ -122,13 +189,58 @@ interface AppManagerActions {
 
 type AppManagerStore = AppManagerState & AppManagerActions;
 
+function applyLocalFilterState(
+  state: Pick<AppManagerState, "allItems" | "keyword" | "category" | "selectedAppId">,
+  loadedCount = APP_MANAGER_PAGE_SIZE,
+): Pick<AppManagerState, "items" | "nextCursor" | "selectedAppId"> {
+  const filtered = filteredItems(state.allItems, state.keyword, state.category);
+  const clampedLoadedCount = Math.max(0, Math.min(loadedCount, filtered.length));
+  const items = filtered.slice(0, clampedLoadedCount);
+  const selectedStillExists = state.selectedAppId && items.some((item) => item.id === state.selectedAppId);
+  const selectedAppId = selectedStillExists ? state.selectedAppId : (items[0]?.id ?? null);
+  return {
+    items,
+    nextCursor: nextCursorFor(filtered.length, clampedLoadedCount),
+    selectedAppId,
+  };
+}
+
+async function fetchAllPagesSnapshot(): Promise<{
+  items: ManagedApp[];
+  indexedAt: number;
+  revision: number;
+  indexState: AppManagerIndexState;
+}> {
+  const allItems: ManagedApp[] = [];
+  let cursor: string | undefined;
+  let indexedAt = 0;
+  let revision = 0;
+  let indexState: AppManagerIndexState = "ready";
+
+  while (true) {
+    const page = await appManagerList({ limit: SNAPSHOT_FETCH_LIMIT, cursor });
+    allItems.push(...page.items);
+    indexedAt = page.indexedAt;
+    revision = page.revision;
+    indexState = page.indexState;
+    if (!page.nextCursor) {
+      break;
+    }
+    cursor = page.nextCursor;
+  }
+
+  return { items: allItems, indexedAt, revision, indexState };
+}
+
 export const useAppManagerStore = create<AppManagerStore>((set, get) => ({
+  allItems: [],
   items: [],
   loading: false,
   loadingMore: false,
   refreshing: false,
   actionLoadingById: {},
   detailLoadingById: {},
+  detailInFlightById: {},
   scanLoadingById: {},
   cleanupLoadingById: {},
   exportLoadingById: {},
@@ -137,6 +249,10 @@ export const useAppManagerStore = create<AppManagerStore>((set, get) => ({
   category: "all",
   nextCursor: null,
   indexedAt: null,
+  revision: 0,
+  indexState: "ready",
+  snapshotLoaded: false,
+  indexDirty: false,
   error: null,
   detailError: null,
   scanError: null,
@@ -145,6 +261,7 @@ export const useAppManagerStore = create<AppManagerStore>((set, get) => ({
   lastActionResult: null,
   selectedAppId: null,
   detailById: {},
+  detailLoadedAtById: {},
   scanResultById: {},
   cleanupResultById: {},
   exportResultById: {},
@@ -154,16 +271,43 @@ export const useAppManagerStore = create<AppManagerStore>((set, get) => ({
   experimentalThirdPartyStartup: readExperimentalThirdPartyStartup(),
 
   setKeyword(keyword) {
-    set({ keyword });
+    set((state) => ({
+      keyword,
+      ...applyLocalFilterState({
+        allItems: state.allItems,
+        keyword,
+        category: state.category,
+        selectedAppId: state.selectedAppId,
+      }),
+    }));
   },
 
   setCategory(category) {
-    set({ category });
+    set((state) => ({
+      category,
+      ...applyLocalFilterState({
+        allItems: state.allItems,
+        keyword: state.keyword,
+        category,
+        selectedAppId: state.selectedAppId,
+      }),
+    }));
   },
 
   setExperimentalThirdPartyStartup(enabled) {
     persistExperimentalThirdPartyStartup(enabled);
     set({ experimentalThirdPartyStartup: enabled });
+  },
+
+  handleIndexUpdated(payload, inAppManagerRoute = true) {
+    set((state) => ({
+      revision: Math.max(state.revision, payload.revision),
+      indexedAt: payload.indexedAt,
+      indexDirty: true,
+    }));
+    if (get().snapshotLoaded && inAppManagerRoute) {
+      void get().ensureSnapshotLoaded(true);
+    }
   },
 
   async selectApp(appId) {
@@ -175,63 +319,94 @@ export const useAppManagerStore = create<AppManagerStore>((set, get) => ({
     await get().loadDetail(appId);
   },
 
-  async loadFirstPage() {
-    const { keyword, category, selectedAppId } = get();
-    set({ loading: true, error: null });
-    try {
-      const page = await appManagerList({
-        keyword: keyword.trim() || undefined,
-        category: category === "all" ? undefined : category,
-      });
-      const fallbackSelected = page.items[0]?.id ?? null;
-      const selectedStillExists = selectedAppId ? page.items.some((item) => item.id === selectedAppId) : false;
-      const nextSelectedAppId = selectedStillExists ? selectedAppId : fallbackSelected;
-      set({
-        items: page.items,
-        nextCursor: page.nextCursor ?? null,
-        indexedAt: page.indexedAt,
-        loading: false,
-        selectedAppId: nextSelectedAppId,
-      });
-      if (nextSelectedAppId) {
-        await get().loadDetail(nextSelectedAppId);
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      set({ loading: false, error: message });
+  async ensureSnapshotLoaded(force = false) {
+    const state = get();
+    if (!force && state.snapshotLoaded && !state.indexDirty) {
+      return;
     }
+    if (listInFlight) {
+      return listInFlight;
+    }
+
+    const run = async () => {
+      set({ loading: true, error: null });
+      try {
+        const snapshot = await fetchAllPagesSnapshot();
+        set((draft) => {
+          const next = applyLocalFilterState(
+            {
+              allItems: snapshot.items,
+              keyword: draft.keyword,
+              category: draft.category,
+              selectedAppId: draft.selectedAppId,
+            },
+            APP_MANAGER_PAGE_SIZE,
+          );
+          return {
+            allItems: snapshot.items,
+            items: next.items,
+            nextCursor: next.nextCursor,
+            selectedAppId: next.selectedAppId,
+            indexedAt: snapshot.indexedAt,
+            revision: snapshot.revision,
+            indexState: snapshot.indexState,
+            loading: false,
+            snapshotLoaded: true,
+            indexDirty: false,
+          };
+        });
+        const selected = get().selectedAppId;
+        if (selected) {
+          await get().loadDetail(selected);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        set({ loading: false, error: message });
+      } finally {
+        listInFlight = null;
+      }
+    };
+
+    listInFlight = run();
+    return listInFlight;
+  },
+
+  async loadFirstPage(force = false) {
+    await get().ensureSnapshotLoaded(force);
   },
 
   async loadMore() {
-    const { loadingMore, nextCursor, keyword, category } = get();
-    if (loadingMore || !nextCursor) {
+    const state = get();
+    if (state.loadingMore || !state.nextCursor) {
       return;
     }
-    set({ loadingMore: true, error: null });
-    try {
-      const page = await appManagerList({
-        keyword: keyword.trim() || undefined,
-        category: category === "all" ? undefined : category,
-        cursor: nextCursor,
-      });
-      set((state) => ({
-        items: [...state.items, ...page.items],
-        nextCursor: page.nextCursor ?? null,
-        indexedAt: page.indexedAt,
+    set({ loadingMore: true });
+    set((draft) => {
+      const filtered = filteredItems(draft.allItems, draft.keyword, draft.category);
+      const currentLoaded = Number.parseInt(draft.nextCursor ?? "0", 10);
+      const nextLoaded = Math.min(filtered.length, currentLoaded + APP_MANAGER_PAGE_SIZE);
+      return {
+        ...applyLocalFilterState(
+          {
+            allItems: draft.allItems,
+            keyword: draft.keyword,
+            category: draft.category,
+            selectedAppId: draft.selectedAppId,
+          },
+          nextLoaded,
+        ),
         loadingMore: false,
-      }));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      set({ loadingMore: false, error: message });
-    }
+      };
+    });
   },
 
   async refreshIndex() {
     set({ refreshing: true, error: null });
     try {
       const result = await appManagerRefreshIndex();
-      set({ lastActionResult: result, refreshing: false });
-      await get().loadFirstPage();
+      set({ lastActionResult: result, indexDirty: true });
+      await get().ensureSnapshotLoaded(true);
+      set({ refreshing: false });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       set({ refreshing: false, error: message });
@@ -239,37 +414,62 @@ export const useAppManagerStore = create<AppManagerStore>((set, get) => ({
   },
 
   async loadDetail(appId, force = false) {
-    const detail = get().detailById[appId];
-    if (!force && detail) {
+    const cachedDetail = get().detailById[appId];
+    const loadedAt = get().detailLoadedAtById[appId] ?? 0;
+    if (!force && cachedDetail && Date.now() - loadedAt <= DETAIL_CACHE_TTL_MS) {
       return;
     }
-    set((state) => ({
-      detailLoadingById: updateActionLoading(state.detailLoadingById, appId, true),
-      detailError: null,
-    }));
-    try {
-      const nextDetail = await appManagerGetDetail(appId);
-      set((state) => ({
-        detailById: { ...state.detailById, [appId]: nextDetail },
-        items: state.items.map((item) => {
-          if (item.id !== appId) {
-            return item;
-          }
-          return {
-            ...item,
-            estimatedSizeBytes:
-              nextDetail.sizeSummary.appBytes ?? item.estimatedSizeBytes,
-          };
-        }),
-      }));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      set({ detailError: message });
-    } finally {
-      set((state) => ({
-        detailLoadingById: updateActionLoading(state.detailLoadingById, appId, false),
-      }));
+
+    const existingFlight = detailInFlight.get(appId);
+    if (existingFlight) {
+      return existingFlight;
     }
+
+    const run = async () => {
+      set((state) => ({
+        detailLoadingById: updateActionLoading(state.detailLoadingById, appId, true),
+        detailInFlightById: updateActionLoading(state.detailInFlightById, appId, true),
+        detailError: null,
+      }));
+      try {
+        const nextDetail = await appManagerGetDetail(appId);
+        set((state) => {
+          const nextDetailById = { ...state.detailById, [appId]: nextDetail };
+          const nextLoadedAtById = { ...state.detailLoadedAtById, [appId]: Date.now() };
+
+          const keys = Object.keys(nextDetailById);
+          if (keys.length > DETAIL_CACHE_MAX) {
+            const oldest = [...keys]
+              .filter((key) => key !== appId)
+              .sort((left, right) => (nextLoadedAtById[left] ?? 0) - (nextLoadedAtById[right] ?? 0))[0];
+            if (oldest) {
+              delete nextDetailById[oldest];
+              delete nextLoadedAtById[oldest];
+            }
+          }
+
+          return {
+            detailById: nextDetailById,
+            detailLoadedAtById: nextLoadedAtById,
+            allItems: state.allItems.map((item) => (item.id === appId ? withDetailSize(item, nextDetail) : item)),
+            items: state.items.map((item) => (item.id === appId ? withDetailSize(item, nextDetail) : item)),
+          };
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        set({ detailError: message });
+      } finally {
+        detailInFlight.delete(appId);
+        set((state) => ({
+          detailLoadingById: updateActionLoading(state.detailLoadingById, appId, false),
+          detailInFlightById: updateActionLoading(state.detailInFlightById, appId, false),
+        }));
+      }
+    };
+
+    const promise = run();
+    detailInFlight.set(appId, promise);
+    return promise;
   },
 
   async scanResidue(appId) {
@@ -430,7 +630,7 @@ export const useAppManagerStore = create<AppManagerStore>((set, get) => ({
 
   async cleanupSelected(appId) {
     const state = get();
-    const app = state.items.find((item) => item.id === appId);
+    const app = state.allItems.find((item) => item.id === appId);
     if (!app) {
       set({ cleanupError: "应用不存在或索引已变化" });
       return;
@@ -520,8 +720,8 @@ export const useAppManagerStore = create<AppManagerStore>((set, get) => ({
     }));
     try {
       const result = await appManagerSetStartup({ appId: app.id, enabled });
-      set({ lastActionResult: result });
-      await get().loadFirstPage();
+      set({ lastActionResult: result, indexDirty: true });
+      await get().ensureSnapshotLoaded(true);
       await get().loadDetail(app.id, true);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -543,8 +743,8 @@ export const useAppManagerStore = create<AppManagerStore>((set, get) => ({
         appId: app.id,
         confirmedFingerprint: app.fingerprint,
       });
-      set({ lastActionResult: result });
-      await get().loadFirstPage();
+      set({ lastActionResult: result, indexDirty: true });
+      await get().ensureSnapshotLoaded(true);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       set({ error: message });

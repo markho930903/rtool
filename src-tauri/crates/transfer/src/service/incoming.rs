@@ -44,7 +44,7 @@ impl TransferService {
 
         let mut session = TransferSessionDto {
             id: manifest.session_id.clone(),
-            direction: TransferDirection::from_remote_manifest(manifest.direction.as_str()),
+            direction: TransferDirection::from_remote_manifest(manifest.direction.as_str())?,
             peer_device_id: handshake.peer_device_id,
             peer_name: handshake.peer_name,
             status: TransferStatus::Running,

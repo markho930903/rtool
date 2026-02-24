@@ -103,60 +103,28 @@ fn prune_should_apply_count_and_size_constraints_together() {
 }
 
 #[test]
-fn init_db_should_not_mark_fts_rebuild_pending_on_second_run_for_clean_db() {
+fn init_db_should_be_idempotent_and_keep_launcher_fts_available() {
     let db_path = unique_temp_db_path("init-db-idempotent");
     init_db(db_path.as_path()).expect("init db first");
     init_db(db_path.as_path()).expect("init db second");
 
-    let pool = new_db_pool(db_path.as_path()).expect("new db pool");
-    let pending =
-        is_launcher_fts_rebuild_pending(&pool).expect("check launcher fts rebuild pending");
-    assert!(!pending);
-
-    let _ = std::fs::remove_file(db_path);
-}
-
-#[test]
-fn launcher_fts_rebuild_migration_should_run_only_once() {
-    let db_path = unique_temp_db_path("fts-rebuild-once");
-    init_db(db_path.as_path()).expect("init db");
-    let pool = new_db_pool(db_path.as_path()).expect("new db pool");
-
-    {
-        let conn = pool.get().expect("db conn");
-        conn.execute(
-            "INSERT INTO launcher_index_entries_v2 (
-                path, kind, name, parent, ext, mtime, size, source_root, searchable_text, scan_token
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            params![
-                "/tmp/demo.bin",
-                "file",
-                "demo.bin",
-                "/tmp",
-                "bin",
-                0_i64,
-                10_i64,
-                "/tmp",
-                "demo bin",
-                "seed"
-            ],
+    let conn = Connection::open(db_path.as_path()).expect("open db");
+    let launcher_table_exists: i64 = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'launcher_index_entries')",
+            [],
+            |row| row.get(0),
         )
-        .expect("insert launcher index row");
-        conn.execute(
-            "DELETE FROM app_settings WHERE key = ?1",
-            params![LAUNCHER_FTS_REBUILD_MIGRATION_KEY],
+        .expect("query launcher_index_entries");
+    let launcher_fts_exists: i64 = conn
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'launcher_index_entries_fts')",
+            [],
+            |row| row.get(0),
         )
-        .expect("delete fts migration marker");
-    }
-    drop(pool);
+        .expect("query launcher_index_entries_fts");
 
-    init_db(db_path.as_path()).expect("re-init db to re-seed migration marker");
-    let pool = new_db_pool(db_path.as_path()).expect("new db pool after re-init");
-
-    assert!(is_launcher_fts_rebuild_pending(&pool).expect("pending before rebuild"));
-    assert!(rebuild_launcher_fts_if_pending(&pool).expect("run rebuild once"));
-    assert!(!is_launcher_fts_rebuild_pending(&pool).expect("pending after rebuild"));
-    assert!(!rebuild_launcher_fts_if_pending(&pool).expect("skip second rebuild"));
-
+    assert_eq!(launcher_table_exists, 1);
+    assert_eq!(launcher_fts_exists, 1);
     let _ = std::fs::remove_file(db_path);
 }

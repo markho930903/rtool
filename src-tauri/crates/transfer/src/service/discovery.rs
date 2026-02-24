@@ -26,18 +26,14 @@ impl TransferService {
             return Ok(());
         }
 
-        let mut capabilities = vec![
+        let capabilities = vec![
             "chunk".to_string(),
             "resume".to_string(),
             "history".to_string(),
+            CAPABILITY_CODEC_BIN.to_string(),
+            CAPABILITY_ACK_BATCH.to_string(),
+            CAPABILITY_PIPELINE.to_string(),
         ];
-        if settings.codec_v2_enabled {
-            capabilities.push(CAPABILITY_CODEC_BIN_V2.to_string());
-        }
-        if settings.pipeline_v2_enabled {
-            capabilities.push(CAPABILITY_ACK_BATCH_V2.to_string());
-            capabilities.push(CAPABILITY_PIPELINE_V2.to_string());
-        }
 
         let packet = DiscoveryPacket {
             device_id: self.device_id.clone(),

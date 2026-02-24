@@ -43,10 +43,7 @@ impl TransferService {
         let cleanup_after_at = now_millis() + i64::from(settings.auto_cleanup_days) * 86_400_000;
         let session = TransferSessionDto {
             id: session_id,
-            direction: match input.direction.unwrap_or(TransferDirection::Send) {
-                TransferDirection::Unknown => TransferDirection::Send,
-                value => value,
-            },
+            direction: input.direction.unwrap_or(TransferDirection::Send),
             peer_device_id: peer.device_id,
             peer_name: peer.display_name,
             status: TransferStatus::Queued,

@@ -1,19 +1,21 @@
 export type AppReadonlyReasonCode =
   | "permission_denied"
   | "managed_by_policy"
-  | "feature_disabled"
-  | "unknown";
+  | "feature_disabled";
 
-export type AppManagerScope = "user" | "system" | "unknown";
-export type AppManagerPathType = "file" | "directory" | "unknown";
-export type AppManagerStartupScope = "user" | "system" | "none" | "unknown";
-export type AppManagerIdentitySource = "bundle_id" | "registry" | "path" | "unknown";
-export type AppManagerSource = "rtool" | "application" | "unknown";
-export type AppManagerCategory = "all" | "rtool" | "application" | "startup" | "unknown";
-export type AppManagerQueryCategory = Exclude<AppManagerCategory, "unknown">;
-export type AppManagerPlatform = "macos" | "windows" | "linux" | "unknown";
-export type AppManagerIconKind = "raster" | "iconify" | "unknown";
-export type AppManagerUninstallKind = "finder_trash" | "registry_command" | "unknown";
+export type AppManagerScope = "user" | "system";
+export type AppManagerPathType = "file" | "directory";
+export type AppManagerStartupScope = "user" | "system" | "none";
+export type AppManagerIdentitySource = "bundle_id" | "registry" | "path";
+export type AppManagerSource = "rtool" | "application";
+export type AppManagerCategory = "all" | "rtool" | "application" | "startup";
+export type AppManagerQueryCategory = AppManagerCategory;
+export type AppManagerPlatform = "macos" | "windows" | "linux";
+export type AppManagerIconKind = "raster" | "iconify";
+export type AppManagerSizeAccuracy = "exact" | "estimated";
+export type AppManagerIndexState = "ready" | "building" | "degraded";
+export type AppManagerIndexUpdateReason = "manual" | "auto_change" | "startup";
+export type AppManagerUninstallKind = "finder_trash" | "registry_command";
 export type AppManagerResidueKind =
   | "install"
   | "app_support"
@@ -24,10 +26,9 @@ export type AppManagerResidueKind =
   | "app_data"
   | "registry_key"
   | "registry_value"
-  | "main_app"
-  | "unknown";
-export type AppManagerResidueConfidence = "exact" | "high" | "medium" | "unknown";
-export type AppManagerRiskLevel = "low" | "medium" | "high" | "unknown";
+  | "main_app";
+export type AppManagerResidueConfidence = "exact" | "high" | "medium";
+export type AppManagerRiskLevel = "low" | "medium" | "high";
 export type AppManagerResidueMatchReason =
   | "related_root"
   | "bundle_id"
@@ -35,16 +36,14 @@ export type AppManagerResidueMatchReason =
   | "startup_shortcut"
   | "uninstall_registry"
   | "startup_registry"
-  | "run_registry"
-  | "unknown";
+  | "run_registry";
 export type AppManagerScanWarningCode =
   | "app_manager_size_metadata_read_failed"
   | "app_manager_size_estimate_truncated"
   | "app_manager_size_read_dir_failed"
   | "app_manager_size_read_dir_entry_failed"
   | "app_manager_size_read_file_type_failed"
-  | "app_manager_size_read_metadata_failed"
-  | "unknown";
+  | "app_manager_size_read_metadata_failed";
 export type AppManagerScanWarningDetailCode =
   | "permission_denied"
   | "not_found"
@@ -53,14 +52,12 @@ export type AppManagerScanWarningDetailCode =
   | "timed_out"
   | "would_block"
   | "limit_reached"
-  | "io_other"
-  | "unknown";
+  | "io_other";
 export type AppManagerActionCode =
   | "app_manager_refreshed"
   | "app_manager_startup_updated"
   | "app_manager_uninstall_started"
-  | "app_manager_uninstall_help_opened"
-  | "unknown";
+  | "app_manager_uninstall_help_opened";
 export type AppManagerCleanupReasonCode =
   | "ok"
   | "self_uninstall_forbidden"
@@ -70,8 +67,7 @@ export type AppManagerCleanupReasonCode =
   | "app_manager_cleanup_not_found"
   | "app_manager_cleanup_path_invalid"
   | "app_manager_cleanup_not_supported"
-  | "app_manager_uninstall_failed"
-  | "unknown";
+  | "app_manager_uninstall_failed";
 
 export interface AppManagerCapabilities {
   startup: boolean;
@@ -96,7 +92,9 @@ export interface ManagedApp {
   source: AppManagerSource;
   iconKind: AppManagerIconKind;
   iconValue: string;
-  estimatedSizeBytes?: number | null;
+  sizeBytes: number | null;
+  sizeAccuracy: AppManagerSizeAccuracy;
+  sizeComputedAt: number | null;
   startupEnabled: boolean;
   startupScope: AppManagerStartupScope;
   startupEditable: boolean;
@@ -118,8 +116,17 @@ export interface AppManagerQuery {
 
 export interface AppManagerPage {
   items: ManagedApp[];
-  nextCursor?: string | null;
+  nextCursor: string | null;
   indexedAt: number;
+  revision: number;
+  indexState: AppManagerIndexState;
+}
+
+export interface AppManagerIndexUpdatedPayload {
+  revision: number;
+  indexedAt: number;
+  changedCount: number;
+  reason: AppManagerIndexUpdateReason;
 }
 
 export interface AppManagerActionResult {
@@ -143,7 +150,7 @@ export interface AppRelatedRoot {
   id: string;
   label: string;
   path: string;
-  pathType?: AppManagerPathType;
+  pathType: AppManagerPathType;
   scope: AppManagerScope;
   kind: AppManagerResidueKind;
   exists: boolean;
@@ -167,7 +174,7 @@ export interface ManagedAppDetail {
 export interface AppManagerResidueItem {
   itemId: string;
   path: string;
-  pathType?: AppManagerPathType;
+  pathType: AppManagerPathType;
   kind: AppManagerResidueKind;
   scope: AppManagerScope;
   sizeBytes: number;
@@ -212,13 +219,12 @@ export interface AppManagerCleanupInput {
 }
 
 export type AppManagerCleanupDeleteMode = "trash" | "permanent";
-export type AppManagerCleanupDeleteModeResult = AppManagerCleanupDeleteMode | "unknown";
 
 export interface AppManagerCleanupItemResult {
   itemId: string;
   path: string;
   kind: AppManagerResidueKind;
-  status: "deleted" | "skipped" | "failed" | "unknown";
+  status: "deleted" | "skipped" | "failed";
   reasonCode: AppManagerCleanupReasonCode;
   message: string;
   sizeBytes?: number;
@@ -226,7 +232,7 @@ export interface AppManagerCleanupItemResult {
 
 export interface AppManagerCleanupResult {
   appId: string;
-  deleteMode: AppManagerCleanupDeleteModeResult;
+  deleteMode: AppManagerCleanupDeleteMode;
   releasedSizeBytes: number;
   deleted: AppManagerCleanupItemResult[];
   skipped: AppManagerCleanupItemResult[];

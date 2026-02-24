@@ -10,14 +10,12 @@ use std::collections::hash_map::DefaultHasher;
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, Once, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const APP_ICON_TTL: Duration = Duration::from_secs(60 * 60 * 24);
 const APP_ICON_FALLBACK_TTL: Duration = Duration::from_secs(60 * 10);
 const FILE_ICON_TTL: Duration = Duration::from_secs(60 * 60 * 24 * 30);
-const APP_ICON_CACHE_VERSION: &str = "v2";
-
 const FALLBACK_APP_ICON: &str = "i-noto:desktop-computer";
 const FALLBACK_FILE_ICON: &str = "i-noto:page-facing-up";
 
@@ -47,6 +45,20 @@ fn icon_memory_cache() -> &'static Mutex<HashMap<String, DiskIconEntry>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn ensure_icon_cache_schema_initialized(app: &dyn LauncherHost) {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let cache_dir = app
+            .app_data_dir()
+            .unwrap_or_else(|_| std::env::temp_dir())
+            .join("launcher_icon_cache");
+        if cache_dir.exists() {
+            let _ = fs::remove_dir_all(&cache_dir);
+        }
+        let _ = fs::create_dir_all(&cache_dir);
+    });
+}
+
 pub fn resolve_builtin_icon(icon: &str) -> IconPayload {
     IconPayload {
         kind: "iconify".to_string(),
@@ -55,13 +67,14 @@ pub fn resolve_builtin_icon(icon: &str) -> IconPayload {
 }
 
 pub fn resolve_application_icon(app: &dyn LauncherHost, app_path: &Path) -> IconPayload {
+    ensure_icon_cache_schema_initialized(app);
     let app_path_key = app_path.to_string_lossy();
 
     #[cfg(target_os = "macos")]
     {
         if let Some(source) = resolve_macos_icon_source(app_path) {
             let key = format!(
-                "app:{APP_ICON_CACHE_VERSION}:{app_path_key}:{}",
+                "app:{app_path_key}:{}",
                 source.signature
             );
             if let Some(payload) = read_cached_icon(app, &key, APP_ICON_TTL) {
@@ -79,7 +92,7 @@ pub fn resolve_application_icon(app: &dyn LauncherHost, app_path: &Path) -> Icon
         }
     }
 
-    let fallback_key = format!("app:{APP_ICON_CACHE_VERSION}:{app_path_key}:fallback");
+    let fallback_key = format!("app:{app_path_key}:fallback");
     if let Some(payload) = read_cached_icon(app, &fallback_key, APP_ICON_FALLBACK_TTL) {
         return payload;
     }
@@ -94,6 +107,7 @@ pub fn resolve_application_icon(app: &dyn LauncherHost, app_path: &Path) -> Icon
 }
 
 pub fn resolve_file_type_icon(app: &dyn LauncherHost, file_path: &Path) -> IconPayload {
+    ensure_icon_cache_schema_initialized(app);
     let ext = file_path
         .extension()
         .and_then(|value| value.to_str())

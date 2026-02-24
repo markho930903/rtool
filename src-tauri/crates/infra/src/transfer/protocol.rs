@@ -11,29 +11,23 @@ use wincode::{SchemaRead, SchemaWrite};
 use app_core::{AppError, AppResult, ResultExt};
 use anyhow::Context;
 
-pub const PROTOCOL_VERSION_V2: u16 = 2;
-pub const CAPABILITY_CODEC_BIN_V2: &str = "codec-bin-v2";
-pub const CAPABILITY_ACK_BATCH_V2: &str = "ack-batch-v2";
-pub const CAPABILITY_PIPELINE_V2: &str = "pipeline-v2";
+pub const PROTOCOL_VERSION: u16 = 2;
+pub const CAPABILITY_CODEC_BIN: &str = "codec-bin";
+pub const CAPABILITY_ACK_BATCH: &str = "ack-batch";
+pub const CAPABILITY_PIPELINE: &str = "pipeline";
 
 const FRAME_MAX_BYTES: usize = 16 * 1024 * 1024;
-const MODE_PLAIN_JSON: u8 = 0;
-const MODE_ENCRYPTED_JSON: u8 = 1;
 const MODE_PLAIN_BIN: u8 = 2;
 const MODE_ENCRYPTED_BIN: u8 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FrameCodec {
-    JsonV1,
-    BinV2,
+    Bin,
 }
 
 impl FrameCodec {
     pub fn as_str(self) -> &'static str {
-        match self {
-            Self::JsonV1 => "json-v1",
-            Self::BinV2 => "bin-v2",
-        }
+        "bin"
     }
 }
 
@@ -554,33 +548,19 @@ fn decrypt_payload(key_bytes: &[u8; 32], payload: &[u8]) -> AppResult<Vec<u8>> {
 }
 
 fn serialize_frame(frame: &TransferFrame, codec: FrameCodec) -> AppResult<Vec<u8>> {
-    match codec {
-        FrameCodec::JsonV1 => serde_json::to_vec(frame)
-            .context("序列化传输帧失败(json)")
-            .with_code("transfer_frame_serialize_failed", "文件传输协议错误")
-            .with_ctx("codec", codec.as_str()),
-        FrameCodec::BinV2 => {
-            let binary = TransferFrameBinary::from(frame);
-            wincode::serialize(&binary)
-                .context("序列化传输帧失败(bin)")
-                .with_code("transfer_frame_serialize_failed", "文件传输协议错误")
-                .with_ctx("codec", codec.as_str())
-        }
-    }
+    let binary = TransferFrameBinary::from(frame);
+    wincode::serialize(&binary)
+        .context("序列化传输帧失败(bin)")
+        .with_code("transfer_frame_serialize_failed", "文件传输协议错误")
+        .with_ctx("codec", codec.as_str())
 }
 
 fn deserialize_frame(payload: &[u8], codec: FrameCodec) -> AppResult<TransferFrame> {
-    match codec {
-        FrameCodec::JsonV1 => serde_json::from_slice::<TransferFrame>(payload)
-            .context("解析传输帧失败(json)")
-            .with_code("transfer_frame_parse_failed", "文件传输协议错误")
-            .with_ctx("codec", codec.as_str()),
-        FrameCodec::BinV2 => wincode::deserialize::<TransferFrameBinary>(payload)
-            .map(TransferFrame::from)
-            .context("解析传输帧失败(bin)")
-            .with_code("transfer_frame_parse_failed", "文件传输协议错误")
-            .with_ctx("codec", codec.as_str()),
-    }
+    wincode::deserialize::<TransferFrameBinary>(payload)
+        .map(TransferFrame::from)
+        .context("解析传输帧失败(bin)")
+        .with_code("transfer_frame_parse_failed", "文件传输协议错误")
+        .with_ctx("codec", codec.as_str())
 }
 
 pub async fn write_frame_to<W: AsyncWrite + Unpin>(
@@ -604,11 +584,9 @@ pub async fn write_frame_to<W: AsyncWrite + Unpin>(
         ));
     }
 
-    let mode = match (encrypted, codec) {
-        (false, FrameCodec::JsonV1) => MODE_PLAIN_JSON,
-        (true, FrameCodec::JsonV1) => MODE_ENCRYPTED_JSON,
-        (false, FrameCodec::BinV2) => MODE_PLAIN_BIN,
-        (true, FrameCodec::BinV2) => MODE_ENCRYPTED_BIN,
+    let mode = match encrypted {
+        false => MODE_PLAIN_BIN,
+        true => MODE_ENCRYPTED_BIN,
     };
 
     let mut header = Vec::with_capacity(5);
@@ -650,10 +628,8 @@ pub async fn read_frame_from<R: AsyncRead + Unpin>(
         .map_err(io_to_error)?;
 
     let (encrypted, actual_codec) = match mode {
-        MODE_PLAIN_JSON => (false, FrameCodec::JsonV1),
-        MODE_ENCRYPTED_JSON => (true, FrameCodec::JsonV1),
-        MODE_PLAIN_BIN => (false, FrameCodec::BinV2),
-        MODE_ENCRYPTED_BIN => (true, FrameCodec::BinV2),
+        MODE_PLAIN_BIN => (false, FrameCodec::Bin),
+        MODE_ENCRYPTED_BIN => (true, FrameCodec::Bin),
         _ => {
             return Err(app_error(
                 "transfer_frame_mode_invalid",
@@ -695,14 +671,14 @@ pub async fn write_frame(
     frame: &TransferFrame,
     session_key: Option<&[u8; 32]>,
 ) -> AppResult<()> {
-    write_frame_to(stream, frame, session_key, FrameCodec::JsonV1).await
+    write_frame_to(stream, frame, session_key, FrameCodec::Bin).await
 }
 
 pub async fn read_frame(
     stream: &mut TcpStream,
     session_key: Option<&[u8; 32]>,
 ) -> AppResult<TransferFrame> {
-    read_frame_from(stream, session_key, Some(FrameCodec::JsonV1)).await
+    read_frame_from(stream, session_key, Some(FrameCodec::Bin)).await
 }
 
 fn io_to_error(error: io::Error) -> AppError {

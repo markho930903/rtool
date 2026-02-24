@@ -26,6 +26,7 @@ pub(super) fn build_self_item(app: &dyn LauncherHost) -> Option<ManagedAppDto> {
     let app_name = package_info.name.clone();
     let app_path = executable.to_string_lossy().to_string();
     let size_path = resolve_app_size_path(executable.as_path());
+    let size_snapshot = resolve_app_size_snapshot(size_path.as_path());
     let id = stable_app_id("rtool", app_path.as_str());
     let (startup_enabled, startup_scope, startup_editable) =
         platform_detect_startup_state(id.as_str(), executable.as_path());
@@ -54,7 +55,9 @@ pub(super) fn build_self_item(app: &dyn LauncherHost) -> Option<ManagedAppDto> {
         source: AppManagerSource::Rtool,
         icon_kind: AppManagerIconKind::from_raw(icon.kind.as_str()),
         icon_value: icon.value,
-        estimated_size_bytes: try_get_path_size_bytes(size_path.as_path()),
+        size_bytes: size_snapshot.size_bytes,
+        size_accuracy: size_snapshot.size_accuracy,
+        size_computed_at: size_snapshot.size_computed_at,
         startup_enabled,
         startup_scope,
         startup_editable,
@@ -88,6 +91,98 @@ pub(super) fn collect_platform_apps(app: &dyn LauncherHost) -> Vec<ManagedAppDto
         let _ = app;
         Vec::new()
     }
+}
+
+pub(super) fn collect_index_source_fingerprint() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        return collect_macos_source_fingerprint();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        return collect_windows_source_fingerprint();
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        "unsupported-platform".to_string()
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn collect_macos_source_fingerprint() -> String {
+    let mut entries = Vec::new();
+    for root in mac_application_roots() {
+        let root_key = normalize_path_key(root.to_string_lossy().as_ref());
+        if root_key.is_empty() {
+            continue;
+        }
+        entries.push(format!("root:{root_key}"));
+        let Ok(read_dir) = fs::read_dir(root) else {
+            continue;
+        };
+        for entry in read_dir.flatten().take(2_000) {
+            let path = entry.path();
+            let Some(ext) = path.extension().and_then(|value| value.to_str()) else {
+                continue;
+            };
+            if !ext.eq_ignore_ascii_case("app") {
+                continue;
+            }
+            let path_key = normalize_path_key(path.to_string_lossy().as_ref());
+            if path_key.is_empty() {
+                continue;
+            }
+            let modified = entry
+                .metadata()
+                .ok()
+                .and_then(|value| value.modified().ok())
+                .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+                .map(|value| value.as_secs())
+                .unwrap_or(0);
+            entries.push(format!("app:{path_key}:{modified}"));
+        }
+    }
+    entries.sort();
+    stable_hash(entries.join("|").as_str())
+}
+
+#[cfg(target_os = "windows")]
+fn collect_windows_source_fingerprint() -> String {
+    let mut entries = Vec::new();
+    for item in windows_list_uninstall_entries() {
+        let display_name = item.display_name.trim().to_ascii_lowercase();
+        let registry_key = windows_normalize_registry_key(item.registry_key.as_str());
+        let location = item
+            .install_location
+            .as_deref()
+            .map(normalize_path_key)
+            .unwrap_or_default();
+        let version = item
+            .display_version
+            .as_deref()
+            .map(|value| value.trim().to_ascii_lowercase())
+            .unwrap_or_default();
+        entries.push(format!(
+            "uninstall:{registry_key}:{display_name}:{location}:{version}"
+        ));
+    }
+    for root in [
+        r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+        r"HKLM\Software\Microsoft\Windows\CurrentVersion\Run",
+    ] {
+        let mut values = windows_query_registry_values(root);
+        values.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+        for (name, value) in values {
+            entries.push(format!(
+                "run:{}:{}:{}",
+                windows_normalize_registry_key(root),
+                name.to_ascii_lowercase(),
+                normalize_path_key(value.as_str())
+            ));
+        }
+    }
+    entries.sort();
+    stable_hash(entries.join("|").as_str())
 }
 
 #[cfg(target_os = "macos")]
@@ -173,6 +268,7 @@ pub(super) fn build_macos_app_item(
 ) -> Option<ManagedAppDto> {
     let path_str = app_path.to_string_lossy().to_string();
     let size_path = resolve_app_size_path(app_path);
+    let size_snapshot = resolve_app_size_snapshot(size_path.as_path());
     let info = parse_macos_info_plist(app_path.join("Contents").join("Info.plist").as_path());
     let bundle = info.bundle_id.clone();
     let version = info.version.clone();
@@ -209,7 +305,9 @@ pub(super) fn build_macos_app_item(
         source: AppManagerSource::Application,
         icon_kind: AppManagerIconKind::from_raw(icon.kind.as_str()),
         icon_value: icon.value,
-        estimated_size_bytes: try_get_path_size_bytes(size_path.as_path()),
+        size_bytes: size_snapshot.size_bytes,
+        size_accuracy: size_snapshot.size_accuracy,
+        size_computed_at: size_snapshot.size_computed_at,
         startup_enabled,
         startup_scope,
         startup_editable,
@@ -441,6 +539,19 @@ pub(super) fn windows_build_item_from_uninstall_entry(
 ) -> ManagedAppDto {
     let path_str = path.to_string_lossy().to_string();
     let size_path = windows_size_measurement_path(entry, path);
+    let size_snapshot = resolve_app_size_snapshot(size_path.as_path());
+    let mut size_bytes = size_snapshot.size_bytes;
+    let mut size_accuracy = size_snapshot.size_accuracy;
+    let mut size_computed_at = size_snapshot.size_computed_at;
+    if size_bytes.is_none() {
+        if let Some(estimated_size_kb) = entry.estimated_size_kb {
+            size_bytes = Some(estimated_size_kb.saturating_mul(1024));
+            size_accuracy = AppManagerSizeAccuracy::Estimated;
+            if size_computed_at.is_none() {
+                size_computed_at = Some(now_unix_seconds());
+            }
+        }
+    }
     let parent_stem = path
         .parent()
         .and_then(|parent| parent.file_name())
@@ -476,7 +587,9 @@ pub(super) fn windows_build_item_from_uninstall_entry(
         source: AppManagerSource::Application,
         icon_kind: AppManagerIconKind::from_raw(icon.kind.as_str()),
         icon_value: icon.value,
-        estimated_size_bytes: try_get_path_size_bytes(size_path.as_path()),
+        size_bytes,
+        size_accuracy,
+        size_computed_at,
         startup_enabled,
         startup_scope,
         startup_editable,
@@ -622,6 +735,7 @@ pub(super) struct WindowsUninstallEntry {
     install_location: Option<String>,
     publisher: Option<String>,
     display_version: Option<String>,
+    estimated_size_kb: Option<u64>,
     registry_key: String,
 }
 
@@ -714,6 +828,11 @@ pub(super) fn windows_query_uninstall_root(root: &str) -> Vec<WindowsUninstallEn
             .get("DisplayVersion")
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
+        let estimated_size_kb = values
+            .get("EstimatedSize")
+            .map(|value| value.trim())
+            .filter(|value| !value.is_empty())
+            .and_then(|value| value.parse::<u64>().ok());
 
         entries.push(WindowsUninstallEntry {
             display_name: display_name.to_string(),
@@ -722,6 +841,7 @@ pub(super) fn windows_query_uninstall_root(root: &str) -> Vec<WindowsUninstallEn
             install_location,
             publisher,
             display_version,
+            estimated_size_kb,
             registry_key: key.clone(),
         });
     };

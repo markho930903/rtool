@@ -16,8 +16,6 @@ pub const TRANSFER_AUTO_CLEANUP_DAYS_KEY: &str = "transfer.auto_cleanup_days";
 pub const TRANSFER_RESUME_ENABLED_KEY: &str = "transfer.resume_enabled";
 pub const TRANSFER_DISCOVERY_ENABLED_KEY: &str = "transfer.discovery_enabled";
 pub const TRANSFER_PAIRING_REQUIRED_KEY: &str = "transfer.pairing_required";
-pub const TRANSFER_PIPELINE_V2_ENABLED_KEY: &str = "transfer.pipeline_v2_enabled";
-pub const TRANSFER_CODEC_V2_ENABLED_KEY: &str = "transfer.codec_v2_enabled";
 pub const TRANSFER_DB_FLUSH_INTERVAL_MS_KEY: &str = "transfer.db_flush_interval_ms";
 pub const TRANSFER_EVENT_EMIT_INTERVAL_MS_KEY: &str = "transfer.event_emit_interval_ms";
 pub const TRANSFER_ACK_BATCH_SIZE_KEY: &str = "transfer.ack_batch_size";
@@ -49,34 +47,24 @@ fn parse_u32(value: Option<String>, default: u32) -> u32 {
         .unwrap_or(default)
 }
 
-fn parse_transfer_status(raw: String) -> TransferStatus {
-    let status = TransferStatus::from_db(raw.as_str());
-    if status == TransferStatus::Unknown {
-        tracing::warn!(event = "transfer_status_unknown", status = raw.as_str());
-    }
-    status
+fn parse_transfer_status(raw: String, source_field: &'static str) -> AppResult<TransferStatus> {
+    TransferStatus::from_db(raw.as_str()).map_err(|error| error.with_context("sourceField", source_field))
 }
 
-fn parse_transfer_direction(raw: String) -> TransferDirection {
-    let direction = TransferDirection::from_db(raw.as_str());
-    if direction == TransferDirection::Unknown {
-        tracing::warn!(
-            event = "transfer_direction_unknown",
-            direction = raw.as_str()
-        );
-    }
-    direction
+fn parse_transfer_direction(
+    raw: String,
+    source_field: &'static str,
+) -> AppResult<TransferDirection> {
+    TransferDirection::from_db(raw.as_str())
+        .map_err(|error| error.with_context("sourceField", source_field))
 }
 
-fn parse_transfer_trust_level(raw: String) -> TransferPeerTrustLevel {
-    let trust_level = TransferPeerTrustLevel::from_db(raw.as_str());
-    if trust_level == TransferPeerTrustLevel::Other {
-        tracing::warn!(
-            event = "transfer_peer_trust_level_unknown",
-            trust_level = raw.as_str()
-        );
-    }
-    trust_level
+fn parse_transfer_trust_level(
+    raw: String,
+    source_field: &'static str,
+) -> AppResult<TransferPeerTrustLevel> {
+    TransferPeerTrustLevel::from_db(raw.as_str())
+        .map_err(|error| error.with_context("sourceField", source_field))
 }
 
 pub fn load_settings(
@@ -92,8 +80,6 @@ pub fn load_settings(
         resume_enabled: true,
         discovery_enabled: true,
         pairing_required: true,
-        pipeline_v2_enabled: true,
-        codec_v2_enabled: true,
         db_flush_interval_ms: 400,
         event_emit_interval_ms: 250,
         ack_batch_size: 64,
@@ -116,12 +102,6 @@ pub fn load_settings(
         parse_bool(get_app_setting(pool, TRANSFER_DISCOVERY_ENABLED_KEY)?, true);
     settings.pairing_required =
         parse_bool(get_app_setting(pool, TRANSFER_PAIRING_REQUIRED_KEY)?, true);
-    settings.pipeline_v2_enabled = parse_bool(
-        get_app_setting(pool, TRANSFER_PIPELINE_V2_ENABLED_KEY)?,
-        true,
-    );
-    settings.codec_v2_enabled =
-        parse_bool(get_app_setting(pool, TRANSFER_CODEC_V2_ENABLED_KEY)?, true);
     settings.db_flush_interval_ms = parse_u32(
         get_app_setting(pool, TRANSFER_DB_FLUSH_INTERVAL_MS_KEY)?,
         400,
@@ -187,16 +167,6 @@ pub fn save_settings(pool: &DbPool, settings: &TransferSettingsDto) -> AppResult
     )?;
     set_app_setting(
         pool,
-        TRANSFER_PIPELINE_V2_ENABLED_KEY,
-        to_bool_string(settings.pipeline_v2_enabled),
-    )?;
-    set_app_setting(
-        pool,
-        TRANSFER_CODEC_V2_ENABLED_KEY,
-        to_bool_string(settings.codec_v2_enabled),
-    )?;
-    set_app_setting(
-        pool,
         TRANSFER_DB_FLUSH_INTERVAL_MS_KEY,
         settings.db_flush_interval_ms.to_string().as_str(),
     )?;
@@ -247,7 +217,7 @@ pub fn upsert_peer(pool: &DbPool, peer: &TransferPeerDto) -> AppResult<()> {
 
 pub fn get_peer_by_device_id(pool: &DbPool, device_id: &str) -> AppResult<Option<TransferPeerDto>> {
     let conn = pool.get()?;
-    let peer = conn
+    let peer_row = conn
         .query_row(
             "SELECT device_id, display_name, last_seen_at, paired_at, trust_level, failed_attempts, blocked_until
              FROM transfer_peers
@@ -255,23 +225,36 @@ pub fn get_peer_by_device_id(pool: &DbPool, device_id: &str) -> AppResult<Option
              LIMIT 1",
             params![device_id],
             |row| {
-                Ok(TransferPeerDto {
-                    device_id: row.get(0)?,
-                    display_name: row.get(1)?,
-                    address: String::new(),
-                    listen_port: 0,
-                    last_seen_at: row.get(2)?,
-                    paired_at: row.get(3)?,
-                    trust_level: parse_transfer_trust_level(row.get(4)?),
-                    failed_attempts: row.get::<_, u32>(5)?,
-                    blocked_until: row.get(6)?,
-                    pairing_required: true,
-                    online: false,
-                })
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, Option<i64>>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, u32>(5)?,
+                    row.get::<_, Option<i64>>(6)?,
+                ))
             },
         )
         .optional()?;
-    Ok(peer)
+    let Some((device_id, display_name, last_seen_at, paired_at, trust_level_raw, failed_attempts, blocked_until)) =
+        peer_row
+    else {
+        return Ok(None);
+    };
+    Ok(Some(TransferPeerDto {
+        device_id,
+        display_name,
+        address: String::new(),
+        listen_port: 0,
+        last_seen_at,
+        paired_at,
+        trust_level: parse_transfer_trust_level(trust_level_raw, "transfer_peers.trust_level")?,
+        failed_attempts,
+        blocked_until,
+        pairing_required: true,
+        online: false,
+    }))
 }
 
 pub fn mark_peer_pair_success(pool: &DbPool, device_id: &str, paired_at: i64) -> AppResult<()> {
@@ -304,7 +287,7 @@ pub fn mark_peer_pair_failure(
          ON CONFLICT(device_id) DO UPDATE SET
            failed_attempts = transfer_peers.failed_attempts + 1,
            blocked_until = ?2",
-        params![device_id, blocked_until, TransferPeerTrustLevel::Unknown.as_str()],
+        params![device_id, blocked_until, TransferPeerTrustLevel::Other.as_str()],
     )?;
     Ok(())
 }
@@ -318,24 +301,44 @@ pub fn list_stored_peers(pool: &DbPool) -> AppResult<Vec<TransferPeerDto>> {
     )?;
 
     let rows = statement.query_map([], |row| {
-        Ok(TransferPeerDto {
-            device_id: row.get(0)?,
-            display_name: row.get(1)?,
-            address: String::new(),
-            listen_port: 0,
-            last_seen_at: row.get(2)?,
-            paired_at: row.get(3)?,
-            trust_level: parse_transfer_trust_level(row.get(4)?),
-            failed_attempts: row.get::<_, u32>(5)?,
-            blocked_until: row.get(6)?,
-            pairing_required: true,
-            online: false,
-        })
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, i64>(2)?,
+            row.get::<_, Option<i64>>(3)?,
+            row.get::<_, String>(4)?,
+            row.get::<_, u32>(5)?,
+            row.get::<_, Option<i64>>(6)?,
+        ))
     })?;
 
     let mut peers = Vec::new();
     for row in rows {
-        peers.push(row?);
+        let (
+            device_id,
+            display_name,
+            last_seen_at,
+            paired_at,
+            trust_level_raw,
+            failed_attempts,
+            blocked_until,
+        ) = row?;
+        peers.push(TransferPeerDto {
+            device_id,
+            display_name,
+            address: String::new(),
+            listen_port: 0,
+            last_seen_at,
+            paired_at,
+            trust_level: parse_transfer_trust_level(
+                trust_level_raw,
+                "transfer_peers.trust_level",
+            )?,
+            failed_attempts,
+            blocked_until,
+            pairing_required: true,
+            online: false,
+        });
     }
     Ok(peers)
 }
@@ -539,7 +542,7 @@ pub fn get_file_bitmap(
 
 pub fn get_session(pool: &DbPool, session_id: &str) -> AppResult<Option<TransferSessionDto>> {
     let conn = pool.get()?;
-    let session = conn
+    let session_row = conn
         .query_row(
             "SELECT id, direction, peer_device_id, peer_name, status, total_bytes, transferred_bytes, avg_speed_bps, save_dir,
                     created_at, started_at, finished_at, error_code, error_message, cleanup_after_at
@@ -548,30 +551,64 @@ pub fn get_session(pool: &DbPool, session_id: &str) -> AppResult<Option<Transfer
              LIMIT 1",
             params![session_id],
             |row| {
-                Ok(TransferSessionDto {
-                    id: row.get(0)?,
-                    direction: parse_transfer_direction(row.get(1)?),
-                    peer_device_id: row.get(2)?,
-                    peer_name: row.get(3)?,
-                    status: parse_transfer_status(row.get(4)?),
-                    total_bytes: from_db_i64(row.get(5)?),
-                    transferred_bytes: from_db_i64(row.get(6)?),
-                    avg_speed_bps: from_db_i64(row.get(7)?),
-                    save_dir: row.get(8)?,
-                    created_at: row.get(9)?,
-                    started_at: row.get(10)?,
-                    finished_at: row.get(11)?,
-                    error_code: row.get(12)?,
-                    error_message: row.get(13)?,
-                    cleanup_after_at: row.get(14)?,
-                    files: Vec::new(),
-                })
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(4)?,
+                    row.get::<_, i64>(5)?,
+                    row.get::<_, i64>(6)?,
+                    row.get::<_, i64>(7)?,
+                    row.get::<_, String>(8)?,
+                    row.get::<_, i64>(9)?,
+                    row.get::<_, Option<i64>>(10)?,
+                    row.get::<_, Option<i64>>(11)?,
+                    row.get::<_, Option<String>>(12)?,
+                    row.get::<_, Option<String>>(13)?,
+                    row.get::<_, Option<i64>>(14)?,
+                ))
             },
         )
         .optional()?;
 
-    let Some(mut session) = session else {
+    let Some((
+        id,
+        direction_raw,
+        peer_device_id,
+        peer_name,
+        status_raw,
+        total_bytes,
+        transferred_bytes,
+        avg_speed_bps,
+        save_dir,
+        created_at,
+        started_at,
+        finished_at,
+        error_code,
+        error_message,
+        cleanup_after_at,
+    )) = session_row
+    else {
         return Ok(None);
+    };
+    let mut session = TransferSessionDto {
+        id,
+        direction: parse_transfer_direction(direction_raw, "transfer_sessions.direction")?,
+        peer_device_id,
+        peer_name,
+        status: parse_transfer_status(status_raw, "transfer_sessions.status")?,
+        total_bytes: from_db_i64(total_bytes),
+        transferred_bytes: from_db_i64(transferred_bytes),
+        avg_speed_bps: from_db_i64(avg_speed_bps),
+        save_dir,
+        created_at,
+        started_at,
+        finished_at,
+        error_code,
+        error_message,
+        cleanup_after_at,
+        files: Vec::new(),
     };
 
     session.files = list_session_files(pool, session.id.as_str())?;
@@ -589,28 +626,61 @@ pub fn list_session_files(pool: &DbPool, session_id: &str) -> AppResult<Vec<Tran
     )?;
 
     let rows = statement.query_map(params![session_id], |row| {
-        Ok(TransferFileDto {
-            id: row.get(0)?,
-            session_id: row.get(1)?,
-            relative_path: row.get(2)?,
-            source_path: row.get(3)?,
-            target_path: row.get(4)?,
-            size_bytes: from_db_i64(row.get(5)?),
-            transferred_bytes: from_db_i64(row.get(6)?),
-            chunk_size: row.get(7)?,
-            chunk_count: row.get(8)?,
-            status: parse_transfer_status(row.get(9)?),
-            blake3: row.get(10)?,
-            mime_type: row.get(11)?,
-            preview_kind: row.get(12)?,
-            preview_data: row.get(13)?,
-            is_folder_archive: row.get::<_, i64>(14)? == 1,
-        })
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, Option<String>>(3)?,
+            row.get::<_, Option<String>>(4)?,
+            row.get::<_, i64>(5)?,
+            row.get::<_, i64>(6)?,
+            row.get::<_, u32>(7)?,
+            row.get::<_, u32>(8)?,
+            row.get::<_, String>(9)?,
+            row.get::<_, Option<String>>(10)?,
+            row.get::<_, Option<String>>(11)?,
+            row.get::<_, Option<String>>(12)?,
+            row.get::<_, Option<String>>(13)?,
+            row.get::<_, i64>(14)? == 1,
+        ))
     })?;
 
     let mut files = Vec::new();
     for row in rows {
-        files.push(row?);
+        let (
+            id,
+            session_id,
+            relative_path,
+            source_path,
+            target_path,
+            size_bytes,
+            transferred_bytes,
+            chunk_size,
+            chunk_count,
+            status_raw,
+            blake3,
+            mime_type,
+            preview_kind,
+            preview_data,
+            is_folder_archive,
+        ) = row?;
+        files.push(TransferFileDto {
+            id,
+            session_id,
+            relative_path,
+            source_path,
+            target_path,
+            size_bytes: from_db_i64(size_bytes),
+            transferred_bytes: from_db_i64(transferred_bytes),
+            chunk_size,
+            chunk_count,
+            status: parse_transfer_status(status_raw, "transfer_files.status")?,
+            blake3,
+            mime_type,
+            preview_kind,
+            preview_data,
+            is_folder_archive,
+        });
     }
     Ok(files)
 }
@@ -638,30 +708,63 @@ fn list_files_for_sessions(
     let conn = pool.get()?;
     let mut statement = conn.prepare(sql.as_str())?;
     let rows = statement.query_map(params_from_iter(session_ids.iter()), |row| {
-        Ok(TransferFileDto {
-            id: row.get(0)?,
-            session_id: row.get(1)?,
-            relative_path: row.get(2)?,
-            source_path: row.get(3)?,
-            target_path: row.get(4)?,
-            size_bytes: from_db_i64(row.get(5)?),
-            transferred_bytes: from_db_i64(row.get(6)?),
-            chunk_size: row.get(7)?,
-            chunk_count: row.get(8)?,
-            status: parse_transfer_status(row.get(9)?),
-            blake3: row.get(10)?,
-            mime_type: row.get(11)?,
-            preview_kind: row.get(12)?,
-            preview_data: row.get(13)?,
-            is_folder_archive: row.get::<_, i64>(14)? == 1,
-        })
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, Option<String>>(3)?,
+            row.get::<_, Option<String>>(4)?,
+            row.get::<_, i64>(5)?,
+            row.get::<_, i64>(6)?,
+            row.get::<_, u32>(7)?,
+            row.get::<_, u32>(8)?,
+            row.get::<_, String>(9)?,
+            row.get::<_, Option<String>>(10)?,
+            row.get::<_, Option<String>>(11)?,
+            row.get::<_, Option<String>>(12)?,
+            row.get::<_, Option<String>>(13)?,
+            row.get::<_, i64>(14)? == 1,
+        ))
     })?;
 
     let mut grouped = std::collections::HashMap::<String, Vec<TransferFileDto>>::new();
     for row in rows {
-        let file = row?;
+        let (
+            id,
+            session_id,
+            relative_path,
+            source_path,
+            target_path,
+            size_bytes,
+            transferred_bytes,
+            chunk_size,
+            chunk_count,
+            status_raw,
+            blake3,
+            mime_type,
+            preview_kind,
+            preview_data,
+            is_folder_archive,
+        ) = row?;
+        let file = TransferFileDto {
+            id,
+            session_id: session_id.clone(),
+            relative_path,
+            source_path,
+            target_path,
+            size_bytes: from_db_i64(size_bytes),
+            transferred_bytes: from_db_i64(transferred_bytes),
+            chunk_size,
+            chunk_count,
+            status: parse_transfer_status(status_raw, "transfer_files.status")?,
+            blake3,
+            mime_type,
+            preview_kind,
+            preview_data,
+            is_folder_archive,
+        };
         grouped
-            .entry(file.session_id.clone())
+            .entry(session_id)
             .or_default()
             .push(file);
     }
@@ -693,29 +796,62 @@ pub fn list_history(
     )?;
 
     let rows = statement.query_map(params![cursor, status, peer, limit], |row| {
-        Ok(TransferSessionDto {
-            id: row.get(0)?,
-            direction: parse_transfer_direction(row.get(1)?),
-            peer_device_id: row.get(2)?,
-            peer_name: row.get(3)?,
-            status: parse_transfer_status(row.get(4)?),
-            total_bytes: from_db_i64(row.get(5)?),
-            transferred_bytes: from_db_i64(row.get(6)?),
-            avg_speed_bps: from_db_i64(row.get(7)?),
-            save_dir: row.get(8)?,
-            created_at: row.get(9)?,
-            started_at: row.get(10)?,
-            finished_at: row.get(11)?,
-            error_code: row.get(12)?,
-            error_message: row.get(13)?,
-            cleanup_after_at: row.get(14)?,
-            files: Vec::new(),
-        })
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, String>(4)?,
+            row.get::<_, i64>(5)?,
+            row.get::<_, i64>(6)?,
+            row.get::<_, i64>(7)?,
+            row.get::<_, String>(8)?,
+            row.get::<_, i64>(9)?,
+            row.get::<_, Option<i64>>(10)?,
+            row.get::<_, Option<i64>>(11)?,
+            row.get::<_, Option<String>>(12)?,
+            row.get::<_, Option<String>>(13)?,
+            row.get::<_, Option<i64>>(14)?,
+        ))
     })?;
 
     let mut items = Vec::new();
     for row in rows {
-        items.push(row?);
+        let (
+            id,
+            direction_raw,
+            peer_device_id,
+            peer_name,
+            status_raw,
+            total_bytes,
+            transferred_bytes,
+            avg_speed_bps,
+            save_dir,
+            created_at,
+            started_at,
+            finished_at,
+            error_code,
+            error_message,
+            cleanup_after_at,
+        ) = row?;
+        items.push(TransferSessionDto {
+            id,
+            direction: parse_transfer_direction(direction_raw, "transfer_sessions.direction")?,
+            peer_device_id,
+            peer_name,
+            status: parse_transfer_status(status_raw, "transfer_sessions.status")?,
+            total_bytes: from_db_i64(total_bytes),
+            transferred_bytes: from_db_i64(transferred_bytes),
+            avg_speed_bps: from_db_i64(avg_speed_bps),
+            save_dir,
+            created_at,
+            started_at,
+            finished_at,
+            error_code,
+            error_message,
+            cleanup_after_at,
+            files: Vec::new(),
+        });
     }
 
     let session_ids = items.iter().map(|item| item.id.clone()).collect::<Vec<_>>();
@@ -802,7 +938,7 @@ pub fn merge_online_peers(
                 listen_port: peer.listen_port,
                 last_seen_at: peer.last_seen_at,
                 paired_at: None,
-                trust_level: TransferPeerTrustLevel::Unknown,
+                trust_level: TransferPeerTrustLevel::Other,
                 failed_attempts: 0,
                 blocked_until: None,
                 pairing_required: peer.pairing_required,

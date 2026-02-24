@@ -3,6 +3,8 @@ use std::collections::VecDeque;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+const APP_SIZE_CACHE_TTL: Duration = Duration::from_secs(15 * 60);
+
 #[derive(Debug, Clone)]
 pub(super) struct PathSizeWarning {
     pub(super) code: AppManagerScanWarningCode,
@@ -14,6 +16,20 @@ pub(super) struct PathSizeWarning {
 pub(super) struct PathSizeComputation {
     pub(super) size_bytes: u64,
     pub(super) warnings: Vec<PathSizeWarning>,
+}
+
+#[derive(Debug, Clone)]
+pub(super) struct AppSizeSnapshot {
+    pub(super) size_bytes: Option<u64>,
+    pub(super) size_accuracy: AppManagerSizeAccuracy,
+    pub(super) size_computed_at: Option<i64>,
+}
+
+#[derive(Debug, Clone)]
+struct AppSizeCacheEntry {
+    path_signature: String,
+    snapshot: AppSizeSnapshot,
+    refreshed_at: Instant,
 }
 
 #[cfg(target_os = "macos")]
@@ -48,6 +64,12 @@ impl AppIndexCache {
             refreshed_at: None,
             indexed_at: 0,
             items: Vec::new(),
+            revision: 0,
+            source_fingerprint: String::new(),
+            building: false,
+            index_state: AppManagerIndexState::Ready,
+            last_error: None,
+            disk_bootstrapped: false,
         }
     }
 
@@ -59,9 +81,12 @@ impl AppIndexCache {
     }
 }
 
-pub(super) fn app_index_cache() -> &'static Mutex<AppIndexCache> {
-    static CACHE: OnceLock<Mutex<AppIndexCache>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(AppIndexCache::new()))
+pub(super) fn app_index_runtime() -> &'static AppIndexRuntime {
+    static RUNTIME: OnceLock<AppIndexRuntime> = OnceLock::new();
+    RUNTIME.get_or_init(|| AppIndexRuntime {
+        cache: Mutex::new(AppIndexCache::new()),
+        condvar: Condvar::new(),
+    })
 }
 
 pub(super) fn residue_scan_cache() -> &'static Mutex<HashMap<String, ResidueScanCacheEntry>> {
@@ -69,10 +94,90 @@ pub(super) fn residue_scan_cache() -> &'static Mutex<HashMap<String, ResidueScan
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+fn app_size_cache() -> &'static Mutex<HashMap<String, AppSizeCacheEntry>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, AppSizeCacheEntry>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 #[cfg(target_os = "macos")]
 pub(super) fn mac_startup_cache() -> &'static Mutex<MacStartupCache> {
     static CACHE: OnceLock<Mutex<MacStartupCache>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(MacStartupCache::new()))
+}
+
+fn path_signature(path: &Path) -> String {
+    if !path.exists() {
+        return "missing".to_string();
+    }
+    match fs::metadata(path) {
+        Ok(metadata) => {
+            let modified = metadata
+                .modified()
+                .ok()
+                .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+                .map(|value| value.as_secs())
+                .unwrap_or(0);
+            let type_key = if metadata.is_file() {
+                "f"
+            } else if metadata.is_dir() {
+                "d"
+            } else {
+                "o"
+            };
+            format!("{type_key}|{}|{modified}", metadata.len())
+        }
+        Err(_) => "metadata-error".to_string(),
+    }
+}
+
+pub(super) fn resolve_app_size_snapshot(path: &Path) -> AppSizeSnapshot {
+    let path_key = normalize_path_key(path.to_string_lossy().as_ref());
+    let signature = path_signature(path);
+    {
+        let cache = app_size_cache()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(entry) = cache.get(path_key.as_str())
+            && entry.path_signature == signature
+            && entry.refreshed_at.elapsed() <= APP_SIZE_CACHE_TTL
+        {
+            return entry.snapshot.clone();
+        }
+    }
+
+    let computed_at = now_unix_seconds();
+    let snapshot = if let Some(size_bytes) = exact_path_size_bytes(path) {
+        AppSizeSnapshot {
+            size_bytes: Some(size_bytes),
+            size_accuracy: AppManagerSizeAccuracy::Exact,
+            size_computed_at: Some(computed_at),
+        }
+    } else if let Some(size_bytes) = try_get_path_size_bytes(path) {
+        AppSizeSnapshot {
+            size_bytes: Some(size_bytes),
+            size_accuracy: AppManagerSizeAccuracy::Estimated,
+            size_computed_at: Some(computed_at),
+        }
+    } else {
+        AppSizeSnapshot {
+            size_bytes: None,
+            size_accuracy: AppManagerSizeAccuracy::Estimated,
+            size_computed_at: None,
+        }
+    };
+
+    let mut cache = app_size_cache()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    cache.insert(
+        path_key,
+        AppSizeCacheEntry {
+            path_signature: signature,
+            snapshot: snapshot.clone(),
+            refreshed_at: Instant::now(),
+        },
+    );
+    snapshot
 }
 
 pub(super) fn now_unix_seconds() -> i64 {
@@ -143,13 +248,16 @@ pub(super) fn startup_label(app_id: &str) -> String {
 
 pub(super) fn fingerprint_for_app(item: &ManagedAppDto) -> String {
     let content = format!(
-        "{}|{}|{}|{}|{}|{}",
+        "{}|{}|{}|{}|{}|{}|{}|{}|{}",
         item.id,
         item.name,
         item.path,
         item.bundle_or_app_id.clone().unwrap_or_default(),
         item.version.clone().unwrap_or_default(),
-        item.publisher.clone().unwrap_or_default()
+        item.publisher.clone().unwrap_or_default(),
+        item.size_bytes.unwrap_or(0),
+        item.size_accuracy.as_str(),
+        item.size_computed_at.unwrap_or(0)
     );
     stable_hash(content.as_str())
 }

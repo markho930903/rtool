@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import type {
@@ -147,6 +147,60 @@ function AppIcon({
   );
 }
 
+const AppListItem = memo(function AppListItem({
+  app,
+  selected,
+  actionLoading,
+  startupScopeLabel,
+  deepUninstallTitle,
+  onSelect,
+  onDeepUninstall,
+}: {
+  app: ManagedApp;
+  selected: boolean;
+  actionLoading: boolean;
+  startupScopeLabel: string;
+  deepUninstallTitle: string;
+  onSelect: (appId: string) => void;
+  onDeepUninstall: (app: ManagedApp) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
+        selected ? "border-accent/70 bg-accent/10" : "border-border-muted bg-surface-soft hover:border-accent/45"
+      }`}
+      onClick={() => onSelect(app.id)}
+    >
+      <div className="flex items-start gap-2">
+        <AppIcon app={app} sizeClassName="h-9 w-9" iconSizeClassName="text-[1.15rem]" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium text-text-primary">{app.name}</div>
+          <div className="mt-0.5 truncate text-xs text-text-muted">{app.path}</div>
+          <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-text-secondary">
+            <span>{formatBytes(app.sizeBytes)}</span>
+            <span>{startupScopeLabel}</span>
+          </div>
+        </div>
+        <Button
+          size="xs"
+          variant="ghost"
+          iconOnly
+          disabled={actionLoading}
+          title={deepUninstallTitle}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onDeepUninstall(app);
+          }}
+        >
+          <span className="btn-icon i-noto:wastebasket text-base" aria-hidden="true" />
+        </Button>
+      </div>
+    </button>
+  );
+});
+
 function ResultRows({
   title,
   rows,
@@ -199,6 +253,8 @@ export default function AppManagerPage() {
   const category = useAppManagerStore((state) => state.category);
   const nextCursor = useAppManagerStore((state) => state.nextCursor);
   const indexedAt = useAppManagerStore((state) => state.indexedAt);
+  const revision = useAppManagerStore((state) => state.revision);
+  const indexState = useAppManagerStore((state) => state.indexState);
   const error = useAppManagerStore((state) => state.error);
   const detailError = useAppManagerStore((state) => state.detailError);
   const scanError = useAppManagerStore((state) => state.scanError);
@@ -220,9 +276,10 @@ export default function AppManagerPage() {
   const setExperimentalThirdPartyStartup = useAppManagerStore((state) => state.setExperimentalThirdPartyStartup);
   const clearLastActionResult = useAppManagerStore((state) => state.clearLastActionResult);
   const selectApp = useAppManagerStore((state) => state.selectApp);
-  const loadFirstPage = useAppManagerStore((state) => state.loadFirstPage);
+  const ensureSnapshotLoaded = useAppManagerStore((state) => state.ensureSnapshotLoaded);
   const loadMore = useAppManagerStore((state) => state.loadMore);
   const refreshIndex = useAppManagerStore((state) => state.refreshIndex);
+  const loadDetail = useAppManagerStore((state) => state.loadDetail);
   const scanResidue = useAppManagerStore((state) => state.scanResidue);
   const toggleResidueItem = useAppManagerStore((state) => state.toggleResidueItem);
   const selectRecommendedResidues = useAppManagerStore((state) => state.selectRecommendedResidues);
@@ -246,12 +303,12 @@ export default function AppManagerPage() {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      void loadFirstPage();
+      void ensureSnapshotLoaded();
     }, 150);
     return () => {
       window.clearTimeout(timer);
     };
-  }, [keyword, category, loadFirstPage]);
+  }, [ensureSnapshotLoaded]);
 
   useEffect(() => {
     setCopyPathFeedback(null);
@@ -371,7 +428,7 @@ export default function AppManagerPage() {
       id: `main-${selectedApp.id}`,
       path: selectedDetail?.installPath ?? selectedApp.path,
       name: getPathName(selectedDetail?.installPath ?? selectedApp.path),
-      sizeBytes: selectedDetail?.sizeSummary.appBytes ?? selectedApp.estimatedSizeBytes,
+      sizeBytes: selectedDetail?.sizeSummary.appBytes ?? selectedApp.sizeBytes,
       pathType: "directory",
       source: "main",
     });
@@ -427,6 +484,17 @@ export default function AppManagerPage() {
       setConfirmingDeepUninstall(false);
     }
   };
+
+  const handleSelectListItem = useCallback(
+    (appId: string) => {
+      void selectApp(appId);
+    },
+    [selectApp],
+  );
+
+  const handleOpenDeepUninstallDialog = useCallback((app: ManagedApp) => {
+    setConfirmTarget(app);
+  }, []);
 
   const exportScanResult = async () => {
     if (!selectedApp) {
@@ -561,7 +629,13 @@ export default function AppManagerPage() {
             <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-text-muted">
               <span>{t("meta.indexedAt", { value: indexedAtText })}</span>
               <span>{t("meta.count", { count: items.length })}</span>
+              <span>{`rev ${revision}`}</span>
             </div>
+            {indexState === "degraded" ? (
+              <div className="rounded-md border border-warning/35 bg-warning/10 px-2.5 py-2 text-xs text-warning">
+                {t("status.indexDegraded", { defaultValue: "索引已降级，当前展示为最近一次可用数据" })}
+              </div>
+            ) : null}
 
             {error ? (
               <div className="rounded-md border border-danger/35 bg-danger/10 px-2.5 py-2 text-xs text-danger">
@@ -604,45 +678,20 @@ export default function AppManagerPage() {
                 ) : null}
                 <div className="space-y-2">
                   {items.map((app) => {
-                    const selected = app.id === selectedAppId;
-                    const actionLoading = Boolean(actionLoadingById[app.id]);
+                    const startupScopeLabel = t(`meta.startupScope.${app.startupScope}`, {
+                      defaultValue: app.startupScope,
+                    });
                     return (
-                      <button
+                      <AppListItem
                         key={app.id}
-                        type="button"
-                        className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
-                          selected
-                            ? "border-accent/70 bg-accent/10"
-                            : "border-border-muted bg-surface-soft hover:border-accent/45"
-                        }`}
-                        onClick={() => void selectApp(app.id)}
-                      >
-                        <div className="flex items-start gap-2">
-                          <AppIcon app={app} sizeClassName="h-9 w-9" iconSizeClassName="text-[1.15rem]" />
-                          <div className="min-w-0 flex-1">
-                            <div className="truncate text-sm font-medium text-text-primary">{app.name}</div>
-                            <div className="mt-0.5 truncate text-xs text-text-muted">{app.path}</div>
-                            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-text-secondary">
-                              <span>{formatBytes(app.estimatedSizeBytes)}</span>
-                              <span>{t(`meta.startupScope.${app.startupScope}`, { defaultValue: app.startupScope })}</span>
-                            </div>
-                          </div>
-                          <Button
-                            size="xs"
-                            variant="ghost"
-                            iconOnly
-                            disabled={actionLoading}
-                            title={t("actions.deepUninstall")}
-                            onClick={(event) => {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              setConfirmTarget(app);
-                            }}
-                          >
-                            <span className="btn-icon i-noto:wastebasket text-base" aria-hidden="true" />
-                          </Button>
-                        </div>
-                      </button>
+                        app={app}
+                        selected={app.id === selectedAppId}
+                        actionLoading={Boolean(actionLoadingById[app.id])}
+                        startupScopeLabel={startupScopeLabel}
+                        deepUninstallTitle={t("actions.deepUninstall")}
+                        onSelect={handleSelectListItem}
+                        onDeepUninstall={handleOpenDeepUninstallDialog}
+                      />
                     );
                   })}
                 </div>
@@ -696,7 +745,7 @@ export default function AppManagerPage() {
                             {t("detail.size", {
                               value: selectedDetailLoading
                                 ? t("detail.calculating")
-                                : formatBytes(selectedDetail?.sizeSummary.appBytes ?? selectedApp.estimatedSizeBytes),
+                                : formatBytes(selectedDetail?.sizeSummary.appBytes ?? selectedApp.sizeBytes),
                             })}
                           </span>
                         </span>
@@ -720,6 +769,14 @@ export default function AppManagerPage() {
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        size="default"
+                        variant="ghost"
+                        disabled={selectedDetailLoading}
+                        onClick={() => void loadDetail(selectedApp.id, true)}
+                      >
+                        {selectedDetailLoading ? t("detail.calculating") : t("actions.refreshDetail", { defaultValue: "刷新详情" })}
+                      </Button>
                       <Button
                         size="default"
                         variant={selectedApp.startupEnabled ? "secondary" : "primary"}

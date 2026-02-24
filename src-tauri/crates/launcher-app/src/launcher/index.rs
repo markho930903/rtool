@@ -6,10 +6,7 @@ use app_core::models::{
 use app_core::{AppError, AppResult};
 use crate::host::LauncherHost;
 use crate::launcher::icon::{resolve_builtin_icon, resolve_file_type_icon};
-use app_infra::db::{
-    DbPool, get_app_setting, is_launcher_fts_rebuild_pending, rebuild_launcher_fts_if_pending,
-    set_app_setting,
-};
+use app_infra::db::{DbPool, get_app_setting, set_app_setting};
 use regex::Regex;
 use rusqlite::{OptionalExtension, params, params_from_iter};
 use serde::{Deserialize, Serialize};
@@ -399,18 +396,9 @@ pub fn start_background_indexer(db_pool: DbPool) {
         .name("launcher-indexer".to_string())
         .spawn(move || {
             index_building_flag().store(true, Ordering::SeqCst);
-            let fts_rebuild_result = run_pending_fts_rebuild(&db_pool);
+            let initial_result = refresh_index(&db_pool, RefreshReason::Startup);
             index_building_flag().store(false, Ordering::SeqCst);
-            if let Err(error) = fts_rebuild_result {
-                let _ = write_meta(&db_pool, INDEX_READY_KEY, "0");
-                let _ = write_meta(&db_pool, INDEX_LAST_ERROR_KEY, error.to_string().as_str());
-                tracing::warn!(
-                    event = "launcher_index_fts_rebuild_failed",
-                    error = error.to_string()
-                );
-            }
-
-            if let Err(error) = refresh_index(&db_pool, RefreshReason::Startup) {
+            if let Err(error) = initial_result {
                 let _ = write_meta(&db_pool, INDEX_READY_KEY, "0");
                 let _ = write_meta(&db_pool, INDEX_LAST_ERROR_KEY, error.to_string().as_str());
                 tracing::warn!(
@@ -443,58 +431,6 @@ pub fn start_background_indexer(db_pool: DbPool) {
     }
 
     tracing::info!(event = "launcher_indexer_started");
-}
-
-fn run_pending_fts_rebuild(db_pool: &DbPool) -> AppResult<()> {
-    let pending = is_launcher_fts_rebuild_pending(db_pool)?;
-    if !pending {
-        tracing::info!(
-            event = "launcher_index_fts_rebuild_skipped",
-            pending = false,
-            duration_ms = 0_u64,
-            ok = true
-        );
-        return Ok(());
-    }
-
-    tracing::info!(
-        event = "launcher_index_fts_rebuild_started",
-        pending = true,
-        ok = true
-    );
-
-    write_meta(db_pool, INDEX_READY_KEY, "0")?;
-    let started_at = Instant::now();
-    match rebuild_launcher_fts_if_pending(db_pool) {
-        Ok(true) => {
-            tracing::info!(
-                event = "launcher_index_fts_rebuild_finished",
-                pending = true,
-                duration_ms = started_at.elapsed().as_millis() as u64,
-                ok = true
-            );
-            Ok(())
-        }
-        Ok(false) => {
-            tracing::info!(
-                event = "launcher_index_fts_rebuild_skipped",
-                pending = false,
-                duration_ms = started_at.elapsed().as_millis() as u64,
-                ok = true
-            );
-            Ok(())
-        }
-        Err(error) => {
-            tracing::warn!(
-                event = "launcher_index_fts_rebuild_failed",
-                pending = true,
-                duration_ms = started_at.elapsed().as_millis() as u64,
-                ok = false,
-                error = error.to_string()
-            );
-            Err(error)
-        }
-    }
 }
 
 pub fn stop_background_indexer() {
@@ -833,7 +769,7 @@ fn upsert_entries_batched(
 fn delete_stale_entries_for_root(db_pool: &DbPool, root: &str, scan_token: &str) -> AppResult<()> {
     let conn = db_pool.get()?;
     conn.execute(
-        "DELETE FROM launcher_index_entries_v2
+        "DELETE FROM launcher_index_entries
          WHERE source_root = ?1
            AND COALESCE(scan_token, '') <> ?2",
         params![root, scan_token],
@@ -866,7 +802,7 @@ fn upsert_entries(
     for entry in entries {
         transaction.execute(
             r#"
-            INSERT INTO launcher_index_entries_v2 (
+            INSERT INTO launcher_index_entries (
                 path,
                 kind,
                 name,
@@ -909,7 +845,7 @@ fn upsert_entries(
 fn purge_removed_roots(db_pool: &DbPool, roots: &[String]) -> AppResult<()> {
     let conn = db_pool.get()?;
     if roots.is_empty() {
-        conn.execute("DELETE FROM launcher_index_entries_v2", [])?;
+        conn.execute("DELETE FROM launcher_index_entries", [])?;
         return Ok(());
     }
 
@@ -918,7 +854,7 @@ fn purge_removed_roots(db_pool: &DbPool, roots: &[String]) -> AppResult<()> {
         .collect::<Vec<_>>()
         .join(", ");
     let sql =
-        format!("DELETE FROM launcher_index_entries_v2 WHERE source_root NOT IN ({placeholders})");
+        format!("DELETE FROM launcher_index_entries WHERE source_root NOT IN ({placeholders})");
     conn.execute(sql.as_str(), params_from_iter(roots.iter()))?;
     Ok(())
 }
@@ -930,7 +866,7 @@ fn query_index_rows_default(
     let mut statement = conn.prepare(
         r#"
         SELECT path, kind, name, parent
-        FROM launcher_index_entries_v2
+        FROM launcher_index_entries
         ORDER BY
             CASE kind
                 WHEN 'directory' THEN 0
@@ -953,16 +889,16 @@ fn query_index_rows_fts(
     let mut statement = conn.prepare(
         r#"
         SELECT e.path, e.kind, e.name, e.parent
-        FROM launcher_index_entries_fts_v2 f
-        JOIN launcher_index_entries_v2 e ON e.rowid = f.rowid
-        WHERE launcher_index_entries_fts_v2 MATCH ?1
+        FROM launcher_index_entries_fts f
+        JOIN launcher_index_entries e ON e.rowid = f.rowid
+        WHERE launcher_index_entries_fts MATCH ?1
         ORDER BY
             CASE e.kind
                 WHEN 'directory' THEN 0
                 WHEN 'file' THEN 1
                 ELSE 2
             END ASC,
-            bm25(launcher_index_entries_fts_v2) ASC,
+            bm25(launcher_index_entries_fts) ASC,
             e.name COLLATE NOCASE ASC,
             e.path COLLATE NOCASE ASC
         LIMIT ?2
@@ -980,7 +916,7 @@ fn query_index_rows_like(
     let mut statement = conn.prepare(
         r#"
         SELECT path, kind, name, parent
-        FROM launcher_index_entries_v2
+        FROM launcher_index_entries
         WHERE searchable_text LIKE ?1 ESCAPE '\'
         ORDER BY
             CASE kind

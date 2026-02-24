@@ -4,10 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use app_infra::db::{
-    get_app_setting, init_db, is_launcher_fts_rebuild_pending, new_db_pool, set_app_setting,
-};
-use rusqlite::params;
+use app_infra::db::{get_app_setting, init_db, new_db_pool, set_app_setting};
 use uuid::Uuid;
 
 fn create_temp_dir(prefix: &str) -> PathBuf {
@@ -236,45 +233,6 @@ fn scan_warning_aggregator_should_limit_sample_paths() {
 
     assert_eq!(aggregator.read_dir_failed, 10);
     assert_eq!(aggregator.read_dir_samples.len(), SCAN_WARNING_SAMPLE_LIMIT);
-}
-
-#[test]
-fn run_pending_fts_rebuild_should_handle_pending_and_skip_paths() {
-    let db_path = setup_temp_db("launcher-fts-pending");
-    let db_pool = new_db_pool(db_path.as_path()).expect("new db pool");
-
-    run_pending_fts_rebuild(&db_pool).expect("skip when pending is false");
-    assert!(!is_launcher_fts_rebuild_pending(&db_pool).expect("pending false"));
-
-    {
-        let conn = db_pool.get().expect("db conn");
-        conn.execute(
-            "INSERT INTO launcher_index_entries_v2 (
-                path, kind, name, parent, ext, mtime, size, source_root, searchable_text, scan_token
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            params![
-                "/tmp/demo.bin",
-                "file",
-                "demo.bin",
-                "/tmp",
-                "bin",
-                0_i64,
-                10_i64,
-                "/tmp",
-                "demo bin",
-                "seed"
-            ],
-        )
-        .expect("insert launcher row");
-    }
-    set_app_setting(&db_pool, "db.migration.launcher_fts_v2_rebuild", "pending")
-        .expect("set pending migration");
-    assert!(is_launcher_fts_rebuild_pending(&db_pool).expect("pending true"));
-
-    run_pending_fts_rebuild(&db_pool).expect("run pending rebuild");
-    assert!(!is_launcher_fts_rebuild_pending(&db_pool).expect("pending false after rebuild"));
-
-    let _ = fs::remove_file(db_path);
 }
 
 #[test]

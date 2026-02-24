@@ -203,23 +203,13 @@ impl TransferService {
                 .read_chunk(chunk_index, runtime.file.chunk_size)
                 .await?;
             let hash = blake3::hash(bytes.as_slice()).to_hex().to_string();
-            let frame = match codec {
-                FrameCodec::JsonV1 => TransferFrame::Chunk {
-                    session_id: session.id.clone(),
-                    file_id: runtime.file.id.clone(),
-                    chunk_index,
-                    total_chunks: runtime.file.chunk_count,
-                    hash,
-                    data: base64::engine::general_purpose::STANDARD.encode(bytes.as_slice()),
-                },
-                FrameCodec::BinV2 => TransferFrame::ChunkBinary {
-                    session_id: session.id.clone(),
-                    file_id: runtime.file.id.clone(),
-                    chunk_index,
-                    total_chunks: runtime.file.chunk_count,
-                    hash,
-                    data: bytes,
-                },
+            let frame = TransferFrame::ChunkBinary {
+                session_id: session.id.clone(),
+                file_id: runtime.file.id.clone(),
+                chunk_index,
+                total_chunks: runtime.file.chunk_count,
+                hash,
+                data: bytes,
             };
             write_frame_to(writer, &frame, Some(session_key), codec).await?;
             inflight.insert(
@@ -751,7 +741,7 @@ mod tests {
             "session-1",
             "127.0.0.1:9527",
             &session_key,
-            FrameCodec::BinV2,
+            FrameCodec::Bin,
         )
         .await
         .expect("timeout should not fail");
@@ -773,7 +763,7 @@ mod tests {
                 error: None,
             },
             Some(&session_key),
-            FrameCodec::BinV2,
+            FrameCodec::Bin,
         )
         .await
         .expect("write ack frame");
@@ -783,7 +773,7 @@ mod tests {
             "session-1",
             "127.0.0.1:9527",
             &session_key,
-            FrameCodec::BinV2,
+            FrameCodec::Bin,
         )
         .await
         .expect("poll ack frame");
@@ -808,7 +798,7 @@ mod tests {
                 error: None,
             },
             Some(&session_key),
-            FrameCodec::BinV2,
+            FrameCodec::Bin,
         )
         .await
         .expect("write mismatched ack frame");
@@ -818,7 +808,7 @@ mod tests {
             "session-1",
             "127.0.0.1:9527",
             &session_key,
-            FrameCodec::BinV2,
+            FrameCodec::Bin,
         )
         .await
         .expect("poll mismatched ack frame");
@@ -837,7 +827,7 @@ mod tests {
                 message: "peer failed".to_string(),
             },
             Some(&session_key),
-            FrameCodec::BinV2,
+            FrameCodec::Bin,
         )
         .await
         .expect("write error frame");
@@ -847,7 +837,7 @@ mod tests {
             "session-1",
             "127.0.0.1:9527",
             &session_key,
-            FrameCodec::BinV2,
+            FrameCodec::Bin,
         )
         .await;
 

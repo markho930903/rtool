@@ -5,7 +5,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use base64::Engine as _;
 use rand::Rng;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::watch;
@@ -28,8 +27,8 @@ use app_infra::transfer::discovery::{
 };
 use app_infra::transfer::preview::build_preview;
 use app_infra::transfer::protocol::{
-    AckFrameItem, CAPABILITY_ACK_BATCH_V2, CAPABILITY_CODEC_BIN_V2, CAPABILITY_PIPELINE_V2,
-    FrameCodec, ManifestFileFrame, MissingChunkFrame, PROTOCOL_VERSION_V2, TransferFrame,
+    AckFrameItem, CAPABILITY_ACK_BATCH, CAPABILITY_CODEC_BIN, CAPABILITY_PIPELINE,
+    FrameCodec, ManifestFileFrame, MissingChunkFrame, PROTOCOL_VERSION, TransferFrame,
     derive_proof, derive_session_key, random_hex, read_frame, read_frame_from, write_frame,
     write_frame_to,
 };

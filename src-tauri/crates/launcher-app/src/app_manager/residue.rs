@@ -254,12 +254,19 @@ fn detect_path_type(path: &Path) -> AppManagerPathType {
     if path.is_file() {
         return AppManagerPathType::File;
     }
-    AppManagerPathType::Unknown
+    if path.extension().is_some() {
+        AppManagerPathType::File
+    } else {
+        AppManagerPathType::Directory
+    }
 }
 
 pub(super) fn build_app_detail(app: ManagedAppDto) -> ManagedAppDetailDto {
     let app_size_path = resolve_app_size_path(Path::new(app.path.as_str()));
-    let app_size_bytes = exact_path_size_bytes(app_size_path.as_path());
+    let size_snapshot = resolve_app_size_snapshot(app_size_path.as_path());
+    let app_size_bytes = size_snapshot
+        .size_bytes
+        .or(app.size_bytes);
     let related_roots = collect_related_root_specs(&app)
         .into_iter()
         .map(|root| {
@@ -522,7 +529,7 @@ fn group_label(kind: AppManagerResidueKind, scope: AppManagerScope) -> String {
         AppManagerResidueKind::AppData => "应用数据目录",
         AppManagerResidueKind::RegistryKey => "注册表键",
         AppManagerResidueKind::RegistryValue => "注册表值",
-        AppManagerResidueKind::MainApp | AppManagerResidueKind::Unknown => "关联目录",
+        AppManagerResidueKind::MainApp => "关联目录",
     };
     let scope_label = if scope == AppManagerScope::System {
         "系统级"

@@ -1,10 +1,10 @@
 use app_core::AppResult;
 use app_core::models::PaletteItemDto;
 use crate::host::LauncherHost;
-use crate::launcher::service::{execute_palette_legacy, search_palette_legacy};
+use crate::launcher::service::{execute_palette_action_id, search_palette_items};
 
 pub fn search_palette(app: &dyn LauncherHost, query: &str) -> Vec<PaletteItemDto> {
-    search_palette_legacy(app, query)
+    search_palette_items(app, query)
         .into_iter()
         .map(|item| PaletteItemDto {
             id: item.id,
@@ -16,5 +16,5 @@ pub fn search_palette(app: &dyn LauncherHost, query: &str) -> Vec<PaletteItemDto
 }
 
 pub fn execute_palette_action(action_id: &str) -> AppResult<String> {
-    execute_palette_legacy(action_id)
+    execute_palette_action_id(action_id)
 }

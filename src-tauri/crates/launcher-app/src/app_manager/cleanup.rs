@@ -24,10 +24,6 @@ fn delete_path_with_mode(path: &Path, delete_mode: AppManagerCleanupDeleteMode) 
                     .with_ctx("deleteMode", delete_mode.as_str())
             }
         }
-        AppManagerCleanupDeleteMode::Unknown => Err(app_error(
-            AppManagerErrorCode::CleanupModeInvalid,
-            "不支持的删除模式",
-        )),
     }
 }
 
@@ -213,17 +209,11 @@ pub(super) fn execute_cleanup_plan(
     input: AppManagerCleanupInputDto,
 ) -> AppResult<AppManagerCleanupResultDto> {
     let delete_mode = input.delete_mode;
-    if matches!(delete_mode, AppManagerCleanupDeleteMode::Unknown) {
-        return Err(app_error(
-            AppManagerErrorCode::CleanupModeInvalid,
-            "删除模式仅支持 trash 或 permanent",
-        ));
-    }
     let skip_on_error = input.skip_on_error.unwrap_or(true);
     let mut released_size_bytes = 0u64;
     let main_app_size_bytes =
         exact_path_size_bytes(resolve_app_size_path(Path::new(app_item.path.as_str())).as_path())
-            .or(app_item.estimated_size_bytes);
+            .or(app_item.size_bytes);
     let mut deleted = Vec::new();
     let mut skipped = Vec::new();
     let mut failed = Vec::new();

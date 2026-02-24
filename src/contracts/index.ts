@@ -6,25 +6,25 @@ export type ActionResultDto = { ok: boolean, message: string, };
 
 export type AppErrorPayload = { code: string, message: string, context: Array<ErrorContextItem>, causes: Array<string>, requestId: string | null, };
 
-export type AppManagerActionCode = "app_manager_refreshed" | "app_manager_startup_updated" | "app_manager_uninstall_started" | "app_manager_uninstall_help_opened" | "unknown";
+export type AppManagerActionCode = "app_manager_refreshed" | "app_manager_startup_updated" | "app_manager_uninstall_started" | "app_manager_uninstall_help_opened";
 
 export type AppManagerActionResultDto = { ok: boolean, code: AppManagerActionCode, message: string, detail: string | null, };
 
 export type AppManagerCapabilitiesDto = { startup: boolean, uninstall: boolean, residueScan: boolean, };
 
-export type AppManagerCategory = "all" | "rtool" | "application" | "startup" | "unknown";
+export type AppManagerCategory = "all" | "rtool" | "application" | "startup";
 
-export type AppManagerCleanupDeleteMode = "trash" | "permanent" | "unknown";
+export type AppManagerCleanupDeleteMode = "trash" | "permanent";
 
 export type AppManagerCleanupInputDto = { appId: string, selectedItemIds: Array<string>, deleteMode: AppManagerCleanupDeleteMode, includeMainApp: boolean, skipOnError: boolean | null, confirmedFingerprint: string | null, };
 
 export type AppManagerCleanupItemResultDto = { itemId: string, path: string, kind: AppManagerResidueKind, status: AppManagerCleanupStatus, reasonCode: AppManagerCleanupReasonCode, message: string, sizeBytes: number | null, };
 
-export type AppManagerCleanupReasonCode = "ok" | "self_uninstall_forbidden" | "managed_by_policy" | "not_found" | "app_manager_cleanup_delete_failed" | "app_manager_cleanup_not_found" | "app_manager_cleanup_path_invalid" | "app_manager_cleanup_not_supported" | "app_manager_uninstall_failed" | "unknown";
+export type AppManagerCleanupReasonCode = "ok" | "self_uninstall_forbidden" | "managed_by_policy" | "not_found" | "app_manager_cleanup_delete_failed" | "app_manager_cleanup_not_found" | "app_manager_cleanup_path_invalid" | "app_manager_cleanup_not_supported" | "app_manager_uninstall_failed";
 
 export type AppManagerCleanupResultDto = { appId: string, deleteMode: AppManagerCleanupDeleteMode, releasedSizeBytes: number, deleted: Array<AppManagerCleanupItemResultDto>, skipped: Array<AppManagerCleanupItemResultDto>, failed: Array<AppManagerCleanupItemResultDto>, };
 
-export type AppManagerCleanupStatus = "deleted" | "skipped" | "failed" | "unknown";
+export type AppManagerCleanupStatus = "deleted" | "skipped" | "failed";
 
 export type AppManagerDetailQueryDto = { appId: string, };
 
@@ -32,55 +32,63 @@ export type AppManagerExportScanInputDto = { appId: string, };
 
 export type AppManagerExportScanResultDto = { appId: string, filePath: string, directoryPath: string, };
 
-export type AppManagerIconKind = "raster" | "iconify" | "unknown";
+export type AppManagerIconKind = "raster" | "iconify";
+
+export type AppManagerIndexState = "ready" | "building" | "degraded";
+
+export type AppManagerIndexUpdateReason = "manual" | "auto_change" | "startup";
+
+export type AppManagerIndexUpdatedPayloadDto = { revision: number, indexedAt: number, changedCount: number, reason: AppManagerIndexUpdateReason, };
 
 export type AppManagerIdentityDto = { primaryId: string, aliases: Array<string>, identitySource: AppManagerIdentitySource, };
 
-export type AppManagerIdentitySource = "bundle_id" | "registry" | "path" | "unknown";
+export type AppManagerIdentitySource = "bundle_id" | "registry" | "path";
 
-export type AppManagerPageDto = { items: Array<ManagedAppDto>, nextCursor: string | null, indexedAt: number, };
+export type AppManagerPageDto = { items: Array<ManagedAppDto>, nextCursor: string | null, indexedAt: number, revision: number, indexState: AppManagerIndexState, };
 
-export type AppManagerPathType = "file" | "directory" | "unknown";
+export type AppManagerPathType = "file" | "directory";
 
-export type AppManagerPlatform = "macos" | "windows" | "linux" | "unknown";
+export type AppManagerPlatform = "macos" | "windows" | "linux";
 
 export type AppManagerQueryDto = { keyword: string | null, category: AppManagerCategory, limit: number | null, cursor: string | null, };
 
-export type AppManagerResidueConfidence = "exact" | "high" | "medium" | "unknown";
+export type AppManagerResidueConfidence = "exact" | "high" | "medium";
 
 export type AppManagerResidueGroupDto = { groupId: string, label: string, scope: AppManagerScope, kind: AppManagerResidueKind, totalSizeBytes: number, items: Array<AppManagerResidueItemDto>, };
 
 export type AppManagerResidueItemDto = { itemId: string, path: string, pathType: AppManagerPathType, kind: AppManagerResidueKind, scope: AppManagerScope, sizeBytes: number, matchReason: AppManagerResidueMatchReason, confidence: AppManagerResidueConfidence, evidence: Array<string>, riskLevel: AppManagerRiskLevel, recommended: boolean, readonly: boolean, readonlyReasonCode: AppReadonlyReasonCode | null, };
 
-export type AppManagerResidueKind = "install" | "app_support" | "cache" | "preferences" | "logs" | "startup" | "app_data" | "registry_key" | "registry_value" | "main_app" | "unknown";
+export type AppManagerResidueKind = "install" | "app_support" | "cache" | "preferences" | "logs" | "startup" | "app_data" | "registry_key" | "registry_value" | "main_app";
 
-export type AppManagerResidueMatchReason = "related_root" | "bundle_id" | "startup_label" | "startup_shortcut" | "uninstall_registry" | "startup_registry" | "run_registry" | "unknown";
+export type AppManagerResidueMatchReason = "related_root" | "bundle_id" | "startup_label" | "startup_shortcut" | "uninstall_registry" | "startup_registry" | "run_registry";
 
 export type AppManagerResidueScanInputDto = { appId: string, };
 
 export type AppManagerResidueScanResultDto = { appId: string, totalSizeBytes: number, groups: Array<AppManagerResidueGroupDto>, warnings: Array<AppManagerScanWarningDto>, };
 
-export type AppManagerRiskLevel = "low" | "medium" | "high" | "unknown";
+export type AppManagerRiskLevel = "low" | "medium" | "high";
 
-export type AppManagerScanWarningCode = "app_manager_size_metadata_read_failed" | "app_manager_size_estimate_truncated" | "app_manager_size_read_dir_failed" | "app_manager_size_read_dir_entry_failed" | "app_manager_size_read_file_type_failed" | "app_manager_size_read_metadata_failed" | "unknown";
+export type AppManagerScanWarningCode = "app_manager_size_metadata_read_failed" | "app_manager_size_estimate_truncated" | "app_manager_size_read_dir_failed" | "app_manager_size_read_dir_entry_failed" | "app_manager_size_read_file_type_failed" | "app_manager_size_read_metadata_failed";
 
-export type AppManagerScanWarningDetailCode = "permission_denied" | "not_found" | "interrupted" | "invalid_data" | "timed_out" | "would_block" | "limit_reached" | "io_other" | "unknown";
+export type AppManagerScanWarningDetailCode = "permission_denied" | "not_found" | "interrupted" | "invalid_data" | "timed_out" | "would_block" | "limit_reached" | "io_other";
 
 export type AppManagerScanWarningDto = { code: AppManagerScanWarningCode, path: string | null, detailCode: AppManagerScanWarningDetailCode | null, };
 
-export type AppManagerScope = "user" | "system" | "unknown";
+export type AppManagerScope = "user" | "system";
 
-export type AppManagerSource = "rtool" | "application" | "unknown";
+export type AppManagerSource = "rtool" | "application";
 
-export type AppManagerStartupScope = "user" | "system" | "none" | "unknown";
+export type AppManagerSizeAccuracy = "exact" | "estimated";
+
+export type AppManagerStartupScope = "user" | "system" | "none";
 
 export type AppManagerStartupUpdateInputDto = { appId: string, enabled: boolean, };
 
 export type AppManagerUninstallInputDto = { appId: string, confirmedFingerprint: string, };
 
-export type AppManagerUninstallKind = "finder_trash" | "registry_command" | "unknown";
+export type AppManagerUninstallKind = "finder_trash" | "registry_command";
 
-export type AppReadonlyReasonCode = "permission_denied" | "managed_by_policy" | "feature_disabled" | "unknown";
+export type AppReadonlyReasonCode = "permission_denied" | "managed_by_policy" | "feature_disabled";
 
 export type AppRelatedRootDto = { id: string, label: string, path: string, pathType: AppManagerPathType, scope: AppManagerScope, kind: AppManagerResidueKind, exists: boolean, readonly: boolean, readonlyReasonCode: AppReadonlyReasonCode | null, };
 
@@ -140,7 +148,7 @@ export type LogQueryDto = { cursor: string | null, limit: number, levels: Array<
 
 export type ManagedAppDetailDto = { app: ManagedAppDto, installPath: string, relatedRoots: Array<AppRelatedRootDto>, sizeSummary: AppSizeSummaryDto, };
 
-export type ManagedAppDto = { id: string, name: string, path: string, bundleOrAppId: string | null, version: string | null, publisher: string | null, platform: AppManagerPlatform, source: AppManagerSource, iconKind: AppManagerIconKind, iconValue: string, estimatedSizeBytes: number | null, startupEnabled: boolean, startupScope: AppManagerStartupScope, startupEditable: boolean, readonlyReasonCode: AppReadonlyReasonCode | null, uninstallSupported: boolean, uninstallKind: AppManagerUninstallKind | null, capabilities: AppManagerCapabilitiesDto, identity: AppManagerIdentityDto, riskLevel: AppManagerRiskLevel, fingerprint: string, };
+export type ManagedAppDto = { id: string, name: string, path: string, bundleOrAppId: string | null, version: string | null, publisher: string | null, platform: AppManagerPlatform, source: AppManagerSource, iconKind: AppManagerIconKind, iconValue: string, sizeBytes: number | null, sizeAccuracy: AppManagerSizeAccuracy, sizeComputedAt: number | null, startupEnabled: boolean, startupScope: AppManagerStartupScope, startupEditable: boolean, readonlyReasonCode: AppReadonlyReasonCode | null, uninstallSupported: boolean, uninstallKind: AppManagerUninstallKind | null, capabilities: AppManagerCapabilitiesDto, identity: AppManagerIdentityDto, riskLevel: AppManagerRiskLevel, fingerprint: string, };
 
 export type PaletteItemDto = { id: string, title: string, subtitle: string, category: string, };
 
@@ -150,7 +158,7 @@ export type SystemInfoDto = { osName: string | null, osVersion: string | null, k
 
 export type TransferClearHistoryInputDto = { all: boolean | null, olderThanDays: number | null, };
 
-export type TransferDirection = "send" | "receive" | "unknown";
+export type TransferDirection = "send" | "receive";
 
 export type TransferFileDto = { id: string, sessionId: string, relativePath: string, sourcePath: string | null, targetPath: string | null, sizeBytes: number, transferredBytes: number, chunkSize: number, chunkCount: number, status: TransferStatus, blake3: string | null, mimeType: string | null, previewKind: string | null, previewData: string | null, isFolderArchive: boolean, };
 
@@ -164,16 +172,16 @@ export type TransferPairingCodeDto = { code: string, expiresAt: number, };
 
 export type TransferPeerDto = { deviceId: string, displayName: string, address: string, listenPort: number, lastSeenAt: number, pairedAt: number | null, trustLevel: TransferPeerTrustLevel, failedAttempts: number, blockedUntil: number | null, pairingRequired: boolean, online: boolean, };
 
-export type TransferPeerTrustLevel = "unknown" | "online" | "trusted" | "other";
+export type TransferPeerTrustLevel = "online" | "trusted" | "other";
 
-export type TransferProgressSnapshotDto = { session: TransferSessionDto, activeFileId: string | null, speedBps: number, etaSeconds: number | null, protocolVersion: number | null, codec: string | null, inflightChunks: number | null, retransmitChunks: number | null, };
+export type TransferProgressSnapshotDto = { session: TransferSessionDto, activeFileId: string | null, speedBps: number, etaSeconds: number | null, protocolVersion: number | null, codec: "bin" | null, inflightChunks: number | null, retransmitChunks: number | null, };
 
 export type TransferSendFilesInputDto = { peerDeviceId: string, pairCode: string, files: Array<TransferFileInputDto>, direction: TransferDirection | null, sessionId: string | null, };
 
 export type TransferSessionDto = { id: string, direction: TransferDirection, peerDeviceId: string, peerName: string, status: TransferStatus, totalBytes: number, transferredBytes: number, avgSpeedBps: number, saveDir: string, createdAt: number, startedAt: number | null, finishedAt: number | null, errorCode: string | null, errorMessage: string | null, cleanupAfterAt: number | null, files: Array<TransferFileDto>, };
 
-export type TransferSettingsDto = { defaultDownloadDir: string, maxParallelFiles: number, maxInflightChunks: number, chunkSizeKb: number, autoCleanupDays: number, resumeEnabled: boolean, discoveryEnabled: boolean, pairingRequired: boolean, pipelineV2Enabled: boolean, codecV2Enabled: boolean, dbFlushIntervalMs: number, eventEmitIntervalMs: number, ackBatchSize: number, ackFlushIntervalMs: number, };
+export type TransferSettingsDto = { defaultDownloadDir: string, maxParallelFiles: number, maxInflightChunks: number, chunkSizeKb: number, autoCleanupDays: number, resumeEnabled: boolean, discoveryEnabled: boolean, pairingRequired: boolean, dbFlushIntervalMs: number, eventEmitIntervalMs: number, ackBatchSize: number, ackFlushIntervalMs: number, };
 
-export type TransferStatus = "queued" | "running" | "paused" | "failed" | "interrupted" | "canceled" | "success" | "unknown";
+export type TransferStatus = "queued" | "running" | "paused" | "failed" | "interrupted" | "canceled" | "success";
 
 export type TransferUpdateSettingsInputDto = { defaultDownloadDir: string | null, maxParallelFiles: number | null, maxInflightChunks: number | null, chunkSizeKb: number | null, autoCleanupDays: number | null, resumeEnabled: boolean | null, discoveryEnabled: boolean | null, pairingRequired: boolean | null, };

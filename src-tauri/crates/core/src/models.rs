@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use crate::{AppError, AppResult};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -150,8 +151,6 @@ pub enum AppReadonlyReasonCode {
     PermissionDenied,
     ManagedByPolicy,
     FeatureDisabled,
-    #[serde(other)]
-    Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -159,8 +158,6 @@ pub enum AppReadonlyReasonCode {
 pub enum AppManagerScope {
     User,
     System,
-    #[serde(other)]
-    Unknown,
 }
 
 impl AppManagerScope {
@@ -168,7 +165,6 @@ impl AppManagerScope {
         match self {
             Self::User => "user",
             Self::System => "system",
-            Self::Unknown => "unknown",
         }
     }
 }
@@ -178,8 +174,6 @@ impl AppManagerScope {
 pub enum AppManagerPathType {
     File,
     Directory,
-    #[serde(other)]
-    Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -188,8 +182,6 @@ pub enum AppManagerStartupScope {
     User,
     System,
     None,
-    #[serde(other)]
-    Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -205,8 +197,6 @@ pub enum AppManagerResidueKind {
     RegistryKey,
     RegistryValue,
     MainApp,
-    #[serde(other)]
-    Unknown,
 }
 
 impl AppManagerResidueKind {
@@ -222,7 +212,6 @@ impl AppManagerResidueKind {
             Self::RegistryKey => "registry_key",
             Self::RegistryValue => "registry_value",
             Self::MainApp => "main_app",
-            Self::Unknown => "unknown",
         }
     }
 }
@@ -233,8 +222,6 @@ pub enum AppManagerResidueConfidence {
     Exact,
     High,
     Medium,
-    #[serde(other)]
-    Unknown,
 }
 
 impl AppManagerResidueConfidence {
@@ -243,7 +230,6 @@ impl AppManagerResidueConfidence {
             Self::Exact => 3,
             Self::High => 2,
             Self::Medium => 1,
-            Self::Unknown => 0,
         }
     }
 }
@@ -254,8 +240,6 @@ pub enum AppManagerRiskLevel {
     Low,
     Medium,
     High,
-    #[serde(other)]
-    Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -264,8 +248,6 @@ pub enum AppManagerIdentitySource {
     BundleId,
     Registry,
     Path,
-    #[serde(other)]
-    Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -273,8 +255,6 @@ pub enum AppManagerIdentitySource {
 pub enum AppManagerSource {
     Rtool,
     Application,
-    #[serde(other)]
-    Unknown,
 }
 
 impl AppManagerSource {
@@ -282,7 +262,58 @@ impl AppManagerSource {
         match self {
             Self::Application => 0,
             Self::Rtool => 1,
-            Self::Unknown => 2,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AppManagerSizeAccuracy {
+    Exact,
+    Estimated,
+}
+
+impl AppManagerSizeAccuracy {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Exact => "exact",
+            Self::Estimated => "estimated",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AppManagerIndexState {
+    Ready,
+    Building,
+    Degraded,
+}
+
+impl AppManagerIndexState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ready => "ready",
+            Self::Building => "building",
+            Self::Degraded => "degraded",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AppManagerIndexUpdateReason {
+    Manual,
+    AutoChange,
+    Startup,
+}
+
+impl AppManagerIndexUpdateReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Manual => "manual",
+            Self::AutoChange => "auto_change",
+            Self::Startup => "startup",
         }
     }
 }
@@ -295,8 +326,6 @@ pub enum AppManagerCategory {
     Rtool,
     Application,
     Startup,
-    #[serde(other)]
-    Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -305,8 +334,6 @@ pub enum AppManagerPlatform {
     Macos,
     Windows,
     Linux,
-    #[serde(other)]
-    Unknown,
 }
 
 impl AppManagerPlatform {
@@ -325,7 +352,7 @@ impl AppManagerPlatform {
         }
         #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
         {
-            Self::Unknown
+            unreachable!("unsupported target platform")
         }
     }
 }
@@ -335,8 +362,6 @@ impl AppManagerPlatform {
 pub enum AppManagerIconKind {
     Raster,
     Iconify,
-    #[serde(other)]
-    Unknown,
 }
 
 impl AppManagerIconKind {
@@ -347,7 +372,7 @@ impl AppManagerIconKind {
         if value.eq_ignore_ascii_case("iconify") {
             return Self::Iconify;
         }
-        Self::Unknown
+        Self::Iconify
     }
 }
 
@@ -356,8 +381,6 @@ impl AppManagerIconKind {
 pub enum AppManagerUninstallKind {
     FinderTrash,
     RegistryCommand,
-    #[serde(other)]
-    Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -370,8 +393,6 @@ pub enum AppManagerResidueMatchReason {
     UninstallRegistry,
     StartupRegistry,
     RunRegistry,
-    #[serde(other)]
-    Unknown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -390,7 +411,10 @@ pub struct ManagedAppDto {
     pub source: AppManagerSource,
     pub icon_kind: AppManagerIconKind,
     pub icon_value: String,
-    pub estimated_size_bytes: Option<u64>,
+    pub size_bytes: Option<u64>,
+    pub size_accuracy: AppManagerSizeAccuracy,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size_computed_at: Option<i64>,
     pub startup_enabled: bool,
     pub startup_scope: AppManagerStartupScope,
     pub startup_editable: bool,
@@ -408,7 +432,7 @@ pub struct ManagedAppDto {
 impl AppManagerCategory {
     pub fn matches_item(self, item: &ManagedAppDto) -> bool {
         match self {
-            Self::All | Self::Unknown => true,
+            Self::All => true,
             Self::Rtool => matches!(item.source, AppManagerSource::Rtool),
             Self::Application => matches!(item.source, AppManagerSource::Application),
             Self::Startup => item.startup_enabled,
@@ -422,6 +446,17 @@ pub struct AppManagerPageDto {
     pub items: Vec<ManagedAppDto>,
     pub next_cursor: Option<String>,
     pub indexed_at: i64,
+    pub revision: u64,
+    pub index_state: AppManagerIndexState,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppManagerIndexUpdatedPayloadDto {
+    pub revision: u64,
+    pub indexed_at: i64,
+    pub changed_count: u32,
+    pub reason: AppManagerIndexUpdateReason,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -531,8 +566,6 @@ pub enum AppManagerScanWarningCode {
     AppManagerSizeReadDirEntryFailed,
     AppManagerSizeReadFileTypeFailed,
     AppManagerSizeReadMetadataFailed,
-    #[serde(other)]
-    Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -546,8 +579,6 @@ pub enum AppManagerScanWarningDetailCode {
     WouldBlock,
     LimitReached,
     IoOther,
-    #[serde(other)]
-    Unknown,
 }
 
 impl AppManagerScanWarningDetailCode {
@@ -562,7 +593,7 @@ impl AppManagerScanWarningDetailCode {
             ErrorKind::TimedOut => Self::TimedOut,
             ErrorKind::WouldBlock => Self::WouldBlock,
             ErrorKind::Other => Self::IoOther,
-            _ => Self::Unknown,
+            _ => Self::IoOther,
         }
     }
 }
@@ -593,8 +624,6 @@ pub struct AppManagerCleanupInputDto {
 pub enum AppManagerCleanupDeleteMode {
     Trash,
     Permanent,
-    #[serde(other)]
-    Unknown,
 }
 
 impl AppManagerCleanupDeleteMode {
@@ -602,7 +631,6 @@ impl AppManagerCleanupDeleteMode {
         match self {
             Self::Trash => "trash",
             Self::Permanent => "permanent",
-            Self::Unknown => "unknown",
         }
     }
 }
@@ -613,8 +641,6 @@ pub enum AppManagerCleanupStatus {
     Deleted,
     Skipped,
     Failed,
-    #[serde(other)]
-    Unknown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -629,8 +655,6 @@ pub enum AppManagerCleanupReasonCode {
     AppManagerCleanupPathInvalid,
     AppManagerCleanupNotSupported,
     AppManagerUninstallFailed,
-    #[serde(other)]
-    Unknown,
 }
 
 impl AppManagerCleanupReasonCode {
@@ -641,7 +665,7 @@ impl AppManagerCleanupReasonCode {
             "app_manager_cleanup_path_invalid" => Self::AppManagerCleanupPathInvalid,
             "app_manager_cleanup_not_supported" => Self::AppManagerCleanupNotSupported,
             "app_manager_uninstall_failed" => Self::AppManagerUninstallFailed,
-            _ => Self::Unknown,
+            _ => Self::AppManagerCleanupDeleteFailed,
         }
     }
 }
@@ -701,8 +725,6 @@ pub enum AppManagerActionCode {
     AppManagerStartupUpdated,
     AppManagerUninstallStarted,
     AppManagerUninstallHelpOpened,
-    #[serde(other)]
-    Unknown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -772,8 +794,6 @@ pub struct TransferSettingsDto {
     pub resume_enabled: bool,
     pub discovery_enabled: bool,
     pub pairing_required: bool,
-    pub pipeline_v2_enabled: bool,
-    pub codec_v2_enabled: bool,
     pub db_flush_interval_ms: u32,
     pub event_emit_interval_ms: u32,
     pub ack_batch_size: u32,
@@ -796,34 +816,31 @@ pub struct TransferUpdateSettingsInputDto {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TransferPeerTrustLevel {
-    Unknown,
     Online,
     Trusted,
-    #[serde(other)]
     Other,
 }
 
 impl TransferPeerTrustLevel {
     pub fn as_str(self) -> &'static str {
         match self {
-            Self::Unknown => "unknown",
             Self::Online => "online",
             Self::Trusted => "trusted",
             Self::Other => "other",
         }
     }
 
-    pub fn from_db(value: &str) -> Self {
-        if value.eq_ignore_ascii_case("unknown") {
-            return Self::Unknown;
-        }
+    pub fn from_db(value: &str) -> AppResult<Self> {
         if value.eq_ignore_ascii_case("online") {
-            return Self::Online;
+            return Ok(Self::Online);
         }
         if value.eq_ignore_ascii_case("trusted") {
-            return Self::Trusted;
+            return Ok(Self::Trusted);
         }
-        Self::Other
+        if value.eq_ignore_ascii_case("other") {
+            return Ok(Self::Other);
+        }
+        Err(invalid_transfer_enum("transferPeerTrustLevel", value))
     }
 }
 
@@ -877,8 +894,6 @@ pub struct TransferSendFilesInputDto {
 pub enum TransferDirection {
     Send,
     Receive,
-    #[serde(other)]
-    Unknown,
 }
 
 impl TransferDirection {
@@ -886,25 +901,25 @@ impl TransferDirection {
         match self {
             Self::Send => "send",
             Self::Receive => "receive",
-            Self::Unknown => "unknown",
         }
     }
 
-    pub fn from_db(value: &str) -> Self {
+    pub fn from_db(value: &str) -> AppResult<Self> {
         if value.eq_ignore_ascii_case("send") {
-            return Self::Send;
+            return Ok(Self::Send);
         }
         if value.eq_ignore_ascii_case("receive") {
-            return Self::Receive;
+            return Ok(Self::Receive);
         }
-        Self::Unknown
+        Err(invalid_transfer_enum("transferDirection", value))
     }
 
-    pub fn from_remote_manifest(remote_direction: &str) -> Self {
-        match Self::from_db(remote_direction) {
+    pub fn from_remote_manifest(remote_direction: &str) -> AppResult<Self> {
+        let direction = match Self::from_db(remote_direction)? {
             Self::Receive => Self::Send,
             _ => Self::Receive,
-        }
+        };
+        Ok(direction)
     }
 }
 
@@ -918,8 +933,6 @@ pub enum TransferStatus {
     Interrupted,
     Canceled,
     Success,
-    #[serde(other)]
-    Unknown,
 }
 
 impl TransferStatus {
@@ -932,38 +945,43 @@ impl TransferStatus {
             Self::Interrupted => "interrupted",
             Self::Canceled => "canceled",
             Self::Success => "success",
-            Self::Unknown => "unknown",
         }
     }
 
-    pub fn from_db(value: &str) -> Self {
+    pub fn from_db(value: &str) -> AppResult<Self> {
         if value.eq_ignore_ascii_case("queued") {
-            return Self::Queued;
+            return Ok(Self::Queued);
         }
         if value.eq_ignore_ascii_case("running") {
-            return Self::Running;
+            return Ok(Self::Running);
         }
         if value.eq_ignore_ascii_case("paused") {
-            return Self::Paused;
+            return Ok(Self::Paused);
         }
         if value.eq_ignore_ascii_case("failed") {
-            return Self::Failed;
+            return Ok(Self::Failed);
         }
         if value.eq_ignore_ascii_case("interrupted") {
-            return Self::Interrupted;
+            return Ok(Self::Interrupted);
         }
         if value.eq_ignore_ascii_case("canceled") || value.eq_ignore_ascii_case("cancelled") {
-            return Self::Canceled;
+            return Ok(Self::Canceled);
         }
         if value.eq_ignore_ascii_case("success") || value.eq_ignore_ascii_case("completed") {
-            return Self::Success;
+            return Ok(Self::Success);
         }
-        Self::Unknown
+        Err(invalid_transfer_enum("transferStatus", value))
     }
 
     pub fn is_retryable(self) -> bool {
         matches!(self, Self::Failed | Self::Interrupted | Self::Canceled)
     }
+}
+
+fn invalid_transfer_enum(field: &str, value: &str) -> AppError {
+    AppError::new("transfer_data_invalid_enum", "传输数据包含非法枚举值")
+        .with_context("field", field.to_string())
+        .with_context("value", value.to_string())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

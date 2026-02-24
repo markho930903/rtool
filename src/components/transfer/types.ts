@@ -9,7 +9,7 @@ export interface TransferSettings {
   pairingRequired: boolean;
 }
 
-export type TransferPeerTrustLevel = "unknown" | "online" | "trusted" | "other";
+export type TransferPeerTrustLevel = "online" | "trusted" | "other";
 
 export interface TransferPeer {
   deviceId: string;
@@ -31,9 +31,9 @@ export interface TransferFileInput {
   compressFolder?: boolean;
 }
 
-export type TransferDirection = "send" | "receive" | "unknown";
+export type TransferDirection = "send" | "receive";
 
-export type TransferStatus = "queued" | "running" | "paused" | "failed" | "interrupted" | "canceled" | "success" | "unknown";
+export type TransferStatus = "queued" | "running" | "paused" | "failed" | "interrupted" | "canceled" | "success";
 
 export function isTransferRunningLikeStatus(status: TransferStatus): boolean {
   return status === "queued" || status === "running";
@@ -86,7 +86,7 @@ export interface TransferProgressSnapshot {
   speedBps: number;
   etaSeconds: number | null;
   protocolVersion?: number;
-  codec?: "json-v1" | "bin-v2";
+  codec?: "bin";
   inflightChunks?: number;
   retransmitChunks?: number;
 }

@@ -15,19 +15,6 @@ pub(super) struct IncomingRuntimeState {
     pub(super) file_id_to_idx: HashMap<String, usize>,
 }
 
-pub(super) fn decode_incoming_chunk_payload(
-    file_id: &str,
-    chunk_index: u32,
-    data: &str,
-) -> AppResult<Vec<u8>> {
-    base64::engine::general_purpose::STANDARD
-        .decode(data.as_bytes())
-        .with_context(|| format!("分块解码失败: file_id={file_id}, chunk_index={chunk_index}"))
-        .with_code("transfer_chunk_decode_failed", "分块解码失败")
-        .with_ctx("fileId", file_id.to_string())
-        .with_ctx("chunkIndex", chunk_index.to_string())
-}
-
 pub(super) fn should_flush_ack_buffer(
     ack_buffer_len: usize,
     ack_batch_size: u32,
@@ -444,35 +431,10 @@ impl TransferService {
         W: tokio::io::AsyncWrite + Unpin,
     {
         match frame {
-            TransferFrame::Chunk {
-                session_id: incoming_session_id,
-                file_id,
-                chunk_index,
-                hash,
-                data,
-                ..
-            } => {
-                if incoming_session_id != session.id {
-                    return Ok(false);
-                }
-                let decoded =
-                    decode_incoming_chunk_payload(file_id.as_str(), chunk_index, data.as_str())?;
-                self.handle_incoming_chunk_payload(
-                    session,
-                    runtimes,
-                    file_id_to_idx,
-                    dirty_files,
-                    ack_buffer,
-                    file_id,
-                    chunk_index,
-                    hash,
-                    decoded,
-                    started_at,
-                    codec,
-                )
-                .await?;
-                Ok(false)
-            }
+            TransferFrame::Chunk { .. } => Err(AppError::new(
+                "transfer_protocol_frame_invalid",
+                "不支持文本分块帧，请升级到二进制协议",
+            )),
             TransferFrame::ChunkBinary {
                 session_id: incoming_session_id,
                 file_id,
@@ -608,24 +570,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn decode_incoming_chunk_payload_should_decode_valid_base64() {
-        let payload =
-            decode_incoming_chunk_payload("file-1", 2, "YWJj").expect("valid base64 should decode");
-        assert_eq!(payload, b"abc");
-    }
-
-    #[test]
-    fn decode_incoming_chunk_payload_should_return_typed_error_for_invalid_base64() {
-        let result = decode_incoming_chunk_payload("file-1", 2, "%%%invalid%%%");
-        assert!(result.is_err());
-        let error = match result {
-            Ok(_) => unreachable!(),
-            Err(error) => error,
-        };
-        assert_eq!(error.code, "transfer_chunk_decode_failed");
-    }
-
-    #[test]
     fn should_flush_ack_buffer_should_return_false_for_empty_buffer() {
         assert!(!should_flush_ack_buffer(
             0,
@@ -694,7 +638,7 @@ mod tests {
         let (mut reader, _writer) = tokio::io::duplex(4096);
         let session_key = [7u8; 32];
 
-        let frame = poll_incoming_frame_raw(&mut reader, &session_key, FrameCodec::BinV2)
+        let frame = poll_incoming_frame_raw(&mut reader, &session_key, FrameCodec::Bin)
             .await
             .expect("timeout should not fail");
         assert!(frame.is_none());
@@ -708,12 +652,12 @@ mod tests {
             &mut writer,
             &TransferFrame::Ping { ts: 42 },
             Some(&session_key),
-            FrameCodec::BinV2,
+            FrameCodec::Bin,
         )
         .await
         .expect("write ping frame");
 
-        let frame = poll_incoming_frame_raw(&mut reader, &session_key, FrameCodec::BinV2)
+        let frame = poll_incoming_frame_raw(&mut reader, &session_key, FrameCodec::Bin)
             .await
             .expect("read ping frame");
         assert!(matches!(frame, Some(TransferFrame::Ping { ts: 42 })));
@@ -725,7 +669,7 @@ mod tests {
         drop(writer);
         let session_key = [3u8; 32];
 
-        let result = poll_incoming_frame_raw(&mut reader, &session_key, FrameCodec::BinV2).await;
+        let result = poll_incoming_frame_raw(&mut reader, &session_key, FrameCodec::Bin).await;
         assert!(result.is_err());
         let error = match result {
             Ok(_) => unreachable!(),

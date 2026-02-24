@@ -73,11 +73,7 @@ impl TransferService {
         let mut last_db_flush = Instant::now();
         let db_flush_interval =
             Duration::from_millis(settings.db_flush_interval_ms.max(100) as u64);
-        let max_inflight_chunks = if settings.pipeline_v2_enabled {
-            settings.max_inflight_chunks.max(1) as usize
-        } else {
-            1
-        };
+        let max_inflight_chunks = settings.max_inflight_chunks.max(1) as usize;
 
         while state.has_pending_work() {
             self.wait_if_paused(state.session.id.as_str()).await;

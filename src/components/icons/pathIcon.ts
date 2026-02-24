@@ -1,8 +1,7 @@
-export type AppPathType = "file" | "directory" | "unknown";
+export type AppPathType = "file" | "directory";
 
 const FILE_FALLBACK_ICON = "i-noto:page-facing-up";
 const DIRECTORY_ICON = "i-noto:file-folder";
-const UNKNOWN_ICON = "i-noto:card-index-dividers";
 
 export function normalizePathType(pathType?: string | null): AppPathType {
   const normalized = pathType?.trim().toLowerCase();
@@ -12,7 +11,7 @@ export function normalizePathType(pathType?: string | null): AppPathType {
   if (normalized === "directory" || normalized === "dir" || normalized === "folder") {
     return "directory";
   }
-  return "unknown";
+  return "directory";
 }
 
 export function getFileExtension(path: string | undefined): string | null {
@@ -123,8 +122,5 @@ export function resolvePathIcon(path: string, pathType?: string | null): string 
   if (normalizedPathType === "directory") {
     return DIRECTORY_ICON;
   }
-  if (normalizedPathType === "file") {
-    return resolveFileIconByExtension(getFileExtension(path));
-  }
-  return UNKNOWN_ICON;
+  return resolveFileIconByExtension(getFileExtension(path));
 }

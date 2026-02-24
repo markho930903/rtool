@@ -131,15 +131,15 @@ fn should_hide_builtin_tools_when_query_empty() {
 }
 
 #[test]
-fn should_execute_palette_legacy_supported_action() {
-    let result = execute_palette_legacy("builtin.tools");
+fn should_execute_palette_supported_action() {
+    let result = execute_palette_action_id("builtin.tools");
     assert!(result.is_ok());
     assert_eq!(result.ok(), Some("route:/tools".to_string()));
 }
 
 #[test]
-fn should_reject_palette_legacy_unknown_action() {
-    let result = execute_palette_legacy("unknown.action");
+fn should_reject_palette_unknown_action() {
+    let result = execute_palette_action_id("unknown.action");
     assert!(result.is_err());
     let error = result.expect_err("palette action should return error");
     assert_eq!(error.code, "palette_action_unsupported");

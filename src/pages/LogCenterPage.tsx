@@ -149,16 +149,6 @@ export default function LogCenterPage() {
           <Button size="default" variant="secondary" onClick={() => void handleExport()} disabled={exporting}>
             {exporting ? t("action.exporting") : t("action.export")}
           </Button>
-          <Button
-            size="default"
-            variant="ghost"
-            onClick={() => {
-              resetFilters();
-              void refresh();
-            }}
-          >
-            {t("action.resetFilters")}
-          </Button>
           <Button as="link" to="/settings" variant="primary">
             {t("action.openSettings")}
           </Button>
@@ -176,55 +166,73 @@ export default function LogCenterPage() {
         ) : null}
       </section>
 
-      <section className="space-y-3">
-        <aside className="space-y-3 rounded-xl border border-border-muted bg-surface p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <h2 className="m-0 text-sm font-semibold text-text-primary">{t("filters.title")}</h2>
-              <p className="mt-1 text-xs text-text-muted">
-                {filtersCollapsed ? t("filters.collapsedHint") : t("filters.expandedHint")}
-              </p>
+      <section className="overflow-x-auto pb-1">
+        <div className="min-w-[980px] space-y-3">
+          <aside className="space-y-3 rounded-xl border border-border-muted bg-surface p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="m-0 text-sm font-semibold text-text-primary">{t("filters.title")}</h2>
+                <p className="mt-1 text-xs text-text-muted">
+                  {filtersCollapsed ? t("filters.collapsedHint") : t("filters.expandedHint")}
+                </p>
+              </div>
+              <Button
+                size="default"
+                variant="ghost"
+                onClick={() => setFiltersCollapsed((value) => !value)}
+                className="shrink-0"
+              >
+                <span
+                  className={`btn-icon ${filtersCollapsed ? "i-lucide:chevron-down" : "i-lucide:chevron-up"}`}
+                  aria-hidden="true"
+                />
+                <span>{filtersCollapsed ? t("filters.expand") : t("filters.collapse")}</span>
+              </Button>
             </div>
-            <Button
-              size="default"
-              variant="ghost"
-              onClick={() => setFiltersCollapsed((value) => !value)}
-              className="shrink-0"
-            >
-              <span
-                className={`btn-icon ${filtersCollapsed ? "i-noto:down-arrow" : "i-noto:up-arrow"}`}
-                aria-hidden="true"
-              />
-              <span>{filtersCollapsed ? t("filters.expand") : t("filters.collapse")}</span>
-            </Button>
-          </div>
 
-          <div className="grid grid-cols-1 gap-2 rounded-lg border border-border-muted/70 bg-app/40 px-3 py-2 sm:grid-cols-[88px_minmax(0,1fr)] sm:items-center sm:gap-3">
-            <div className="text-xs text-text-muted">{t("filters.level")}</div>
-            <div className="overflow-x-auto">
-              <div className="flex min-w-max items-center gap-2 sm:justify-end">
-                {LEVEL_OPTIONS.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    aria-pressed={filters.levels.includes(option.value)}
-                    className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs transition-colors ${
-                      filters.levels.includes(option.value)
-                        ? "border-accent/50 bg-accent/15 text-accent"
-                        : "border-border-muted bg-surface text-text-secondary hover:border-border-strong hover:bg-surface-soft"
-                    }`}
-                    onClick={() => toggleLevel(option.value, !filters.levels.includes(option.value))}
-                  >
-                    {option.label}
-                  </button>
-                ))}
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-border-muted/70 bg-app/40 px-3 py-2">
+              <div className="min-w-0 flex flex-1 items-center gap-3">
+                <div className="shrink-0 text-xs text-text-muted">{t("filters.level")}</div>
+                <div className="min-w-0 flex-1 overflow-x-auto">
+                  <div className="flex min-w-max items-center gap-2">
+                    {LEVEL_OPTIONS.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        aria-pressed={filters.levels.includes(option.value)}
+                        className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs transition-colors ${
+                          filters.levels.includes(option.value)
+                            ? "border-accent/50 bg-accent/15 text-accent"
+                            : "border-border-muted bg-surface text-text-secondary hover:border-border-strong hover:bg-surface-soft"
+                        }`}
+                        onClick={() => toggleLevel(option.value, !filters.levels.includes(option.value))}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex shrink-0 items-center gap-2">
+                <Button
+                  size="default"
+                  variant="secondary"
+                  onClick={() => {
+                    resetFilters();
+                    void refresh();
+                  }}
+                >
+                  {t("action.resetFilters")}
+                </Button>
+                <Button size="default" variant="primary" onClick={() => void refresh()}>
+                  {t("action.applyFilters")}
+                </Button>
               </div>
             </div>
-          </div>
 
-          {!filtersCollapsed ? (
-            <>
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-6">
+            {!filtersCollapsed ? (
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                 <div className="space-y-1">
                   <div className="text-xs text-text-muted">{t("filters.scope")}</div>
                   <Input
@@ -279,141 +287,146 @@ export default function LogCenterPage() {
                   />
                 </div>
               </div>
-            </>
-          ) : null}
-
-          <div className="flex justify-end">
-            <Button size="default" variant="primary" onClick={() => void refresh()}>
-              {t("action.applyFilters")}
-            </Button>
-          </div>
-        </aside>
-
-        <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
-          <section className="min-h-[540px] rounded-xl border border-border-muted bg-surface p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="m-0 text-sm font-semibold text-text-primary">{t("list.title")}</h2>
-              <div className="text-xs text-text-muted">{t("list.count", { count: items.length })}</div>
-            </div>
-
-            <LoadingIndicator
-              mode="overlay"
-              loading={loading && items.length === 0}
-              text={t("list.loading")}
-              containerClassName="h-[500px] overflow-auto rounded-lg border border-border-muted/80 bg-app/55"
-            >
-              <>
-                {!loading && items.length === 0 ? (
-                  <div className="p-3 text-xs text-text-muted">{t("list.empty")}</div>
-                ) : null}
-
-                {items.map((item) => {
-                  const selected = selectedLog?.id === item.id;
-                  return (
-                    <Button
-                      unstyled
-                      key={item.id}
-                      type="button"
-                      className={`w-full border-b border-border-muted/60 px-3 py-2 text-left last:border-b-0 ${
-                        selected ? "bg-accent-soft" : "hover:bg-surface-soft"
-                      }`}
-                      onClick={() => selectLog(item.id)}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`rounded border px-1.5 py-0.5 font-mono ui-text-micro uppercase ${levelClassName(item.level)}`}
-                        >
-                          {item.level}
-                        </span>
-                        <span className="truncate font-mono ui-text-micro text-text-secondary">
-                          {formatTimestamp(item.timestamp, locale)}
-                        </span>
-                        <span className="truncate text-xs text-text-primary">{item.scope}</span>
-                      </div>
-                      <div className="mt-1 truncate text-xs text-text-secondary">
-                        {item.event} · {item.message}
-                      </div>
-                      <div className="mt-1 truncate font-mono ui-text-micro text-text-muted">{item.requestId}</div>
-                    </Button>
-                  );
-                })}
-              </>
-            </LoadingIndicator>
-
-            <div className="mt-2 flex items-center justify-between gap-2">
-              <div className="text-xs text-text-muted">{nextCursor ? t("list.hasMore") : t("list.end")}</div>
-              <Button
-                size="default"
-                variant="secondary"
-                disabled={!nextCursor || loadingMore}
-                onClick={() => void loadMore()}
-              >
-                {loadingMore ? t("list.loadingMore") : t("list.loadMore")}
-              </Button>
-            </div>
-          </section>
-
-          <aside className="min-h-[540px] rounded-xl border border-border-muted bg-surface p-4">
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="m-0 text-sm font-semibold text-text-primary">{t("detail.title")}</h2>
-              {selectedLog?.aggregatedCount ? (
-                <span className="rounded border border-border-muted px-2 py-0.5 font-mono ui-text-micro text-text-muted">
-                  {t("detail.aggregated", { count: selectedLog.aggregatedCount })}
-                </span>
-              ) : null}
-            </div>
-
-            {!selectedLog ? <div className="text-xs text-text-muted">{t("detail.selectPrompt")}</div> : null}
-
-            {selectedLog ? (
-              <div className="space-y-2">
-                <div className="rounded-lg border border-border-muted bg-app/60 p-2 text-xs">
-                  <div className="grid grid-cols-[96px_1fr] gap-1">
-                    <span className="text-text-muted">{t("field.time")}</span>
-                    <span className="font-mono text-text-secondary">
-                      {formatTimestamp(selectedLog.timestamp, locale)}
-                    </span>
-                    <span className="text-text-muted">{t("field.level")}</span>
-                    <span className="font-mono text-text-secondary">{selectedLog.level}</span>
-                    <span className="text-text-muted">{t("field.scope")}</span>
-                    <span className="font-mono text-text-secondary">{selectedLog.scope}</span>
-                    <span className="text-text-muted">{t("field.event")}</span>
-                    <span className="font-mono text-text-secondary">{selectedLog.event}</span>
-                    <span className="text-text-muted">{t("field.requestId")}</span>
-                    <span className="font-mono text-text-secondary break-all">{selectedLog.requestId}</span>
-                    <span className="text-text-muted">{t("field.window")}</span>
-                    <span className="font-mono text-text-secondary">
-                      {selectedLog.windowLabel ?? t("common:status.empty")}
-                    </span>
-                    <span className="text-text-muted">{t("field.rawRef")}</span>
-                    <span className="font-mono text-text-secondary break-all">
-                      {selectedLog.rawRef ?? t("common:status.empty")}
-                    </span>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="mb-1 text-xs text-text-muted">{t("field.message")}</div>
-                  <Textarea
-                    value={selectedLog.message}
-                    readOnly
-                    resize="none"
-                    className="min-h-[84px] font-mono text-xs"
-                  />
-                </div>
-
-                <div>
-                  <div className="mb-1 text-xs text-text-muted">{t("field.metadata")}</div>
-                  <Textarea
-                    value={selectedLog.metadata ? JSON.stringify(selectedLog.metadata, null, 2) : "{}"}
-                    readOnly
-                    resize="none"
-                    className="min-h-[220px] font-mono text-xs"
-                  />
-                </div>
-              </div>
             ) : null}
           </aside>
+
+          <div
+            className="grid gap-3"
+            style={{
+              gridTemplateColumns: "minmax(0, 1.45fr) minmax(360px, 1fr)",
+            }}
+          >
+            <section className="flex h-[clamp(520px,68vh,760px)] min-h-0 flex-col rounded-xl border border-border-muted bg-surface p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <h2 className="m-0 text-sm font-semibold text-text-primary">{t("list.title")}</h2>
+                <div className="text-xs text-text-muted">{t("list.count", { count: items.length })}</div>
+              </div>
+
+              <LoadingIndicator
+                mode="overlay"
+                loading={loading && items.length === 0}
+                text={t("list.loading")}
+                containerClassName="min-h-0 flex-1 overflow-auto rounded-lg border border-border-muted/80 bg-app/55"
+              >
+                <>
+                  {!loading && items.length === 0 ? (
+                    <div className="p-3 text-xs text-text-muted">{t("list.empty")}</div>
+                  ) : null}
+
+                  {items.map((item) => {
+                    const selected = selectedLog?.id === item.id;
+                    return (
+                      <Button
+                        unstyled
+                        key={item.id}
+                        type="button"
+                        className={`w-full border-b border-border-muted/60 px-3 py-2 text-left transition-colors last:border-b-0 ${
+                          selected
+                            ? "bg-accent-soft shadow-inset-soft ring-1 ring-accent/20"
+                            : "hover:bg-surface-soft hover:ring-1 hover:ring-border-muted/70"
+                        }`}
+                        onClick={() => selectLog(item.id)}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`rounded border px-1.5 py-0.5 font-mono ui-text-micro uppercase ${levelClassName(item.level)}`}
+                          >
+                            {item.level}
+                          </span>
+                          <span className="truncate font-mono ui-text-micro text-text-secondary">
+                            {formatTimestamp(item.timestamp, locale)}
+                          </span>
+                          <span className="truncate text-xs text-text-primary">{item.scope}</span>
+                        </div>
+                        <div className="mt-1 truncate text-xs text-text-secondary">
+                          {item.event} · {item.message}
+                        </div>
+                        <div className="mt-1 truncate font-mono ui-text-micro text-text-muted">{item.requestId}</div>
+                      </Button>
+                    );
+                  })}
+                </>
+              </LoadingIndicator>
+
+              <div className="mt-2 flex shrink-0 items-center justify-between gap-2 rounded-md border border-border-muted/70 bg-app/35 px-2.5 py-2">
+                <div className="text-xs text-text-muted">{nextCursor ? t("list.hasMore") : t("list.end")}</div>
+                <Button
+                  size="default"
+                  variant="secondary"
+                  disabled={!nextCursor || loadingMore}
+                  onClick={() => void loadMore()}
+                >
+                  {loadingMore ? t("list.loadingMore") : t("list.loadMore")}
+                </Button>
+              </div>
+            </section>
+
+            <aside className="flex h-[clamp(520px,68vh,760px)] min-h-0 flex-col rounded-xl border border-border-muted bg-surface p-4">
+              <div className="mb-2 flex shrink-0 items-center justify-between">
+                <h2 className="m-0 text-sm font-semibold text-text-primary">{t("detail.title")}</h2>
+                {selectedLog?.aggregatedCount ? (
+                  <span className="rounded border border-border-muted px-2 py-0.5 font-mono ui-text-micro text-text-muted">
+                    {t("detail.aggregated", { count: selectedLog.aggregatedCount })}
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                {!selectedLog ? (
+                  <div className="grid h-full place-items-center rounded-lg border border-border-muted/70 bg-app/45 px-3 text-xs text-text-muted">
+                    {t("detail.selectPrompt")}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="rounded-lg border border-border-muted bg-app/60 p-2 text-xs">
+                      <div className="grid grid-cols-[96px_1fr] gap-1">
+                        <span className="text-text-muted">{t("field.time")}</span>
+                        <span className="font-mono text-text-secondary">
+                          {formatTimestamp(selectedLog.timestamp, locale)}
+                        </span>
+                        <span className="text-text-muted">{t("field.level")}</span>
+                        <span className="font-mono text-text-secondary">{selectedLog.level}</span>
+                        <span className="text-text-muted">{t("field.scope")}</span>
+                        <span className="font-mono text-text-secondary">{selectedLog.scope}</span>
+                        <span className="text-text-muted">{t("field.event")}</span>
+                        <span className="font-mono text-text-secondary">{selectedLog.event}</span>
+                        <span className="text-text-muted">{t("field.requestId")}</span>
+                        <span className="font-mono text-text-secondary break-all">{selectedLog.requestId}</span>
+                        <span className="text-text-muted">{t("field.window")}</span>
+                        <span className="font-mono text-text-secondary">
+                          {selectedLog.windowLabel ?? t("common:status.empty")}
+                        </span>
+                        <span className="text-text-muted">{t("field.rawRef")}</span>
+                        <span className="font-mono text-text-secondary break-all">
+                          {selectedLog.rawRef ?? t("common:status.empty")}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="mb-1 text-xs text-text-muted">{t("field.message")}</div>
+                      <Textarea
+                        value={selectedLog.message}
+                        readOnly
+                        resize="none"
+                        className="min-h-[90px] font-mono text-xs"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="mb-1 text-xs text-text-muted">{t("field.metadata")}</div>
+                      <Textarea
+                        value={selectedLog.metadata ? JSON.stringify(selectedLog.metadata, null, 2) : "{}"}
+                        readOnly
+                        resize="none"
+                        className="min-h-[240px] font-mono text-xs"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </aside>
+          </div>
         </div>
       </section>
     </div>

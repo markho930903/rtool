@@ -10,7 +10,7 @@ fn candidate_with_confidence(
         kind: AppManagerResidueKind::Cache,
         exists: true,
         filesystem: true,
-        match_reason: AppManagerResidueMatchReason::Unknown,
+        match_reason: AppManagerResidueMatchReason::RelatedRoot,
         confidence,
         evidence: (0..evidence_len).map(|idx| format!("e{idx}")).collect(),
         risk_level: AppManagerRiskLevel::Low,

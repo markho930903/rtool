@@ -17,8 +17,6 @@ fn load_settings_should_include_tuning_defaults() {
     let (pool, path) = setup_temp_db("settings-defaults");
     let settings =
         load_settings(&pool, "/tmp/downloads".to_string()).expect("load transfer settings");
-    assert!(settings.pipeline_v2_enabled);
-    assert!(settings.codec_v2_enabled);
     assert_eq!(settings.db_flush_interval_ms, 400);
     assert_eq!(settings.event_emit_interval_ms, 250);
     assert_eq!(settings.ack_batch_size, 64);

@@ -94,19 +94,60 @@ fn parse_outgoing_auth_result_frame(
     }
 }
 
+fn validate_peer_protocol(
+    peer_protocol_version: u16,
+    peer_capabilities: &[String],
+    context_key: &str,
+    context_value: &str,
+) -> AppResult<()> {
+    if peer_protocol_version != PROTOCOL_VERSION {
+        return Err(AppError::new(
+            "transfer_protocol_version_mismatch",
+            "对端协议版本不匹配",
+        )
+        .with_context(context_key, context_value.to_string())
+        .with_context("peerProtocolVersion", peer_protocol_version.to_string())
+        .with_context("localProtocolVersion", PROTOCOL_VERSION.to_string()));
+    }
+
+    for capability in [
+        CAPABILITY_CODEC_BIN,
+        CAPABILITY_ACK_BATCH,
+        CAPABILITY_PIPELINE,
+    ] {
+        if !peer_capabilities.iter().any(|value| value == capability) {
+            return Err(AppError::new(
+                "transfer_protocol_capability_missing",
+                "对端缺少必要协议能力",
+            )
+            .with_context(context_key, context_value.to_string())
+            .with_context("requiredCapability", capability.to_string()));
+        }
+    }
+
+    Ok(())
+}
+
 impl TransferService {
     pub(super) async fn perform_incoming_handshake(
         &self,
         stream: &mut TcpStream,
-        settings: &TransferSettingsDto,
+        _settings: &TransferSettingsDto,
     ) -> AppResult<IncomingHandshakeContext> {
         let hello = read_frame(stream, None).await?;
         let (peer_device_id, peer_name, client_nonce, peer_protocol_version, peer_capabilities) =
             parse_incoming_hello_frame(hello)?;
 
+        validate_peer_protocol(
+            peer_protocol_version,
+            peer_capabilities.as_slice(),
+            "peerDeviceId",
+            peer_device_id.as_str(),
+        )?;
+
         let local_capabilities = Self::local_protocol_capabilities();
-        let codec = Self::negotiate_codec(settings, peer_protocol_version, &peer_capabilities);
-        let ack_batch_enabled = Self::should_use_ack_batch(settings, codec, &peer_capabilities);
+        let codec = FrameCodec::Bin;
+        let ack_batch_enabled = true;
         tracing::info!(
             event = "transfer_protocol_negotiated_incoming",
             peer_device_id,
@@ -171,7 +212,7 @@ impl TransferService {
             &TransferFrame::AuthOk {
                 peer_device_id: self.device_id.clone(),
                 peer_name: self.device_name.clone(),
-                protocol_version: Some(PROTOCOL_VERSION_V2),
+                protocol_version: Some(PROTOCOL_VERSION),
                 capabilities: Some(local_capabilities),
             },
             None,
@@ -198,7 +239,7 @@ impl TransferService {
         session_id: &str,
         peer_address: &str,
         pair_code: &str,
-        settings: &TransferSettingsDto,
+        _settings: &TransferSettingsDto,
     ) -> AppResult<OutgoingHandshakeContext> {
         let local_capabilities = Self::local_protocol_capabilities();
         let client_nonce = random_hex(16);
@@ -208,7 +249,7 @@ impl TransferService {
                 device_id: self.device_id.clone(),
                 device_name: self.device_name.clone(),
                 nonce: client_nonce.clone(),
-                protocol_version: Some(PROTOCOL_VERSION_V2),
+                protocol_version: Some(PROTOCOL_VERSION),
                 capabilities: Some(local_capabilities),
             },
             None,
@@ -233,7 +274,14 @@ impl TransferService {
         let (peer_protocol_version, peer_capabilities) =
             parse_outgoing_auth_result_frame(auth_result, session_id, peer_address)?;
 
-        let codec = Self::negotiate_codec(settings, peer_protocol_version, &peer_capabilities);
+        validate_peer_protocol(
+            peer_protocol_version,
+            peer_capabilities.as_slice(),
+            "peerAddress",
+            peer_address,
+        )?;
+
+        let codec = FrameCodec::Bin;
         tracing::info!(
             event = "transfer_protocol_negotiated",
             session_id = session_id,

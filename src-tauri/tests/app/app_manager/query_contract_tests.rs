@@ -1,7 +1,8 @@
 use super::*;
 use app_core::models::{
     AppManagerActionCode, AppManagerCategory, AppManagerCleanupReasonCode,
-    AppManagerScanWarningDetailCode,
+    AppManagerIndexState, AppManagerIndexUpdateReason, AppManagerScanWarningDetailCode,
+    AppManagerSizeAccuracy,
 };
 
 fn test_app(source: AppManagerSource, startup_enabled: bool) -> ManagedAppDto {
@@ -16,7 +17,9 @@ fn test_app(source: AppManagerSource, startup_enabled: bool) -> ManagedAppDto {
         source,
         icon_kind: AppManagerIconKind::Iconify,
         icon_value: "i-noto:desktop-computer".to_string(),
-        estimated_size_bytes: Some(1024),
+        size_bytes: Some(1024),
+        size_accuracy: AppManagerSizeAccuracy::Exact,
+        size_computed_at: Some(1_700_000_000),
         startup_enabled,
         startup_scope: if startup_enabled {
             AppManagerStartupScope::User
@@ -50,7 +53,6 @@ fn app_manager_category_matches_item_contract() {
     let startup_app = test_app(AppManagerSource::Application, true);
 
     assert!(AppManagerCategory::All.matches_item(&rtool_app));
-    assert!(AppManagerCategory::Unknown.matches_item(&rtool_app));
 
     assert!(AppManagerCategory::Rtool.matches_item(&rtool_app));
     assert!(!AppManagerCategory::Application.matches_item(&rtool_app));
@@ -64,7 +66,6 @@ fn app_manager_category_matches_item_contract() {
 #[test]
 fn app_manager_source_sort_rank_contract() {
     assert!(AppManagerSource::Application.sort_rank() < AppManagerSource::Rtool.sort_rank());
-    assert!(AppManagerSource::Rtool.sort_rank() < AppManagerSource::Unknown.sort_rank());
 }
 
 #[test]
@@ -91,23 +92,22 @@ fn app_manager_cleanup_reason_code_from_error_code_contract() {
     );
     assert_eq!(
         AppManagerCleanupReasonCode::from_error_code("app_manager_future_error"),
-        AppManagerCleanupReasonCode::Unknown
+        AppManagerCleanupReasonCode::AppManagerCleanupDeleteFailed
     );
 }
 
 #[test]
-fn app_manager_cleanup_reason_code_serde_unknown_fallback_contract() {
+fn app_manager_cleanup_reason_code_serde_unknown_should_fail() {
     let parsed_known: AppManagerCleanupReasonCode =
         serde_json::from_str("\"managed_by_policy\"").expect("known value should deserialize");
     assert_eq!(parsed_known, AppManagerCleanupReasonCode::ManagedByPolicy);
 
-    let parsed_unknown: AppManagerCleanupReasonCode =
-        serde_json::from_str("\"future_reason_code\"").expect("unknown value should deserialize");
-    assert_eq!(parsed_unknown, AppManagerCleanupReasonCode::Unknown);
+    let parsed_unknown = serde_json::from_str::<AppManagerCleanupReasonCode>("\"future_reason_code\"");
+    assert!(parsed_unknown.is_err());
 }
 
 #[test]
-fn app_manager_action_code_serde_unknown_fallback_contract() {
+fn app_manager_action_code_serde_unknown_should_fail() {
     let serialized = serde_json::to_string(&AppManagerActionCode::AppManagerRefreshed)
         .expect("known action code should serialize");
     assert_eq!(serialized, "\"app_manager_refreshed\"");
@@ -120,10 +120,8 @@ fn app_manager_action_code_serde_unknown_fallback_contract() {
         AppManagerActionCode::AppManagerUninstallStarted
     );
 
-    let parsed_unknown: AppManagerActionCode =
-        serde_json::from_str("\"app_manager_future_action\"")
-            .expect("unknown action code should deserialize");
-    assert_eq!(parsed_unknown, AppManagerActionCode::Unknown);
+    let parsed_unknown = serde_json::from_str::<AppManagerActionCode>("\"app_manager_future_action\"");
+    assert!(parsed_unknown.is_err());
 }
 
 #[test]
@@ -143,15 +141,13 @@ fn app_manager_scan_warning_detail_code_from_io_error_kind_contract() {
 }
 
 #[test]
-fn app_manager_scan_warning_detail_code_serde_unknown_fallback_contract() {
+fn app_manager_scan_warning_detail_code_serde_unknown_should_fail() {
     let parsed_known: AppManagerScanWarningDetailCode =
         serde_json::from_str("\"limit_reached\"").expect("known detail code should deserialize");
     assert_eq!(parsed_known, AppManagerScanWarningDetailCode::LimitReached);
 
-    let parsed_unknown: AppManagerScanWarningDetailCode =
-        serde_json::from_str("\"future_detail_code\"")
-            .expect("unknown detail code should deserialize");
-    assert_eq!(parsed_unknown, AppManagerScanWarningDetailCode::Unknown);
+    let parsed_unknown = serde_json::from_str::<AppManagerScanWarningDetailCode>("\"future_detail_code\"");
+    assert!(parsed_unknown.is_err());
 }
 
 #[test]
@@ -168,4 +164,32 @@ fn app_manager_error_code_as_str_contract() {
         AppManagerErrorCode::UninstallFailed.as_str(),
         "app_manager_uninstall_failed"
     );
+}
+
+#[test]
+fn app_manager_size_accuracy_serde_unknown_should_fail() {
+    let parsed_known: AppManagerSizeAccuracy =
+        serde_json::from_str("\"exact\"").expect("known size accuracy should deserialize");
+    assert_eq!(parsed_known, AppManagerSizeAccuracy::Exact);
+
+    let parsed_unknown = serde_json::from_str::<AppManagerSizeAccuracy>("\"future_accuracy\"");
+    assert!(parsed_unknown.is_err());
+}
+
+#[test]
+fn app_manager_index_state_and_reason_serde_unknown_should_fail() {
+    let state_known: AppManagerIndexState =
+        serde_json::from_str("\"ready\"").expect("known index state should deserialize");
+    assert_eq!(state_known, AppManagerIndexState::Ready);
+
+    let state_unknown = serde_json::from_str::<AppManagerIndexState>("\"future_state\"");
+    assert!(state_unknown.is_err());
+
+    let reason_known: AppManagerIndexUpdateReason =
+        serde_json::from_str("\"auto_change\"")
+            .expect("known index update reason should deserialize");
+    assert_eq!(reason_known, AppManagerIndexUpdateReason::AutoChange);
+
+    let reason_unknown = serde_json::from_str::<AppManagerIndexUpdateReason>("\"future_reason\"");
+    assert!(reason_unknown.is_err());
 }

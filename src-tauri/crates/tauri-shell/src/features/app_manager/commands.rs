@@ -1,8 +1,9 @@
 use super::{run_blocking_command, run_command_sync};
 use app_launcher_app::app_manager::{
     cleanup_managed_app_residue, export_managed_app_scan_result, get_managed_app_detail,
-    list_managed_apps, open_uninstall_help, refresh_managed_apps_index, scan_managed_app_residue,
-    set_managed_app_startup, uninstall_managed_app,
+    list_managed_apps, open_uninstall_help, poll_managed_apps_auto_refresh,
+    refresh_managed_apps_index, scan_managed_app_residue, set_managed_app_startup,
+    uninstall_managed_app,
 };
 use app_core::models::{
     AppManagerActionResultDto, AppManagerCleanupInputDto, AppManagerCleanupResultDto,
@@ -16,6 +17,54 @@ use crate::host::launcher::TauriLauncherHost;
 use anyhow::Context;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+use tauri::Emitter;
+use tokio::time::sleep;
+
+fn app_manager_watcher_started() -> &'static AtomicBool {
+    static STARTED: OnceLock<AtomicBool> = OnceLock::new();
+    STARTED.get_or_init(|| AtomicBool::new(false))
+}
+
+fn ensure_app_manager_watcher_started(app: &tauri::AppHandle) {
+    let started = app_manager_watcher_started();
+    if started
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return;
+    }
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            sleep(Duration::from_secs(20)).await;
+            let host = TauriLauncherHost::new(app_handle.clone());
+            let poll_result = run_blocking_command(
+                "app_manager_auto_refresh_poll",
+                Some("app_manager_watcher".to_string()),
+                Some("main".to_string()),
+                "app_manager_auto_refresh_poll",
+                move || poll_managed_apps_auto_refresh(&host),
+            )
+            .await;
+            match poll_result {
+                Ok(Some(payload)) => {
+                    let _ = app_handle.emit("rtool://app-manager/index-updated", payload);
+                }
+                Ok(None) => {}
+                Err(error) => {
+                    tracing::debug!(
+                        event = "app_manager_auto_refresh_poll_failed",
+                        code = error.code.as_str(),
+                        message = error.message.as_str()
+                    );
+                }
+            }
+        }
+    });
+}
 
 fn reveal_path(path: &Path) -> AppResult<()> {
     if !path.exists() {
@@ -75,6 +124,7 @@ pub async fn app_manager_list(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerPageDto, InvokeError> {
+    ensure_app_manager_watcher_started(&app);
     let input_query = query.unwrap_or_default();
     let host = TauriLauncherHost::new(app);
     run_blocking_command(
@@ -94,6 +144,7 @@ pub async fn app_manager_get_detail(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<ManagedAppDetailDto, InvokeError> {
+    ensure_app_manager_watcher_started(&app);
     let host = TauriLauncherHost::new(app);
     run_blocking_command(
         "app_manager_get_detail",
@@ -112,6 +163,7 @@ pub async fn app_manager_scan_residue(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerResidueScanResultDto, InvokeError> {
+    ensure_app_manager_watcher_started(&app);
     let host = TauriLauncherHost::new(app);
     run_blocking_command(
         "app_manager_scan_residue",
@@ -130,6 +182,7 @@ pub async fn app_manager_cleanup(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerCleanupResultDto, InvokeError> {
+    ensure_app_manager_watcher_started(&app);
     let host = TauriLauncherHost::new(app);
     run_blocking_command(
         "app_manager_cleanup",
@@ -148,6 +201,7 @@ pub async fn app_manager_export_scan_result(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerExportScanResultDto, InvokeError> {
+    ensure_app_manager_watcher_started(&app);
     let host = TauriLauncherHost::new(app);
     run_blocking_command(
         "app_manager_export_scan_result",
@@ -165,6 +219,7 @@ pub async fn app_manager_refresh_index(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerActionResultDto, InvokeError> {
+    ensure_app_manager_watcher_started(&app);
     let host = TauriLauncherHost::new(app);
     run_blocking_command(
         "app_manager_refresh_index",
@@ -183,6 +238,7 @@ pub async fn app_manager_set_startup(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerActionResultDto, InvokeError> {
+    ensure_app_manager_watcher_started(&app);
     let host = TauriLauncherHost::new(app);
     run_blocking_command(
         "app_manager_set_startup",
@@ -201,6 +257,7 @@ pub async fn app_manager_uninstall(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerActionResultDto, InvokeError> {
+    ensure_app_manager_watcher_started(&app);
     let host = TauriLauncherHost::new(app);
     run_blocking_command(
         "app_manager_uninstall",
@@ -219,6 +276,7 @@ pub async fn app_manager_open_uninstall_help(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerActionResultDto, InvokeError> {
+    ensure_app_manager_watcher_started(&app);
     let host = TauriLauncherHost::new(app);
     run_blocking_command(
         "app_manager_open_uninstall_help",

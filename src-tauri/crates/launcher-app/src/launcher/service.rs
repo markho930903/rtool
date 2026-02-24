@@ -234,7 +234,7 @@ pub fn execute_launcher_action(
     }
 }
 
-pub fn search_palette_legacy(app: &dyn LauncherHost, query: &str) -> Vec<LauncherItemDto> {
+pub fn search_palette_items(app: &dyn LauncherHost, query: &str) -> Vec<LauncherItemDto> {
     let normalized = normalize_query(query);
     let locale = current_locale(app);
     let items = vec![
@@ -283,7 +283,7 @@ pub fn search_palette_legacy(app: &dyn LauncherHost, query: &str) -> Vec<Launche
         .collect()
 }
 
-pub fn execute_palette_legacy(action_id: &str) -> AppResult<String> {
+pub fn execute_palette_action_id(action_id: &str) -> AppResult<String> {
     let message = match action_id {
         "action.open-tools" => "route:/tools",
         "action.open-transfer" => "route:/transfer",

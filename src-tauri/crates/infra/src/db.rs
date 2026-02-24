@@ -11,9 +11,6 @@ use std::path::Path;
 pub const CLIPBOARD_MAX_ITEMS_KEY: &str = "clipboard.maxItems";
 pub const CLIPBOARD_SIZE_CLEANUP_ENABLED_KEY: &str = "clipboard.sizeCleanupEnabled";
 pub const CLIPBOARD_MAX_TOTAL_SIZE_MB_KEY: &str = "clipboard.maxTotalSizeMb";
-const LAUNCHER_FTS_REBUILD_MIGRATION_KEY: &str = "db.migration.launcher_fts_v2_rebuild";
-const LAUNCHER_FTS_REBUILD_PENDING: &str = "pending";
-const LAUNCHER_FTS_REBUILD_DONE: &str = "done";
 const CLIPBOARD_LIST_LIMIT_MAX: u32 = 10_000;
 
 #[derive(Debug, Clone)]
@@ -180,54 +177,6 @@ fn has_duplicate_clipboard_content_keys(conn: &Connection) -> AppResult<bool> {
     Ok(exists == 1)
 }
 
-fn read_app_setting_conn(conn: &Connection, key: &str) -> Result<Option<String>, SqliteError> {
-    conn.query_row(
-        "SELECT value FROM app_settings WHERE key = ?1 LIMIT 1",
-        params![key],
-        |row| row.get::<_, String>(0),
-    )
-    .optional()
-}
-
-fn set_app_setting_conn(conn: &Connection, key: &str, value: &str) -> Result<(), SqliteError> {
-    conn.execute(
-        "INSERT INTO app_settings (key, value) VALUES (?1, ?2)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        params![key, value],
-    )?;
-    Ok(())
-}
-
-fn has_launcher_index_entries(conn: &Connection) -> AppResult<bool> {
-    let exists = conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM launcher_index_entries_v2 LIMIT 1)",
-        [],
-        |row| row.get::<_, i64>(0),
-    )?;
-    Ok(exists == 1)
-}
-
-fn is_launcher_fts_rebuild_pending_conn(conn: &Connection) -> AppResult<bool> {
-    let state = read_app_setting_conn(conn, LAUNCHER_FTS_REBUILD_MIGRATION_KEY)?;
-    Ok(matches!(
-        state.as_deref(),
-        Some(LAUNCHER_FTS_REBUILD_PENDING)
-    ))
-}
-
-fn ensure_launcher_fts_rebuild_migration_state(conn: &Connection) -> AppResult<()> {
-    if read_app_setting_conn(conn, LAUNCHER_FTS_REBUILD_MIGRATION_KEY)?.is_some() {
-        return Ok(());
-    }
-    let state = if has_launcher_index_entries(conn)? {
-        LAUNCHER_FTS_REBUILD_PENDING
-    } else {
-        LAUNCHER_FTS_REBUILD_DONE
-    };
-    set_app_setting_conn(conn, LAUNCHER_FTS_REBUILD_MIGRATION_KEY, state)?;
-    Ok(())
-}
-
 pub fn new_db_pool(db_path: &Path) -> AppResult<DbPool> {
     let manager = SqliteConnectionManager::file(db_path);
     Ok(Pool::builder().max_size(8).build(manager)?)
@@ -336,7 +285,7 @@ pub fn init_db(db_path: &Path) -> AppResult<()> {
             value TEXT NOT NULL
         );
 
-        CREATE TABLE IF NOT EXISTS launcher_index_entries_v2 (
+        CREATE TABLE IF NOT EXISTS launcher_index_entries (
             path TEXT PRIMARY KEY,
             kind TEXT NOT NULL,
             name TEXT NOT NULL,
@@ -349,21 +298,21 @@ pub fn init_db(db_path: &Path) -> AppResult<()> {
             scan_token TEXT
         );
 
-        CREATE VIRTUAL TABLE IF NOT EXISTS launcher_index_entries_fts_v2 USING fts5(
+        CREATE VIRTUAL TABLE IF NOT EXISTS launcher_index_entries_fts USING fts5(
             name,
             parent,
             path,
             ext,
             searchable_text,
-            content='launcher_index_entries_v2',
+            content='launcher_index_entries',
             content_rowid='rowid',
             tokenize='unicode61'
         );
 
-        CREATE TRIGGER IF NOT EXISTS launcher_index_entries_v2_ai
-        AFTER INSERT ON launcher_index_entries_v2
+        CREATE TRIGGER IF NOT EXISTS launcher_index_entries_ai
+        AFTER INSERT ON launcher_index_entries
         BEGIN
-            INSERT INTO launcher_index_entries_fts_v2(
+            INSERT INTO launcher_index_entries_fts(
                 rowid,
                 name,
                 parent,
@@ -380,11 +329,11 @@ pub fn init_db(db_path: &Path) -> AppResult<()> {
             );
         END;
 
-        CREATE TRIGGER IF NOT EXISTS launcher_index_entries_v2_ad
-        AFTER DELETE ON launcher_index_entries_v2
+        CREATE TRIGGER IF NOT EXISTS launcher_index_entries_ad
+        AFTER DELETE ON launcher_index_entries
         BEGIN
-            INSERT INTO launcher_index_entries_fts_v2(
-                launcher_index_entries_fts_v2,
+            INSERT INTO launcher_index_entries_fts(
+                launcher_index_entries_fts,
                 rowid,
                 name,
                 parent,
@@ -402,11 +351,11 @@ pub fn init_db(db_path: &Path) -> AppResult<()> {
             );
         END;
 
-        CREATE TRIGGER IF NOT EXISTS launcher_index_entries_v2_au
-        AFTER UPDATE ON launcher_index_entries_v2
+        CREATE TRIGGER IF NOT EXISTS launcher_index_entries_au
+        AFTER UPDATE ON launcher_index_entries
         BEGIN
-            INSERT INTO launcher_index_entries_fts_v2(
-                launcher_index_entries_fts_v2,
+            INSERT INTO launcher_index_entries_fts(
+                launcher_index_entries_fts,
                 rowid,
                 name,
                 parent,
@@ -422,7 +371,7 @@ pub fn init_db(db_path: &Path) -> AppResult<()> {
                 COALESCE(OLD.ext, ''),
                 OLD.searchable_text
             );
-            INSERT INTO launcher_index_entries_fts_v2(
+            INSERT INTO launcher_index_entries_fts(
                 rowid,
                 name,
                 parent,
@@ -450,12 +399,11 @@ pub fn init_db(db_path: &Path) -> AppResult<()> {
         CREATE INDEX IF NOT EXISTS idx_transfer_sessions_cleanup ON transfer_sessions(cleanup_after_at);
         CREATE INDEX IF NOT EXISTS idx_transfer_files_session_id ON transfer_files(session_id);
         CREATE INDEX IF NOT EXISTS idx_transfer_peers_last_seen ON transfer_peers(last_seen_at DESC);
-        CREATE INDEX IF NOT EXISTS idx_launcher_index_v2_kind_name ON launcher_index_entries_v2(kind, name COLLATE NOCASE);
-        CREATE INDEX IF NOT EXISTS idx_launcher_index_v2_source_root_name ON launcher_index_entries_v2(source_root, name COLLATE NOCASE);
-        CREATE INDEX IF NOT EXISTS idx_launcher_index_v2_scan_token ON launcher_index_entries_v2(scan_token);
+        CREATE INDEX IF NOT EXISTS idx_launcher_index_kind_name ON launcher_index_entries(kind, name COLLATE NOCASE);
+        CREATE INDEX IF NOT EXISTS idx_launcher_index_source_root_name ON launcher_index_entries(source_root, name COLLATE NOCASE);
+        CREATE INDEX IF NOT EXISTS idx_launcher_index_scan_token ON launcher_index_entries(scan_token);
         "#,
     )?;
-
     if let Err(error) = conn.execute(
         "ALTER TABLE clipboard_items ADD COLUMN preview_path TEXT",
         [],
@@ -487,8 +435,6 @@ pub fn init_db(db_path: &Path) -> AppResult<()> {
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_clipboard_content_key_unique ON clipboard_items(content_key)",
         [],
     )?;
-    ensure_launcher_fts_rebuild_migration_state(&conn)?;
-
     Ok(())
 }
 
@@ -854,29 +800,6 @@ pub fn set_clipboard_max_total_size_mb(pool: &DbPool, max_total_size_mb: u32) ->
         CLIPBOARD_MAX_TOTAL_SIZE_MB_KEY,
         &max_total_size_mb.to_string(),
     )
-}
-
-pub fn is_launcher_fts_rebuild_pending(pool: &DbPool) -> AppResult<bool> {
-    let conn = pool.get()?;
-    is_launcher_fts_rebuild_pending_conn(&conn)
-}
-
-pub fn rebuild_launcher_fts_if_pending(pool: &DbPool) -> AppResult<bool> {
-    let conn = pool.get()?;
-    if !is_launcher_fts_rebuild_pending_conn(&conn)? {
-        return Ok(false);
-    }
-
-    conn.execute(
-        "INSERT INTO launcher_index_entries_fts_v2(launcher_index_entries_fts_v2) VALUES('rebuild')",
-        [],
-    )?;
-    set_app_setting_conn(
-        &conn,
-        LAUNCHER_FTS_REBUILD_MIGRATION_KEY,
-        LAUNCHER_FTS_REBUILD_DONE,
-    )?;
-    Ok(true)
 }
 
 pub fn get_app_setting(pool: &DbPool, key: &str) -> AppResult<Option<String>> {

@@ -1,5 +1,38 @@
 use super::*;
 
+#[cfg(target_os = "windows")]
+const WINDOWS_STARTUP_CACHE_TTL: Duration = Duration::from_secs(8);
+
+#[cfg(target_os = "windows")]
+#[derive(Debug, Clone)]
+struct WindowsStartupSnapshot {
+    refreshed_at: Option<Instant>,
+    user_value_names: HashSet<String>,
+    system_value_names: HashSet<String>,
+    user_values: Vec<String>,
+    system_values: Vec<String>,
+}
+
+#[cfg(target_os = "windows")]
+impl WindowsStartupSnapshot {
+    fn new() -> Self {
+        Self {
+            refreshed_at: None,
+            user_value_names: HashSet::new(),
+            system_value_names: HashSet::new(),
+            user_values: Vec::new(),
+            system_values: Vec::new(),
+        }
+    }
+
+    fn is_stale(&self) -> bool {
+        match self.refreshed_at {
+            None => true,
+            Some(at) => at.elapsed() >= WINDOWS_STARTUP_CACHE_TTL,
+        }
+    }
+}
+
 pub(super) fn platform_detect_startup_state(
     app_id: &str,
     app_path: &Path,
@@ -267,17 +300,10 @@ pub(super) fn windows_startup_value_name(app_id: &str) -> String {
 
 #[cfg(target_os = "windows")]
 pub(super) fn windows_startup_enabled(app_id: &str) -> bool {
-    let value_name = windows_startup_value_name(app_id);
-    Command::new("reg")
-        .args([
-            "query",
-            r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
-            "/v",
-            value_name.as_str(),
-        ])
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
+    let snapshot = windows_get_startup_snapshot();
+    snapshot
+        .user_value_names
+        .contains(windows_startup_value_name(app_id).to_ascii_lowercase().as_str())
 }
 
 #[cfg(target_os = "windows")]
@@ -287,19 +313,14 @@ pub(super) fn windows_run_registry_contains(root: &str, app_path: &Path) -> bool
         return false;
     }
 
-    let output = match Command::new("reg").args(["query", root]).output() {
-        Ok(output) => output,
-        Err(_) => return false,
+    let snapshot = windows_get_startup_snapshot();
+    let values = if root.eq_ignore_ascii_case(r"HKLM\Software\Microsoft\Windows\CurrentVersion\Run")
+    {
+        snapshot.system_values
+    } else {
+        snapshot.user_values
     };
-    if !output.status.success() {
-        return false;
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    stdout
-        .lines()
-        .map(|line| normalize_path_key(line))
-        .any(|line| line.contains(target.as_str()))
+    values.iter().any(|value| value.contains(target.as_str()))
 }
 
 #[cfg(target_os = "windows")]
@@ -335,6 +356,7 @@ pub(super) fn windows_set_startup(app_id: &str, app_path: &Path, enabled: bool) 
                     .with_context("appPath", app_path.to_string_lossy().to_string()),
             );
         }
+        windows_invalidate_startup_snapshot();
         return Ok(());
     }
 
@@ -362,5 +384,74 @@ pub(super) fn windows_set_startup(app_id: &str, app_path: &Path, enabled: bool) 
                 .with_context("appPath", app_path.to_string_lossy().to_string()),
         );
     }
+    windows_invalidate_startup_snapshot();
     Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn windows_startup_snapshot_cache() -> &'static Mutex<WindowsStartupSnapshot> {
+    static CACHE: OnceLock<Mutex<WindowsStartupSnapshot>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(WindowsStartupSnapshot::new()))
+}
+
+#[cfg(target_os = "windows")]
+fn windows_invalidate_startup_snapshot() {
+    let mut cache = windows_startup_snapshot_cache()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    cache.refreshed_at = None;
+}
+
+#[cfg(target_os = "windows")]
+fn windows_query_run_values(root: &str) -> (HashSet<String>, Vec<String>) {
+    let output = match Command::new("reg").args(["query", root]).output() {
+        Ok(output) => output,
+        Err(_) => return (HashSet::new(), Vec::new()),
+    };
+    if !output.status.success() {
+        return (HashSet::new(), Vec::new());
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut value_names = HashSet::new();
+    let mut values = Vec::new();
+    for line in stdout.lines() {
+        let trimmed = line.trim_start();
+        if let Some((name, value)) = windows_parse_reg_value_line(trimmed) {
+            value_names.insert(name.to_ascii_lowercase());
+            let normalized = normalize_path_key(value.as_str());
+            if !normalized.is_empty() {
+                values.push(normalized);
+            }
+        }
+    }
+    (value_names, values)
+}
+
+#[cfg(target_os = "windows")]
+fn windows_get_startup_snapshot() -> WindowsStartupSnapshot {
+    let stale = {
+        let cache = windows_startup_snapshot_cache()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        cache.is_stale()
+    };
+    if stale {
+        let (user_value_names, user_values) =
+            windows_query_run_values(r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run");
+        let (system_value_names, system_values) =
+            windows_query_run_values(r"HKLM\Software\Microsoft\Windows\CurrentVersion\Run");
+        let mut cache = windows_startup_snapshot_cache()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        cache.user_value_names = user_value_names;
+        cache.system_value_names = system_value_names;
+        cache.user_values = user_values;
+        cache.system_values = system_values;
+        cache.refreshed_at = Some(Instant::now());
+        return cache.clone();
+    }
+    let cache = windows_startup_snapshot_cache()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    cache.clone()
 }

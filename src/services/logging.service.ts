@@ -6,7 +6,6 @@ import type {
   LogPageDto,
   LogQueryDto,
 } from "@/contracts";
-import { normalizeDto } from "@/services/contracts-adapter";
 import { invokeWithLog } from "@/services/invoke";
 
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
@@ -61,14 +60,14 @@ export async function fetchLogPage(query?: LogQuery): Promise<LogPage> {
       silent: true,
     },
   );
-  return normalizeDto<LogPage>(dto);
+  return dto as LogPage;
 }
 
 export async function fetchLoggingConfig(): Promise<LoggingConfig> {
   const dto = await invokeWithLog<LogConfigDto>("logging_get_config", undefined, {
     silent: true,
   });
-  return normalizeDto<LoggingConfig>(dto);
+  return dto as LoggingConfig;
 }
 
 export async function saveLoggingConfig(config: LoggingConfig): Promise<LoggingConfig> {
@@ -81,7 +80,7 @@ export async function saveLoggingConfig(config: LoggingConfig): Promise<LoggingC
       silent: true,
     },
   );
-  return normalizeDto<LoggingConfig>(dto);
+  return dto as LoggingConfig;
 }
 
 export async function exportLogs(query?: LogQuery, outputPath?: string): Promise<string> {
@@ -99,6 +98,6 @@ export async function exportLogs(query?: LogQuery, outputPath?: string): Promise
 
 export async function subscribeLogStream(onEntry: (entry: LogEntry) => void): Promise<UnlistenFn> {
   return listen<LogEntryDto>("rtool://logging/stream", (event) => {
-    onEntry(normalizeDto<LogEntry>(event.payload));
+    onEntry(event.payload as LogEntry);
   });
 }

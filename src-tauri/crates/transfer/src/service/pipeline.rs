@@ -104,47 +104,10 @@ impl TerminalPersistOptions {
 impl TransferService {
     pub(super) fn local_protocol_capabilities() -> Vec<String> {
         vec![
-            CAPABILITY_CODEC_BIN_V2.to_string(),
-            CAPABILITY_ACK_BATCH_V2.to_string(),
-            CAPABILITY_PIPELINE_V2.to_string(),
+            CAPABILITY_CODEC_BIN.to_string(),
+            CAPABILITY_ACK_BATCH.to_string(),
+            CAPABILITY_PIPELINE.to_string(),
         ]
-    }
-
-    pub(super) fn negotiate_codec(
-        settings: &TransferSettingsDto,
-        peer_protocol_version: u16,
-        peer_capabilities: &[String],
-    ) -> FrameCodec {
-        if settings.codec_v2_enabled
-            && peer_protocol_version >= PROTOCOL_VERSION_V2
-            && peer_capabilities
-                .iter()
-                .any(|value| value == CAPABILITY_CODEC_BIN_V2)
-        {
-            FrameCodec::BinV2
-        } else {
-            FrameCodec::JsonV1
-        }
-    }
-
-    pub(super) fn should_use_ack_batch(
-        settings: &TransferSettingsDto,
-        codec: FrameCodec,
-        peer_capabilities: &[String],
-    ) -> bool {
-        settings.pipeline_v2_enabled
-            && codec == FrameCodec::BinV2
-            && peer_capabilities
-                .iter()
-                .any(|value| value == CAPABILITY_ACK_BATCH_V2)
-    }
-
-    pub(super) fn protocol_version_for_codec(codec: FrameCodec) -> u16 {
-        if codec == FrameCodec::BinV2 {
-            PROTOCOL_VERSION_V2
-        } else {
-            1
-        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -165,7 +128,7 @@ impl TransferService {
             speed_bps,
             eta_seconds,
             force,
-            Some(Self::protocol_version_for_codec(codec)),
+            Some(PROTOCOL_VERSION),
             Some(codec),
             inflight_chunks,
             retransmit_chunks,
@@ -337,14 +300,14 @@ mod tests {
     fn terminal_persist_options_builder_should_override_fields() {
         let options = TerminalPersistOptions::new(12)
             .with_eta(Some(34))
-            .with_codec(Some(FrameCodec::BinV2))
+            .with_codec(Some(FrameCodec::Bin))
             .with_inflight(Some(2))
             .with_retransmit(Some(3))
             .with_history_reason(Some(TransferHistorySyncReason::SessionDone));
 
         assert_eq!(options.speed_bps, 12);
         assert_eq!(options.eta_seconds, Some(34));
-        assert_eq!(options.codec, Some(FrameCodec::BinV2));
+        assert_eq!(options.codec, Some(FrameCodec::Bin));
         assert_eq!(options.inflight_chunks, Some(2));
         assert_eq!(options.retransmit_chunks, Some(3));
         assert_eq!(
@@ -359,14 +322,14 @@ mod tests {
     fn terminal_persist_options_for_terminal_done_should_apply_done_defaults() {
         let options = TerminalPersistOptions::for_terminal_done(
             55,
-            FrameCodec::BinV2,
+            FrameCodec::Bin,
             Some(0),
             Some(8),
             TransferHistorySyncReason::SessionDone,
         );
 
         assert_eq!(options.speed_bps, 55);
-        assert_eq!(options.codec, Some(FrameCodec::BinV2));
+        assert_eq!(options.codec, Some(FrameCodec::Bin));
         assert_eq!(options.eta_seconds, Some(0));
         assert_eq!(options.inflight_chunks, Some(0));
         assert_eq!(options.retransmit_chunks, Some(8));

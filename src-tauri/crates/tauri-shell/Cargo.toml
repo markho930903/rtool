@@ -9,6 +9,7 @@ app_infra = { workspace = true }
 app_launcher_app = { workspace = true }
 app_clipboard = { workspace = true }
 app_transfer = { workspace = true }
+app_resource_monitor = { workspace = true }
 anyhow = { workspace = true }
 active-win-pos-rs = { workspace = true }
 arboard = { workspace = true }

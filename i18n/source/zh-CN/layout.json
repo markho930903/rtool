@@ -10,6 +10,7 @@
   "nav.transfer": "文件传输",
   "nav.logs": "日志",
   "nav.appManager": "应用管理",
+  "nav.resourceMonitor": "资源监控",
   "nav.settings": "设置",
   "titlebar.menuAria": "标题栏菜单切换",
   "titlebar.switchMenu": "当前菜单：{current}（点击切换）"

@@ -304,6 +304,9 @@ export type CommandKey =
   | "app_reload_locales"
   | "app_import_locale_file"
   | "dashboard_snapshot"
+  | "resource_monitor_snapshot"
+  | "resource_monitor_history"
+  | "resource_monitor_reset_session"
   | "client_log"
   | "logging_query"
   | "logging_get_config"
@@ -335,6 +338,71 @@ export type CommandKey =
   | "app_manager_reveal_path";
 
 export type DashboardSnapshotDto = { sampledAt: number; app: AppRuntimeInfoDto; system: SystemInfoDto };
+
+export type ResourceModuleIdDto =
+  | "launcher"
+  | "clipboard"
+  | "app_manager"
+  | "transfer"
+  | "logging"
+  | "palette"
+  | "locale"
+  | "dashboard"
+  | "system";
+
+export type ResourceCrateIdDto = "launcher_app" | "clipboard" | "transfer" | "infra" | "tauri_shell" | "core";
+
+export type ResourcePointDto = {
+  sampledAt: number;
+  processCpuPercent: number | null;
+  processMemoryBytes: number | null;
+  systemUsedMemoryBytes: number | null;
+  systemTotalMemoryBytes: number | null;
+};
+
+export type ResourceOverviewDto = {
+  sampledAt: number;
+  processCpuPercent: number | null;
+  processMemoryBytes: number | null;
+  systemUsedMemoryBytes: number | null;
+  systemTotalMemoryBytes: number | null;
+};
+
+export type ResourceModuleStatsDto = {
+  moduleId: ResourceModuleIdDto;
+  calls: number;
+  errorCalls: number;
+  avgDurationMs: number | null;
+  p95DurationMs: number | null;
+  activeSharePercent: number | null;
+  estimatedCpuPercent: number | null;
+  estimatedMemoryBytes: number | null;
+  lastSeenAt: number | null;
+};
+
+export type ResourceCrateStatsDto = {
+  crateId: ResourceCrateIdDto;
+  calls: number;
+  errorCalls: number;
+  avgDurationMs: number | null;
+  p95DurationMs: number | null;
+  activeSharePercent: number | null;
+  estimatedCpuPercent: number | null;
+  estimatedMemoryBytes: number | null;
+};
+
+export type ResourceSnapshotDto = {
+  sampledAt: number;
+  overview: ResourceOverviewDto;
+  modules: Array<ResourceModuleStatsDto>;
+  crates: Array<ResourceCrateStatsDto>;
+};
+
+export type ResourceHistoryDto = {
+  points: Array<ResourcePointDto>;
+  windowMs: number;
+  stepMs: number;
+};
 
 export type ErrorContextItem = { key: string; value: string };
 

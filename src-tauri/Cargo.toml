@@ -6,6 +6,7 @@ members = [
     "crates/launcher-app",
     "crates/clipboard",
     "crates/transfer",
+    "crates/resource-monitor",
 ]
 resolver = "2"
 
@@ -43,6 +44,7 @@ app_launcher_app = { package = "launcher-app", path = "crates/launcher-app" }
 app_clipboard = { package = "clipboard", path = "crates/clipboard" }
 app_transfer = { package = "transfer", path = "crates/transfer" }
 app_tauri_shell = { package = "tauri-shell", path = "crates/tauri-shell" }
+app_resource_monitor = { package = "resource-monitor", path = "crates/resource-monitor" }
 
 [package]
 name = "rtool"

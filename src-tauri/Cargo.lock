@@ -4202,6 +4202,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "resource-monitor"
+version = "0.1.0"
+dependencies = [
+ "core",
+ "sysinfo",
+ "tracing",
+]
+
+[[package]]
 name = "rgb"
 version = "0.8.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5087,6 +5096,7 @@ dependencies = [
  "image",
  "infra",
  "launcher-app",
+ "resource-monitor",
  "serde",
  "serde_json",
  "sysinfo",

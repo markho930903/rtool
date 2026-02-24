@@ -10,6 +10,8 @@
   "module.clipboard.detail": "Alt + V normal, Alt + Shift + V compact",
   "module.tools.name": "Toolbox",
   "module.tools.detail": "Base64 / Regex / Timestamp",
+  "module.resourceMonitor.name": "Resource Monitor",
+  "module.resourceMonitor.detail": "CPU/Memory and latency analysis by module",
   "memory.noData": "No memory samples yet",
   "timeline.min": "min {value}",
   "timeline.max": "max {value}",

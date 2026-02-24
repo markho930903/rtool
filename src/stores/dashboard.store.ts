@@ -6,7 +6,7 @@ import { fetchDashboardSnapshot, type DashboardSnapshot } from "@/services/dashb
 const POLLING_INTERVAL_MS = 3000;
 const HISTORY_LIMIT = 20;
 
-let pollingTimer: ReturnType<typeof window.setInterval> | null = null;
+let pollingTimer: number | null = null;
 let inFlightRefresh: Promise<void> | null = null;
 
 export interface DashboardHistoryPoint {

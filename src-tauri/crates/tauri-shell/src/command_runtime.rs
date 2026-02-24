@@ -17,6 +17,8 @@ pub(crate) fn command_start(
     request_id: &str,
     window_label: Option<&str>,
 ) -> Instant {
+    app_resource_monitor::record_command_start(command, request_id);
+
     tracing::info!(
         event = "command_start",
         command = command,
@@ -43,6 +45,8 @@ pub(crate) fn command_start(
 
 pub(crate) fn command_end_ok(command: &str, request_id: &str, started_at: Instant) {
     let duration_ms = started_at.elapsed().as_millis() as u64;
+    app_resource_monitor::record_command_end(command, request_id, true, duration_ms);
+
     tracing::info!(
         event = "command_end",
         command = command,
@@ -73,6 +77,8 @@ where
 {
     let error: InvokeError = error.clone().into().with_request_id(request_id.to_string());
     let duration_ms = started_at.elapsed().as_millis() as u64;
+    app_resource_monitor::record_command_end(command, request_id, false, duration_ms);
+
     let causes: Vec<String> = error
         .causes
         .iter()

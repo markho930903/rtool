@@ -1118,6 +1118,95 @@ pub struct DashboardSnapshotDto {
     pub system: SystemInfoDto,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResourceModuleIdDto {
+    Launcher,
+    Clipboard,
+    AppManager,
+    Transfer,
+    Logging,
+    Palette,
+    Locale,
+    Dashboard,
+    System,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ResourceCrateIdDto {
+    LauncherApp,
+    Clipboard,
+    Transfer,
+    Infra,
+    TauriShell,
+    Core,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourcePointDto {
+    pub sampled_at: i64,
+    pub process_cpu_percent: Option<f64>,
+    pub process_memory_bytes: Option<u64>,
+    pub system_used_memory_bytes: Option<u64>,
+    pub system_total_memory_bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceOverviewDto {
+    pub sampled_at: i64,
+    pub process_cpu_percent: Option<f64>,
+    pub process_memory_bytes: Option<u64>,
+    pub system_used_memory_bytes: Option<u64>,
+    pub system_total_memory_bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceModuleStatsDto {
+    pub module_id: ResourceModuleIdDto,
+    pub calls: u64,
+    pub error_calls: u64,
+    pub avg_duration_ms: Option<f64>,
+    pub p95_duration_ms: Option<u64>,
+    pub active_share_percent: Option<f64>,
+    pub estimated_cpu_percent: Option<f64>,
+    pub estimated_memory_bytes: Option<u64>,
+    pub last_seen_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceCrateStatsDto {
+    pub crate_id: ResourceCrateIdDto,
+    pub calls: u64,
+    pub error_calls: u64,
+    pub avg_duration_ms: Option<f64>,
+    pub p95_duration_ms: Option<u64>,
+    pub active_share_percent: Option<f64>,
+    pub estimated_cpu_percent: Option<f64>,
+    pub estimated_memory_bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceSnapshotDto {
+    pub sampled_at: i64,
+    pub overview: ResourceOverviewDto,
+    pub modules: Vec<ResourceModuleStatsDto>,
+    pub crates: Vec<ResourceCrateStatsDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceHistoryDto {
+    pub points: Vec<ResourcePointDto>,
+    pub window_ms: u64,
+    pub step_ms: u64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct LogQueryDto {

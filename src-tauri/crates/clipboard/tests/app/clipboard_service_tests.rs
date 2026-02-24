@@ -9,12 +9,14 @@ fn unique_temp_db_path(prefix: &str) -> PathBuf {
     std::env::temp_dir().join(format!("rtool-{prefix}-{}-{now}.db", std::process::id()))
 }
 
-#[test]
-fn should_load_default_clipboard_settings() {
+#[tokio::test]
+async fn should_load_default_clipboard_settings() {
     let db_path = unique_temp_db_path("clipboard-settings-default");
-    db::init_db(db_path.as_path()).expect("init db");
-    let db_pool = db::new_db_pool(db_path.as_path()).expect("new db pool");
-    let service = ClipboardService::new(db_pool, db_path.clone()).expect("new clipboard service");
+    let db_conn = db::open_db(db_path.as_path()).await.expect("open db");
+    db::init_db(&db_conn).await.expect("init db");
+    let service = ClipboardService::new(db_conn, db_path.clone())
+        .await
+        .expect("new clipboard service");
 
     let settings = service.get_settings();
     assert_eq!(settings.max_items, CLIPBOARD_MAX_ITEMS_DEFAULT);

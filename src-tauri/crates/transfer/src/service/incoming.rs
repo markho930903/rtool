@@ -60,8 +60,7 @@ impl TransferService {
             cleanup_after_at: Some(cleanup_after_at),
             files: Vec::new(),
         };
-        self.blocking_upsert_session_progress(session.clone())
-            .await?;
+        self.upsert_session_progress_async(&session).await?;
         let _session_control_guard = IncomingSessionControlGuard::new(self, session.id.clone());
 
         let save_dir_path = PathBuf::from(settings.default_download_dir);

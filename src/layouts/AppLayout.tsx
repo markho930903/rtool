@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router";
 import { useTranslation } from "react-i18next";
+import { NavLink, Outlet, useLocation } from "react-router";
 
 import { BootOverlay, useBootState } from "@/components/loading";
 import { Button } from "@/components/ui";
@@ -41,7 +41,8 @@ const TITLEBAR_MENU_ITEM_BASE_CLASS =
 
 const TITLEBAR_MENU_ITEM_ACTIVE_CLASS = "border-accent/45 bg-accent-soft text-text-primary shadow-inset-soft";
 
-const TITLEBAR_MENU_ITEM_IDLE_CLASS = "border-transparent hover:border-border-muted/70 hover:bg-surface-soft hover:text-text-primary";
+const TITLEBAR_MENU_ITEM_IDLE_CLASS =
+  "border-transparent hover:border-border-muted/70 hover:bg-surface-soft hover:text-text-primary";
 
 function getNextTheme(preference: ThemePreference): ThemePreference {
   if (preference === "system") {

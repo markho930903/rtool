@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { LoadingIndicator } from "@/components/loading";
 import TransferDropzone from "@/components/transfer/TransferDropzone";
 import TransferHistoryPanel from "@/components/transfer/TransferHistoryPanel";
 import TransferPeerPanel from "@/components/transfer/TransferPeerPanel";
 import TransferSessionList from "@/components/transfer/TransferSessionList";
-import { LoadingIndicator } from "@/components/loading";
 import { Button, Input } from "@/components/ui";
 import { useTransferStore } from "@/stores/transfer.store";
 

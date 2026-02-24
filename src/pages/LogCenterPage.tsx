@@ -3,8 +3,8 @@ import { useTranslation } from "react-i18next";
 
 import { LoadingIndicator } from "@/components/loading";
 import { Button, Input, Textarea } from "@/components/ui";
-import { useLoggingStore } from "@/stores/logging.store";
 import type { LogLevel } from "@/services/logging.service";
+import { useLoggingStore } from "@/stores/logging.store";
 
 const LEVEL_OPTIONS: Array<{ value: LogLevel; label: string }> = [
   { value: "error", label: "Error" },

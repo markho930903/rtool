@@ -11,6 +11,7 @@ use tokio::sync::watch;
 use tokio::task::JoinHandle;
 use tokio::time::{Instant, MissedTickBehavior, interval, sleep};
 
+use anyhow::Context;
 use app_core::models::{
     TransferClearHistoryInputDto, TransferDirection, TransferFileDto, TransferFileInputDto,
     TransferHistoryFilterDto, TransferHistoryPageDto, TransferPairingCodeDto, TransferPeerDto,
@@ -18,7 +19,7 @@ use app_core::models::{
     TransferSessionDto, TransferSettingsDto, TransferStatus, TransferUpdateSettingsInputDto,
 };
 use app_core::{AppError, AppResult, ResultExt};
-use app_infra::db::DbPool;
+use app_infra::db::DbConn;
 use app_infra::runtime::blocking::run_blocking;
 use app_infra::transfer::TRANSFER_LISTEN_PORT;
 use app_infra::transfer::archive::{cleanup_temp_paths, collect_sources};
@@ -27,10 +28,9 @@ use app_infra::transfer::discovery::{
 };
 use app_infra::transfer::preview::build_preview;
 use app_infra::transfer::protocol::{
-    AckFrameItem, CAPABILITY_ACK_BATCH, CAPABILITY_CODEC_BIN, CAPABILITY_PIPELINE,
-    FrameCodec, ManifestFileFrame, MissingChunkFrame, PROTOCOL_VERSION, TransferFrame,
-    derive_proof, derive_session_key, random_hex, read_frame, read_frame_from, write_frame,
-    write_frame_to,
+    AckFrameItem, CAPABILITY_ACK_BATCH, CAPABILITY_CODEC_BIN, CAPABILITY_PIPELINE, FrameCodec,
+    ManifestFileFrame, MissingChunkFrame, PROTOCOL_VERSION, TransferFrame, derive_proof,
+    derive_session_key, random_hex, read_frame, read_frame_from, write_frame, write_frame_to,
 };
 use app_infra::transfer::resume::{
     chunk_count, completed_bytes, empty_bitmap, mark_chunk_done, missing_chunks,
@@ -45,7 +45,6 @@ use app_infra::transfer::store::{
     list_history, list_stored_peers, load_settings, mark_peer_pair_failure, mark_peer_pair_success,
     merge_online_peers, save_settings, upsert_files_batch, upsert_peer, upsert_session_progress,
 };
-use anyhow::Context;
 
 mod discovery;
 mod event_sink;
@@ -132,7 +131,7 @@ struct RuntimeSessionControl {
 pub struct TransferService {
     event_sink: Arc<dyn TransferEventSink>,
     task_spawner: Arc<dyn TransferTaskSpawner>,
-    db_pool: DbPool,
+    db_conn: DbConn,
     device_id: String,
     device_name: String,
     settings: Arc<RwLock<TransferSettingsDto>>,
@@ -147,21 +146,21 @@ pub struct TransferService {
 }
 
 impl TransferService {
-    pub fn new(
+    pub async fn new(
         event_sink: Arc<dyn TransferEventSink>,
         task_spawner: Arc<dyn TransferTaskSpawner>,
-        db_pool: DbPool,
+        db_conn: DbConn,
         app_data_dir: &Path,
     ) -> AppResult<Self> {
-        let device_id = resolve_or_create_device_id(&db_pool)?;
+        let device_id = resolve_or_create_device_id(&db_conn).await?;
         let device_name = resolve_device_name();
         let default_download_dir = resolve_default_download_dir(app_data_dir);
-        let settings = load_settings(&db_pool, default_download_dir)?;
+        let settings = load_settings(&db_conn, default_download_dir).await?;
 
         let service = Self {
             event_sink,
             task_spawner,
-            db_pool,
+            db_conn,
             device_id,
             device_name,
             settings: Arc::new(RwLock::new(settings)),
@@ -175,7 +174,7 @@ impl TransferService {
             session_last_emit_ms: Arc::new(RwLock::new(HashMap::new())),
         };
 
-        let _ = cleanup_expired(&service.db_pool, now_millis());
+        let _ = cleanup_expired(&service.db_conn, now_millis()).await;
         Ok(service)
     }
 
@@ -199,7 +198,7 @@ impl TransferService {
         read_lock(self.settings.as_ref(), "settings").clone()
     }
 
-    pub fn update_settings(
+    pub async fn update_settings(
         &self,
         input: TransferUpdateSettingsInputDto,
     ) -> AppResult<TransferSettingsDto> {
@@ -237,7 +236,7 @@ impl TransferService {
             next.pairing_required = value;
         }
 
-        save_settings(&self.db_pool, &next)?;
+        save_settings(&self.db_conn, &next).await?;
         *write_lock(self.settings.as_ref(), "settings") = next.clone();
         Ok(next)
     }
@@ -273,18 +272,16 @@ impl TransferService {
             prepared.temp_paths,
         )?;
 
-        let pool = self.db_pool.clone();
         let created_session_id = prepared.session.id.clone();
-        run_blocking("transfer_ensure_session", move || {
-            ensure_session_exists(&pool, created_session_id.as_str())
-        })
-        .await
+        ensure_session_exists(&self.db_conn, created_session_id.as_str()).await
     }
 
     pub async fn retry_session(&self, session_id: &str) -> AppResult<TransferSessionDto> {
-        let session = list_failed_sessions(&self.db_pool, session_id)?.ok_or_else(|| {
-            AppError::new("transfer_session_not_retryable", "该会话当前状态不支持重试")
-        })?;
+        let session = list_failed_sessions(&self.db_conn, session_id)
+            .await?
+            .ok_or_else(|| {
+                AppError::new("transfer_session_not_retryable", "该会话当前状态不支持重试")
+            })?;
 
         if session.direction != TransferDirection::Send {
             return Err(AppError::new(
@@ -324,25 +321,25 @@ impl TransferService {
         .await
     }
 
-    pub fn list_history(
+    pub async fn list_history(
         &self,
         filter: TransferHistoryFilterDto,
     ) -> AppResult<TransferHistoryPageDto> {
-        list_history(&self.db_pool, &filter)
+        list_history(&self.db_conn, &filter).await
     }
 
-    pub fn clear_history(&self, input: TransferClearHistoryInputDto) -> AppResult<()> {
+    pub async fn clear_history(&self, input: TransferClearHistoryInputDto) -> AppResult<()> {
         let all = input.all.unwrap_or(false);
         let older_than_days = input.older_than_days.unwrap_or(30).clamp(1, 365);
-        app_infra::transfer::store::clear_history(&self.db_pool, all, older_than_days)?;
+        app_infra::transfer::store::clear_history(&self.db_conn, all, older_than_days).await?;
         self.emit_history_sync(if all { "clear_all" } else { "clear_expired" });
         Ok(())
     }
 }
 
-fn resolve_or_create_device_id(pool: &DbPool) -> AppResult<String> {
+async fn resolve_or_create_device_id(conn: &DbConn) -> AppResult<String> {
     let key = "transfer.device_id";
-    if let Some(value) = app_infra::db::get_app_setting(pool, key)? {
+    if let Some(value) = app_infra::db::get_app_setting(conn, key).await? {
         let trimmed = value.trim();
         if !trimmed.is_empty() {
             return Ok(trimmed.to_string());
@@ -350,7 +347,7 @@ fn resolve_or_create_device_id(pool: &DbPool) -> AppResult<String> {
     }
 
     let value = uuid::Uuid::new_v4().to_string();
-    app_infra::db::set_app_setting(pool, key, value.as_str())?;
+    app_infra::db::set_app_setting(conn, key, value.as_str()).await?;
     Ok(value)
 }
 
@@ -458,31 +455,41 @@ mod tests {
         }
     }
 
-    fn create_service(task_spawner: Arc<dyn TransferTaskSpawner>) -> AppResult<TransferService> {
+    async fn create_service(
+        task_spawner: Arc<dyn TransferTaskSpawner>,
+    ) -> AppResult<TransferService> {
         let app_data_dir =
             std::env::temp_dir().join(format!("rtool-transfer-test-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&app_data_dir).expect("create app data dir");
-        let db_path = app_data_dir.join("rtool.db");
-        app_infra::db::init_db(db_path.as_path())?;
-        let db_pool = app_infra::db::new_db_pool(db_path.as_path())?;
+        let db_path = app_data_dir
+            .join("rtool-turso.db")
+            .to_string_lossy()
+            .to_string();
+        let db_conn = app_infra::db::open_db(Path::new(db_path.as_str())).await?;
+        app_infra::db::init_db(&db_conn).await?;
         TransferService::new(
             Arc::new(NoopTransferEventSink),
             task_spawner,
-            db_pool,
+            db_conn,
             app_data_dir.as_path(),
         )
+        .await
     }
 
     #[test]
     fn new_should_not_require_tokio_runtime_context() {
-        let service = create_service(Arc::new(RejectSpawner));
+        let runtime = tokio::runtime::Runtime::new().expect("create tokio runtime");
+        let service = runtime.block_on(create_service(Arc::new(RejectSpawner)));
         assert!(service.is_ok());
     }
 
     #[test]
     fn bootstrap_background_tasks_should_be_idempotent() {
         let spawner = Arc::new(CountingSpawner::new());
-        let service = create_service(spawner.clone()).expect("create service");
+        let runtime = tokio::runtime::Runtime::new().expect("create tokio runtime");
+        let service = runtime
+            .block_on(create_service(spawner.clone()))
+            .expect("create service");
 
         service
             .bootstrap_background_tasks()

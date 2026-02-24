@@ -301,9 +301,11 @@ pub(super) fn windows_startup_value_name(app_id: &str) -> String {
 #[cfg(target_os = "windows")]
 pub(super) fn windows_startup_enabled(app_id: &str) -> bool {
     let snapshot = windows_get_startup_snapshot();
-    snapshot
-        .user_value_names
-        .contains(windows_startup_value_name(app_id).to_ascii_lowercase().as_str())
+    snapshot.user_value_names.contains(
+        windows_startup_value_name(app_id)
+            .to_ascii_lowercase()
+            .as_str(),
+    )
 }
 
 #[cfg(target_os = "windows")]

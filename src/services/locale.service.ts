@@ -1,4 +1,3 @@
-import type { AppLocale, LocalePreference } from "@/i18n/types";
 import type {
   ImportLocaleResult as ImportLocaleFileResult,
   LocaleCatalogList as BackendLocaleCatalogList,
@@ -6,6 +5,7 @@ import type {
   LocaleStateDto as BackendLocaleState,
   ReloadLocalesResult,
 } from "@/contracts";
+import type { AppLocale, LocalePreference } from "@/i18n/types";
 import { invokeWithLog } from "@/services/invoke";
 
 export type { BackendLocaleCatalogList, BackendLocaleState, ImportLocaleFileResult, ReloadLocalesResult };

@@ -1,8 +1,8 @@
 import { useRef, type DragEvent } from "react";
 import { useTranslation } from "react-i18next";
 
-import { Button } from "@/components/ui";
 import type { TransferFileInput } from "@/components/transfer/types";
+import { Button } from "@/components/ui";
 
 interface TransferDropzoneProps {
   pendingFiles: TransferFileInput[];

@@ -1,7 +1,8 @@
-import { LoadingIndicator } from "@/components/loading";
-import { Input } from "@/components/ui";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+
+import { LoadingIndicator } from "@/components/loading";
+import { Input } from "@/components/ui";
 
 interface PaletteInputProps {
   query: string;

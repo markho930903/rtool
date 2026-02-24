@@ -1,7 +1,7 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { HashRouter, useLocation, useNavigate, useRoutes } from "react-router";
-import { useEffect, useLayoutEffect, useRef } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useEffect, useLayoutEffect, useRef } from "react";
+import { HashRouter, useLocation, useNavigate, useRoutes } from "react-router";
 
 import type { AppManagerIndexUpdatedPayload } from "@/components/app-manager/types";
 import type { ClipboardSyncPayload } from "@/components/clipboard/types";
@@ -91,10 +91,7 @@ function AppEventBridge() {
           if (!event.payload) {
             return;
           }
-          handleAppManagerIndexUpdated(
-            event.payload,
-            currentRouteRef.current.startsWith("/app-manager"),
-          );
+          handleAppManagerIndexUpdated(event.payload, currentRouteRef.current.startsWith("/app-manager"));
         },
       );
     };
@@ -109,7 +106,14 @@ function AppEventBridge() {
       unlistenTransferHistorySync?.();
       unlistenAppManagerIndexUpdated?.();
     };
-  }, [applySync, applyTransferPeerSync, applyTransferSessionSync, handleAppManagerIndexUpdated, navigate, refreshTransferHistory]);
+  }, [
+    applySync,
+    applyTransferPeerSync,
+    applyTransferSessionSync,
+    handleAppManagerIndexUpdated,
+    navigate,
+    refreshTransferHistory,
+  ]);
 
   useEffect(() => {
     const currentWindow = getCurrentWindow();

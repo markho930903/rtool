@@ -26,7 +26,7 @@
   "metric.uptime.title": "应用运行时长",
   "metric.uptime.hint": "自进程启动到当前",
   "metric.database.title": "数据库体积",
-  "metric.database.hint": "rtool.db 文件大小",
+  "metric.database.hint": "rtool-turso.db 文件大小",
   "metric.systemMemory.title": "系统内存占用",
   "panel.application.title": "application",
   "panel.application.subtitle": "应用信息",

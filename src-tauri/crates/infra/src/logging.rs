@@ -1,19 +1,19 @@
 use app_core::models::{LogConfigDto, LogEntryDto, LogPageDto, LogQueryDto};
 use app_core::{AppError, ResultExt};
-use crate::db::{self, DbPool};
-use crate::runtime::blocking::run_blocking;
+use crate::db::{self, DbConn};
 use anyhow::Context;
-use rusqlite::{OptionalExtension, params};
+use libsql::{Row, Value as LibsqlValue, params, params_from_iter};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;
 use std::fs;
-use std::fs::File;
 use std::hash::{Hash, Hasher};
-use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::fs::File;
+use tokio::io::{AsyncWriteExt, BufWriter};
+use tokio::time::sleep;
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling::{Builder as RollingBuilder, Rotation};
 use tracing_subscriber::EnvFilter;
@@ -89,7 +89,7 @@ pub trait LoggingEventSink: Send + Sync {
 
 struct LogCenter {
     event_sink: Option<Arc<dyn LoggingEventSink>>,
-    db_pool: DbPool,
+    db_conn: DbConn,
     log_dir: PathBuf,
     config: Mutex<LogConfigDto>,
     high_frequency: Mutex<HashMap<String, HighFrequencyWindow>>,
@@ -104,6 +104,37 @@ fn worker_guard_slot() -> &'static Mutex<Option<WorkerGuard>> {
 fn log_center_slot() -> &'static OnceLock<Arc<LogCenter>> {
     static SLOT: OnceLock<Arc<LogCenter>> = OnceLock::new();
     &SLOT
+}
+
+fn log_ingest_sender_slot() -> &'static OnceLock<mpsc::Sender<RecordLogInput>> {
+    static SLOT: OnceLock<mpsc::Sender<RecordLogInput>> = OnceLock::new();
+    &SLOT
+}
+
+fn log_ingest_sender() -> &'static mpsc::Sender<RecordLogInput> {
+    log_ingest_sender_slot().get_or_init(|| {
+        let (sender, receiver) = mpsc::channel::<RecordLogInput>();
+        let _ = std::thread::Builder::new()
+            .name("rtool-log-ingest".to_string())
+            .spawn(move || {
+                let runtime = match tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    Ok(runtime) => runtime,
+                    Err(error) => {
+                        eprintln!("logging runtime init failed: {}", error);
+                        return;
+                    }
+                };
+                while let Ok(input) = receiver.recv() {
+                    if let Err(error) = runtime.block_on(record_log_event(input)) {
+                        eprintln!("logging ingest failed: {}", error);
+                    }
+                }
+            });
+        sender
+    })
 }
 
 fn short_hash(value: &str) -> String {
@@ -271,90 +302,98 @@ pub fn sanitize_json_value(value: &Value) -> Value {
     sanitize_json_value_inner(value, 0, None)
 }
 
-fn read_bool_setting(pool: &DbPool, key: &str, default: bool) -> bool {
-    db::get_app_setting(pool, key)
-        .ok()
-        .flatten()
-        .and_then(|value| value.parse::<bool>().ok())
-        .unwrap_or(default)
+fn build_log_fts_query(keyword: &str) -> Option<String> {
+    let normalized = sanitize_for_log(keyword);
+    let tokens = normalized
+        .split_whitespace()
+        .map(|token| {
+            token
+                .trim_matches(|ch: char| !ch.is_alphanumeric() && ch != '_' && ch != '-')
+                .to_string()
+        })
+        .filter(|token| !token.is_empty())
+        .take(8)
+        .collect::<Vec<_>>();
+
+    if tokens.is_empty() {
+        return None;
+    }
+
+    Some(
+        tokens
+            .into_iter()
+            .map(|token| format!("{token}*"))
+            .collect::<Vec<_>>()
+            .join(" AND "),
+    )
 }
 
-fn read_u32_setting(pool: &DbPool, key: &str, default: u32, min: u32, max: u32) -> u32 {
-    db::get_app_setting(pool, key)
-        .ok()
-        .flatten()
-        .and_then(|value| value.parse::<u32>().ok())
-        .map(|value| value.clamp(min, max))
-        .unwrap_or(default)
-}
+async fn load_log_config(conn: &DbConn) -> LogConfigDto {
+    let keys = [
+        SETTING_KEY_MIN_LEVEL,
+        SETTING_KEY_KEEP_DAYS,
+        SETTING_KEY_REALTIME_ENABLED,
+        SETTING_KEY_HIGH_FREQ_WINDOW_MS,
+        SETTING_KEY_HIGH_FREQ_MAX_PER_KEY,
+        SETTING_KEY_ALLOW_RAW_VIEW,
+    ];
+    let settings = db::get_app_settings_batch(conn, &keys)
+        .await
+        .unwrap_or_default();
 
-fn read_level_setting(pool: &DbPool) -> String {
-    db::get_app_setting(pool, SETTING_KEY_MIN_LEVEL)
-        .ok()
-        .flatten()
-        .and_then(|value| normalize_level(&value).map(ToString::to_string))
-        .unwrap_or_else(|| DEFAULT_MIN_LEVEL.to_string())
-}
-
-fn load_log_config(pool: &DbPool) -> LogConfigDto {
     LogConfigDto {
-        min_level: read_level_setting(pool),
-        keep_days: read_u32_setting(pool, SETTING_KEY_KEEP_DAYS, DEFAULT_KEEP_DAYS, 1, 90),
-        realtime_enabled: read_bool_setting(
-            pool,
-            SETTING_KEY_REALTIME_ENABLED,
-            DEFAULT_REALTIME_ENABLED,
-        ),
-        high_freq_window_ms: read_u32_setting(
-            pool,
-            SETTING_KEY_HIGH_FREQ_WINDOW_MS,
-            DEFAULT_HIGH_FREQ_WINDOW_MS,
-            100,
-            60_000,
-        ),
-        high_freq_max_per_key: read_u32_setting(
-            pool,
-            SETTING_KEY_HIGH_FREQ_MAX_PER_KEY,
-            DEFAULT_HIGH_FREQ_MAX_PER_KEY,
-            1,
-            200,
-        ),
-        allow_raw_view: read_bool_setting(pool, SETTING_KEY_ALLOW_RAW_VIEW, DEFAULT_ALLOW_RAW_VIEW),
+        min_level: settings
+            .get(SETTING_KEY_MIN_LEVEL)
+            .and_then(|value| normalize_level(value).map(ToString::to_string))
+            .unwrap_or_else(|| DEFAULT_MIN_LEVEL.to_string()),
+        keep_days: settings
+            .get(SETTING_KEY_KEEP_DAYS)
+            .and_then(|value| value.parse::<u32>().ok())
+            .map(|value| value.clamp(1, 90))
+            .unwrap_or(DEFAULT_KEEP_DAYS),
+        realtime_enabled: settings
+            .get(SETTING_KEY_REALTIME_ENABLED)
+            .and_then(|value| value.parse::<bool>().ok())
+            .unwrap_or(DEFAULT_REALTIME_ENABLED),
+        high_freq_window_ms: settings
+            .get(SETTING_KEY_HIGH_FREQ_WINDOW_MS)
+            .and_then(|value| value.parse::<u32>().ok())
+            .map(|value| value.clamp(100, 60_000))
+            .unwrap_or(DEFAULT_HIGH_FREQ_WINDOW_MS),
+        high_freq_max_per_key: settings
+            .get(SETTING_KEY_HIGH_FREQ_MAX_PER_KEY)
+            .and_then(|value| value.parse::<u32>().ok())
+            .map(|value| value.clamp(1, 200))
+            .unwrap_or(DEFAULT_HIGH_FREQ_MAX_PER_KEY),
+        allow_raw_view: settings
+            .get(SETTING_KEY_ALLOW_RAW_VIEW)
+            .and_then(|value| value.parse::<bool>().ok())
+            .unwrap_or(DEFAULT_ALLOW_RAW_VIEW),
     }
 }
 
-fn persist_log_config(pool: &DbPool, config: &LogConfigDto) -> Result<(), AppError> {
-    db::set_app_setting(pool, SETTING_KEY_MIN_LEVEL, &config.min_level)?;
-    db::set_app_setting(pool, SETTING_KEY_KEEP_DAYS, &config.keep_days.to_string())?;
-    db::set_app_setting(
-        pool,
-        SETTING_KEY_REALTIME_ENABLED,
-        if config.realtime_enabled {
-            "true"
-        } else {
-            "false"
-        },
-    )?;
-    db::set_app_setting(
-        pool,
-        SETTING_KEY_HIGH_FREQ_WINDOW_MS,
-        &config.high_freq_window_ms.to_string(),
-    )?;
-    db::set_app_setting(
-        pool,
-        SETTING_KEY_HIGH_FREQ_MAX_PER_KEY,
-        &config.high_freq_max_per_key.to_string(),
-    )?;
-    db::set_app_setting(
-        pool,
-        SETTING_KEY_ALLOW_RAW_VIEW,
-        if config.allow_raw_view {
-            "true"
-        } else {
-            "false"
-        },
-    )?;
-
+async fn persist_log_config(conn: &DbConn, config: &LogConfigDto) -> Result<(), AppError> {
+    let keep_days = config.keep_days.to_string();
+    let high_freq_window_ms = config.high_freq_window_ms.to_string();
+    let high_freq_max_per_key = config.high_freq_max_per_key.to_string();
+    let entries = [
+        (SETTING_KEY_MIN_LEVEL, config.min_level.as_str()),
+        (SETTING_KEY_KEEP_DAYS, keep_days.as_str()),
+        (
+            SETTING_KEY_REALTIME_ENABLED,
+            if config.realtime_enabled { "true" } else { "false" },
+        ),
+        (SETTING_KEY_HIGH_FREQ_WINDOW_MS, high_freq_window_ms.as_str()),
+        (
+            SETTING_KEY_HIGH_FREQ_MAX_PER_KEY,
+            high_freq_max_per_key.as_str(),
+        ),
+        (
+            SETTING_KEY_ALLOW_RAW_VIEW,
+            if config.allow_raw_view { "true" } else { "false" },
+        ),
+    ];
+    db::set_app_settings_batch(conn, entries.as_slice()).await?;
     Ok(())
 }
 
@@ -428,14 +467,14 @@ pub fn cleanup_expired_logs(log_dir: &Path, keep_days: u64) -> Result<(), AppErr
     Ok(())
 }
 
-fn cleanup_expired_log_entries(pool: &DbPool, keep_days: u32) -> Result<(), AppError> {
+async fn cleanup_expired_log_entries(conn: &DbConn, keep_days: u32) -> Result<(), AppError> {
     let keep_ms = i64::from(keep_days) * 24 * 60 * 60 * 1000;
     let cutoff = now_millis().saturating_sub(keep_ms);
-    let conn = pool.get()?;
     conn.execute(
         "DELETE FROM log_entries WHERE timestamp < ?1",
         params![cutoff],
-    )?;
+    )
+    .await?;
     Ok(())
 }
 
@@ -449,7 +488,7 @@ fn serialize_metadata_value(metadata: &Option<Value>) -> Option<String> {
         .and_then(|value| serde_json::to_string(value).ok())
 }
 
-fn row_to_log_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<LogEntryDto> {
+fn row_to_log_entry(row: &Row) -> Result<LogEntryDto, libsql::Error> {
     let aggregated_count: Option<i64> = row.get(10)?;
     Ok(LogEntryDto {
         id: row.get(0)?,
@@ -466,116 +505,104 @@ fn row_to_log_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<LogEntryDto> {
     })
 }
 
-fn save_log_entry(
-    pool: &DbPool,
+async fn save_log_entry(
+    conn: &DbConn,
     input: &RecordLogInput,
     timestamp: i64,
 ) -> Result<LogEntryDto, AppError> {
     let metadata = serialize_metadata_value(&input.metadata);
-    let conn = pool.get()?;
-    conn.execute(
+    let mut rows = conn
+        .query(
         "INSERT INTO log_entries (timestamp, level, scope, event, request_id, window_label, message, metadata, raw_ref, aggregated_count)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, NULL)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, NULL)
+         RETURNING id, timestamp, level, scope, event, request_id, window_label, message, metadata, raw_ref, aggregated_count",
         params![
             timestamp,
-            input.level,
-            input.scope,
-            input.event,
-            input.request_id,
-            input.window_label,
-            input.message,
+            input.level.as_str(),
+            input.scope.as_str(),
+            input.event.as_str(),
+            input.request_id.as_str(),
+            input.window_label.as_deref(),
+            input.message.as_str(),
             metadata,
-            input.raw_ref
+            input.raw_ref.as_deref()
         ],
-    )?;
+    )
+    .await?;
 
-    let id = conn.last_insert_rowid();
-    Ok(LogEntryDto {
-        id,
-        timestamp,
-        level: input.level.clone(),
-        scope: input.scope.clone(),
-        event: input.event.clone(),
-        request_id: input.request_id.clone(),
-        window_label: input.window_label.clone(),
-        message: input.message.clone(),
-        metadata: input.metadata.clone(),
-        raw_ref: input.raw_ref.clone(),
-        aggregated_count: None,
-    })
+    if let Some(row) = rows.next().await? {
+        return Ok(row_to_log_entry(&row)?);
+    }
+
+    Err(AppError::new(
+        "log_insert_missing",
+        "写入日志后未返回记录",
+    ))
 }
 
-fn upsert_aggregated_log(
-    pool: &DbPool,
+async fn upsert_aggregated_log(
+    conn: &DbConn,
     key: &str,
     input: &RecordLogInput,
     timestamp: i64,
     window: &mut HighFrequencyWindow,
 ) -> Result<LogEntryDto, AppError> {
-    let conn = pool.get()?;
     if let Some(row_id) = window.aggregated_row_id {
         window.aggregated_count = window.aggregated_count.saturating_add(1);
-        conn.execute(
+        let mut rows = conn
+            .query(
             "UPDATE log_entries
              SET timestamp = ?1,
                  aggregated_count = ?2,
                  message = ?3
-             WHERE id = ?4",
+             WHERE id = ?4
+             RETURNING id, timestamp, level, scope, event, request_id, window_label, message, metadata, raw_ref, aggregated_count",
             params![
                 timestamp,
                 i64::from(window.aggregated_count),
                 format!("high_frequency_aggregated key={}", sanitize_for_log(key)),
                 row_id
             ],
-        )?;
+        )
+        .await?;
 
-        let row = conn
-            .query_row(
-                "SELECT id, timestamp, level, scope, event, request_id, window_label, message, metadata, raw_ref, aggregated_count
-                 FROM log_entries
-                 WHERE id = ?1
-                 LIMIT 1",
-                params![row_id],
-                row_to_log_entry,
-            )
-            .optional()?;
+        if let Some(row) = rows.next().await? {
+            return Ok(row_to_log_entry(&row)?);
+        }
 
-        return row.ok_or_else(|| AppError::new("log_aggregate_missing", "聚合日志记录不存在"));
+        return Err(AppError::new("log_aggregate_missing", "聚合日志记录不存在"));
     }
 
     window.aggregated_count = 1;
     let aggregated_message = format!("high_frequency_aggregated key={}", sanitize_for_log(key));
-    conn.execute(
+    let mut rows = conn
+        .query(
         "INSERT INTO log_entries (timestamp, level, scope, event, request_id, window_label, message, metadata, raw_ref, aggregated_count)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, NULL, ?8)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, NULL, ?8)
+         RETURNING id, timestamp, level, scope, event, request_id, window_label, message, metadata, raw_ref, aggregated_count",
         params![
             timestamp,
-            input.level,
-            input.scope,
+            input.level.as_str(),
+            input.scope.as_str(),
             "high_frequency_aggregated",
-            input.request_id,
-            input.window_label,
-            aggregated_message,
+            input.request_id.as_str(),
+            input.window_label.as_deref(),
+            aggregated_message.as_str(),
             i64::from(window.aggregated_count)
         ],
-    )?;
+    )
+    .await?;
 
-    let row_id = conn.last_insert_rowid();
-    window.aggregated_row_id = Some(row_id);
+    if let Some(row) = rows.next().await? {
+        let entry = row_to_log_entry(&row)?;
+        window.aggregated_row_id = Some(entry.id);
+        return Ok(entry);
+    }
 
-    Ok(LogEntryDto {
-        id: row_id,
-        timestamp,
-        level: input.level.clone(),
-        scope: input.scope.clone(),
-        event: "high_frequency_aggregated".to_string(),
-        request_id: input.request_id.clone(),
-        window_label: input.window_label.clone(),
-        message: aggregated_message,
-        metadata: None,
-        raw_ref: None,
-        aggregated_count: Some(window.aggregated_count),
-    })
+    Err(AppError::new(
+        "log_aggregate_insert_missing",
+        "写入聚合日志后未返回记录",
+    ))
 }
 
 fn sanitize_record_input(input: RecordLogInput) -> RecordLogInput {
@@ -598,20 +625,27 @@ impl LogCenter {
         current_rank >= min_rank
     }
 
-    fn maybe_cleanup(&self, config: &LogConfigDto, timestamp: i64) {
-        let mut last_cleanup_guard = match self.last_cleanup_at.lock() {
-            Ok(value) => value,
-            Err(_) => return,
+    async fn maybe_cleanup(&self, config: &LogConfigDto, timestamp: i64) {
+        let should_cleanup = {
+            let mut last_cleanup_guard = match self.last_cleanup_at.lock() {
+                Ok(value) => value,
+                Err(_) => return,
+            };
+
+            if timestamp - *last_cleanup_guard < LOG_RETENTION_CLEANUP_INTERVAL_MS {
+                false
+            } else {
+                *last_cleanup_guard = timestamp;
+                true
+            }
         };
 
-        if timestamp - *last_cleanup_guard < LOG_RETENTION_CLEANUP_INTERVAL_MS {
+        if !should_cleanup {
             return;
         }
 
-        *last_cleanup_guard = timestamp;
-
         let _ = cleanup_expired_logs(&self.log_dir, u64::from(config.keep_days));
-        let _ = cleanup_expired_log_entries(&self.db_pool, config.keep_days);
+        let _ = cleanup_expired_log_entries(&self.db_conn, config.keep_days).await;
     }
 
     fn emit_realtime(&self, config: &LogConfigDto, entry: &LogEntryDto) {
@@ -668,7 +702,7 @@ impl LogCenter {
         }
     }
 
-    fn ingest(&self, input: RecordLogInput) -> Result<(), AppError> {
+    async fn ingest(&self, input: RecordLogInput) -> Result<(), AppError> {
         let sanitized = sanitize_record_input(input);
         let config = self
             .config
@@ -688,7 +722,7 @@ impl LogCenter {
         }
 
         let timestamp = now_millis();
-        self.maybe_cleanup(&config, timestamp);
+        self.maybe_cleanup(&config, timestamp).await;
 
         let event_key = format!(
             "{}|{}|{}|{}",
@@ -700,18 +734,19 @@ impl LogCenter {
 
         if let Some(mut window) = self.should_aggregate(&config, &event_key, timestamp) {
             let entry = upsert_aggregated_log(
-                &self.db_pool,
+                &self.db_conn,
                 &event_key,
                 &sanitized,
                 timestamp,
                 &mut window,
-            )?;
+            )
+            .await?;
             self.update_aggregate_window(&event_key, window);
             self.emit_realtime(&config, &entry);
             return Ok(());
         }
 
-        let entry = save_log_entry(&self.db_pool, &sanitized, timestamp)?;
+        let entry = save_log_entry(&self.db_conn, &sanitized, timestamp).await?;
         self.emit_realtime(&config, &entry);
         Ok(())
     }
@@ -790,17 +825,17 @@ pub fn init_logging(app_data_dir: &Path) -> Result<LoggingGuard, AppError> {
     Ok(LoggingGuard { log_dir, level })
 }
 
-pub fn init_log_center(
-    db_pool: DbPool,
+pub async fn init_log_center(
+    db_conn: DbConn,
     log_dir: PathBuf,
     event_sink: Option<Arc<dyn LoggingEventSink>>,
 ) -> Result<LogConfigDto, AppError> {
-    let config = clamp_and_normalize_config(load_log_config(&db_pool))?;
-    persist_log_config(&db_pool, &config)?;
+    let config = clamp_and_normalize_config(load_log_config(&db_conn).await)?;
+    persist_log_config(&db_conn, &config).await?;
 
     let center = Arc::new(LogCenter {
         event_sink,
-        db_pool,
+        db_conn,
         log_dir,
         config: Mutex::new(config.clone()),
         high_frequency: Mutex::new(HashMap::new()),
@@ -813,208 +848,186 @@ pub fn init_log_center(
     }
 }
 
-fn with_log_center<T>(f: impl FnOnce(&LogCenter) -> Result<T, AppError>) -> Result<T, AppError> {
-    let center = log_center_slot()
+fn get_log_center() -> Result<Arc<LogCenter>, AppError> {
+    log_center_slot()
         .get()
-        .ok_or_else(|| AppError::new("log_center_uninitialized", "日志中心未初始化"))?;
-    f(center)
+        .cloned()
+        .ok_or_else(|| AppError::new("log_center_uninitialized", "日志中心未初始化"))
 }
 
-pub fn record_log_event(input: RecordLogInput) -> Result<(), AppError> {
-    with_log_center(|center| center.ingest(input))
+pub async fn record_log_event(input: RecordLogInput) -> Result<(), AppError> {
+    let center = get_log_center()?;
+    center.ingest(input).await
 }
 
 pub fn record_log_event_best_effort(input: RecordLogInput) {
-    if tokio::runtime::Handle::try_current().is_ok() {
-        tokio::spawn(async move {
-            let _ = run_blocking("record_log_event_best_effort", move || {
-                if let Err(error) = record_log_event(input) {
-                    tracing::warn!(
-                        event = "logging_ingest_failed",
-                        error_code = error.code,
-                        error_detail = error.causes.first().map(String::as_str).unwrap_or_default()
-                    );
-                }
-                Ok(())
-            })
-            .await;
-        });
-    } else {
-        std::thread::spawn(move || {
-            if let Err(error) = record_log_event(input) {
-                eprintln!("logging ingest failed: {}", error);
-            }
-        });
+    if let Err(error) = log_ingest_sender().send(input) {
+        eprintln!("logging enqueue failed: {}", error);
     }
 }
 
 pub fn get_log_config() -> Result<LogConfigDto, AppError> {
-    with_log_center(|center| {
-        center
-            .config
-            .lock()
-            .map(|value| value.clone())
-            .map_err(|_| AppError::new("log_config_read_failed", "读取日志配置失败"))
-    })
+    let center = get_log_center()?;
+    center
+        .config
+        .lock()
+        .map(|value| value.clone())
+        .map_err(|_| AppError::new("log_config_read_failed", "读取日志配置失败"))
 }
 
-pub fn update_log_config(input: LogConfigDto) -> Result<LogConfigDto, AppError> {
+pub async fn update_log_config(input: LogConfigDto) -> Result<LogConfigDto, AppError> {
     let normalized = clamp_and_normalize_config(input)?;
-
-    with_log_center(|center| {
-        persist_log_config(&center.db_pool, &normalized)?;
-        let mut guard = center
-            .config
-            .lock()
-            .map_err(|_| AppError::new("log_config_update_failed", "更新日志配置失败"))?;
-        *guard = normalized.clone();
-        Ok(normalized)
-    })
+    let center = get_log_center()?;
+    persist_log_config(&center.db_conn, &normalized).await?;
+    let mut guard = center
+        .config
+        .lock()
+        .map_err(|_| AppError::new("log_config_update_failed", "更新日志配置失败"))?;
+    *guard = normalized.clone();
+    Ok(normalized)
 }
 
-pub fn query_log_entries(query: LogQueryDto) -> Result<LogPageDto, AppError> {
-    with_log_center(|center| {
-        let limit = query.limit.clamp(1, QUERY_LIMIT_MAX);
-        let mut sql = String::from(
-            "SELECT id, timestamp, level, scope, event, request_id, window_label, message, metadata, raw_ref, aggregated_count FROM log_entries WHERE 1=1",
-        );
-        let mut params = Vec::<rusqlite::types::Value>::new();
+pub async fn query_log_entries(query: LogQueryDto) -> Result<LogPageDto, AppError> {
+    let center = get_log_center()?;
+    let limit = query.limit.clamp(1, QUERY_LIMIT_MAX);
+    let mut sql = String::from(
+        "SELECT id, timestamp, level, scope, event, request_id, window_label, message, metadata, raw_ref, aggregated_count FROM log_entries WHERE 1=1",
+    );
+    let mut params = Vec::<LibsqlValue>::new();
 
-        if let Some(cursor) = query.cursor.as_deref() {
-            let cursor_id = cursor.parse::<i64>().map_err(|_| {
-                AppError::new("invalid_cursor", "日志分页游标非法")
-                    .with_context("cursor", sanitize_for_log(cursor))
+    if let Some(cursor) = query.cursor.as_deref() {
+        let cursor_id = cursor.parse::<i64>().map_err(|_| {
+            AppError::new("invalid_cursor", "日志分页游标非法")
+                .with_context("cursor", sanitize_for_log(cursor))
+        })?;
+        sql.push_str(" AND id < ?");
+        params.push(LibsqlValue::Integer(cursor_id));
+    }
+
+    if let Some(levels) = query.levels.as_ref().filter(|levels| !levels.is_empty()) {
+        let mut normalized_levels = Vec::new();
+        for level in levels {
+            let normalized = normalize_level(level).ok_or_else(|| {
+                AppError::new("invalid_log_level", "日志级别非法")
+                    .with_context("level", sanitize_for_log(level))
             })?;
-            sql.push_str(" AND id < ?");
-            params.push(rusqlite::types::Value::Integer(cursor_id));
+            normalized_levels.push(normalized.to_string());
         }
 
-        if let Some(levels) = query.levels.as_ref().filter(|levels| !levels.is_empty()) {
-            let mut normalized_levels = Vec::new();
-            for level in levels {
-                let normalized = normalize_level(level).ok_or_else(|| {
-                    AppError::new("invalid_log_level", "日志级别非法")
-                        .with_context("level", sanitize_for_log(level))
-                })?;
-                normalized_levels.push(normalized.to_string());
+        sql.push_str(" AND level IN (");
+        for (index, value) in normalized_levels.iter().enumerate() {
+            if index > 0 {
+                sql.push_str(", ");
             }
-
-            sql.push_str(" AND level IN (");
-            for (index, value) in normalized_levels.iter().enumerate() {
-                if index > 0 {
-                    sql.push_str(", ");
-                }
-                sql.push('?');
-                params.push(rusqlite::types::Value::Text(value.clone()));
-            }
-            sql.push(')');
+            sql.push('?');
+            params.push(LibsqlValue::Text(value.clone()));
         }
+        sql.push(')');
+    }
 
-        if let Some(scope) = query
-            .scope
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-        {
-            sql.push_str(" AND scope = ?");
-            params.push(rusqlite::types::Value::Text(sanitize_for_log(scope)));
-        }
+    if let Some(scope) = query
+        .scope
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        sql.push_str(" AND scope = ?");
+        params.push(LibsqlValue::Text(sanitize_for_log(scope)));
+    }
 
-        if let Some(request_id) = query
-            .request_id
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-        {
-            sql.push_str(" AND request_id = ?");
-            params.push(rusqlite::types::Value::Text(sanitize_for_log(request_id)));
-        }
+    if let Some(request_id) = query
+        .request_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        sql.push_str(" AND request_id = ?");
+        params.push(LibsqlValue::Text(sanitize_for_log(request_id)));
+    }
 
-        if let Some(window_label) = query
-            .window_label
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-        {
-            sql.push_str(" AND window_label = ?");
-            params.push(rusqlite::types::Value::Text(sanitize_for_log(window_label)));
-        }
+    if let Some(window_label) = query
+        .window_label
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        sql.push_str(" AND window_label = ?");
+        params.push(LibsqlValue::Text(sanitize_for_log(window_label)));
+    }
 
-        if let Some(keyword) = query
-            .keyword
-            .as_deref()
-            .filter(|value| !value.trim().is_empty())
-        {
+    if let Some(keyword) = query
+        .keyword
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        if let Some(fts_query) = build_log_fts_query(keyword) {
+            sql.push_str(" AND id IN (SELECT rowid FROM log_entries_fts WHERE log_entries_fts MATCH ?)");
+            params.push(LibsqlValue::Text(fts_query));
+        } else {
             sql.push_str(" AND (message LIKE ? OR metadata LIKE ? OR event LIKE ?)");
             let pattern = format!("%{}%", sanitize_for_log(keyword));
-            params.push(rusqlite::types::Value::Text(pattern.clone()));
-            params.push(rusqlite::types::Value::Text(pattern.clone()));
-            params.push(rusqlite::types::Value::Text(pattern));
+            params.push(LibsqlValue::Text(pattern.clone()));
+            params.push(LibsqlValue::Text(pattern.clone()));
+            params.push(LibsqlValue::Text(pattern));
         }
+    }
 
-        if let Some(start_at) = query.start_at {
-            sql.push_str(" AND timestamp >= ?");
-            params.push(rusqlite::types::Value::Integer(start_at));
-        }
+    if let Some(start_at) = query.start_at {
+        sql.push_str(" AND timestamp >= ?");
+        params.push(LibsqlValue::Integer(start_at));
+    }
 
-        if let Some(end_at) = query.end_at {
-            sql.push_str(" AND timestamp <= ?");
-            params.push(rusqlite::types::Value::Integer(end_at));
-        }
+    if let Some(end_at) = query.end_at {
+        sql.push_str(" AND timestamp <= ?");
+        params.push(LibsqlValue::Integer(end_at));
+    }
 
-        sql.push_str(" ORDER BY id DESC LIMIT ?");
-        params.push(rusqlite::types::Value::Integer(i64::from(limit) + 1));
+    sql.push_str(" ORDER BY id DESC LIMIT ?");
+    params.push(LibsqlValue::Integer(i64::from(limit) + 1));
 
-        let conn = center.db_pool.get()?;
-        let mut statement = conn.prepare(&sql)?;
-        let rows = statement.query_map(rusqlite::params_from_iter(params), row_to_log_entry)?;
+    let mut rows = center
+        .db_conn
+        .query(sql.as_str(), params_from_iter(params))
+        .await?;
+    let mut items = Vec::new();
+    while let Some(row) = rows.next().await? {
+        items.push(row_to_log_entry(&row)?);
+    }
 
-        let mut items = Vec::new();
-        for row in rows {
-            items.push(row?);
-        }
+    let page_size = usize::try_from(limit).unwrap_or(QUERY_LIMIT_DEFAULT as usize);
+    let next_cursor = if items.len() > page_size {
+        let marker = items.get(page_size).map(|value| value.id).unwrap_or_default();
+        items.truncate(page_size);
+        Some(marker.to_string())
+    } else {
+        None
+    };
 
-        let next_cursor =
-            if items.len() > usize::try_from(limit).unwrap_or(QUERY_LIMIT_DEFAULT as usize) {
-                let marker = items
-                    .get(usize::try_from(limit).unwrap_or(0))
-                    .map(|value| value.id)
-                    .unwrap_or_default();
-                items.truncate(usize::try_from(limit).unwrap_or(QUERY_LIMIT_DEFAULT as usize));
-                Some(marker.to_string())
-            } else {
-                None
-            };
-
-        Ok(LogPageDto { items, next_cursor })
-    })
+    Ok(LogPageDto { items, next_cursor })
 }
 
-pub fn export_log_entries(
+pub async fn export_log_entries(
     query: LogQueryDto,
     output_path: Option<String>,
 ) -> Result<String, AppError> {
+    let center = get_log_center()?;
     let mut cursor = query.cursor.clone();
     let mut page_count = 0u32;
 
-    let target_path = with_log_center(|center| {
-        let resolved = output_path
-            .as_deref()
-            .map(PathBuf::from)
-            .unwrap_or_else(|| {
-                center
-                    .log_dir
-                    .join(format!("rtool-log-export-{}.jsonl", now_millis()))
-            });
-
-        if let Some(parent) = resolved.parent() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("创建日志导出目录失败: {}", parent.display()))
-                .with_code("log_export_dir_create_failed", "创建日志导出目录失败")
-                .with_ctx("outputDir", parent.display().to_string())?;
-        }
-
-        Ok(resolved)
-    })?;
+    let target_path = output_path
+        .as_deref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            center
+                .log_dir
+                .join(format!("rtool-log-export-{}.jsonl", now_millis()))
+        });
+    if let Some(parent) = target_path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("创建日志导出目录失败: {}", parent.display()))
+            .with_code("log_export_dir_create_failed", "创建日志导出目录失败")
+            .with_ctx("outputDir", parent.display().to_string())?;
+    }
 
     let file = File::create(&target_path)
+        .await
         .with_context(|| format!("创建日志导出文件失败: {}", target_path.display()))
         .with_code("log_export_file_create_failed", "创建日志导出文件失败")
         .with_ctx("targetPath", target_path.display().to_string())?;
@@ -1025,13 +1038,21 @@ pub fn export_log_entries(
         next_query.cursor = cursor.clone();
         next_query.limit = QUERY_LIMIT_MAX;
 
-        let page = query_log_entries(next_query)?;
+        let page = query_log_entries(next_query).await?;
         for item in &page.items {
             let line = serde_json::to_string(item)
                 .with_context(|| format!("序列化日志导出内容失败: entryId={}", item.id))
                 .with_code("log_export_serialize_failed", "序列化日志导出内容失败")
                 .with_ctx("entryId", item.id.to_string())?;
-            writeln!(writer, "{}", line)
+            writer
+                .write_all(line.as_bytes())
+                .await
+                .with_context(|| format!("写入日志导出文件失败: {}", target_path.display()))
+                .with_code("log_export_write_failed", "写入日志导出文件失败")
+                .with_ctx("targetPath", target_path.display().to_string())?;
+            writer
+                .write_all(b"\n")
+                .await
                 .with_context(|| format!("写入日志导出文件失败: {}", target_path.display()))
                 .with_code("log_export_write_failed", "写入日志导出文件失败")
                 .with_ctx("targetPath", target_path.display().to_string())?;
@@ -1041,10 +1062,11 @@ pub fn export_log_entries(
         if page_count.is_multiple_of(EXPORT_FLUSH_EVERY_PAGES) {
             writer
                 .flush()
+                .await
                 .with_context(|| format!("刷新日志导出文件失败: {}", target_path.display()))
                 .with_code("log_export_flush_failed", "刷新日志导出文件失败")
                 .with_ctx("targetPath", target_path.display().to_string())?;
-            std::thread::sleep(Duration::from_millis(EXPORT_THROTTLE_SLEEP_MS));
+            sleep(Duration::from_millis(EXPORT_THROTTLE_SLEEP_MS)).await;
         }
 
         if page.next_cursor.is_none() {
@@ -1055,6 +1077,7 @@ pub fn export_log_entries(
 
     writer
         .flush()
+        .await
         .with_context(|| format!("刷新日志导出文件失败: {}", target_path.display()))
         .with_code("log_export_flush_failed", "刷新日志导出文件失败")
         .with_ctx("targetPath", target_path.display().to_string())?;

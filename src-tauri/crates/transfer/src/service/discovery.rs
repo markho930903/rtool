@@ -89,21 +89,11 @@ impl TransferService {
 
     pub async fn list_peers(&self) -> AppResult<Vec<TransferPeerDto>> {
         let online = self.collect_online_peers().await;
-        let pool = self.db_pool.clone();
-        let online_for_upsert = online.clone();
-        let _ = run_blocking("transfer_upsert_peers", move || {
-            for peer in &online_for_upsert {
-                let _ = upsert_peer(&pool, peer);
-            }
-            Ok(())
-        })
-        .await;
+        for peer in &online {
+            let _ = upsert_peer(&self.db_conn, peer).await;
+        }
 
-        let pool = self.db_pool.clone();
-        let stored = run_blocking("transfer_list_stored_peers", move || {
-            list_stored_peers(&pool)
-        })
-        .await?;
+        let stored = list_stored_peers(&self.db_conn).await?;
         Ok(merge_online_peers(stored, online.as_slice()))
     }
 

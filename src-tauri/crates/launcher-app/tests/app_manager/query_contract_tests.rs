@@ -1,8 +1,7 @@
 use super::*;
 use app_core::models::{
-    AppManagerActionCode, AppManagerCategory, AppManagerCleanupReasonCode,
-    AppManagerIndexState, AppManagerIndexUpdateReason, AppManagerScanWarningDetailCode,
-    AppManagerSizeAccuracy,
+    AppManagerActionCode, AppManagerCategory, AppManagerCleanupReasonCode, AppManagerIndexState,
+    AppManagerIndexUpdateReason, AppManagerScanWarningDetailCode, AppManagerSizeAccuracy,
 };
 
 fn test_app(source: AppManagerSource, startup_enabled: bool) -> ManagedAppDto {
@@ -102,7 +101,8 @@ fn app_manager_cleanup_reason_code_serde_unknown_should_fail() {
         serde_json::from_str("\"managed_by_policy\"").expect("known value should deserialize");
     assert_eq!(parsed_known, AppManagerCleanupReasonCode::ManagedByPolicy);
 
-    let parsed_unknown = serde_json::from_str::<AppManagerCleanupReasonCode>("\"future_reason_code\"");
+    let parsed_unknown =
+        serde_json::from_str::<AppManagerCleanupReasonCode>("\"future_reason_code\"");
     assert!(parsed_unknown.is_err());
 }
 
@@ -120,7 +120,8 @@ fn app_manager_action_code_serde_unknown_should_fail() {
         AppManagerActionCode::AppManagerUninstallStarted
     );
 
-    let parsed_unknown = serde_json::from_str::<AppManagerActionCode>("\"app_manager_future_action\"");
+    let parsed_unknown =
+        serde_json::from_str::<AppManagerActionCode>("\"app_manager_future_action\"");
     assert!(parsed_unknown.is_err());
 }
 
@@ -146,7 +147,8 @@ fn app_manager_scan_warning_detail_code_serde_unknown_should_fail() {
         serde_json::from_str("\"limit_reached\"").expect("known detail code should deserialize");
     assert_eq!(parsed_known, AppManagerScanWarningDetailCode::LimitReached);
 
-    let parsed_unknown = serde_json::from_str::<AppManagerScanWarningDetailCode>("\"future_detail_code\"");
+    let parsed_unknown =
+        serde_json::from_str::<AppManagerScanWarningDetailCode>("\"future_detail_code\"");
     assert!(parsed_unknown.is_err());
 }
 
@@ -185,9 +187,8 @@ fn app_manager_index_state_and_reason_serde_unknown_should_fail() {
     let state_unknown = serde_json::from_str::<AppManagerIndexState>("\"future_state\"");
     assert!(state_unknown.is_err());
 
-    let reason_known: AppManagerIndexUpdateReason =
-        serde_json::from_str("\"auto_change\"")
-            .expect("known index update reason should deserialize");
+    let reason_known: AppManagerIndexUpdateReason = serde_json::from_str("\"auto_change\"")
+        .expect("known index update reason should deserialize");
     assert_eq!(reason_known, AppManagerIndexUpdateReason::AutoChange);
 
     let reason_unknown = serde_json::from_str::<AppManagerIndexUpdateReason>("\"future_reason\"");

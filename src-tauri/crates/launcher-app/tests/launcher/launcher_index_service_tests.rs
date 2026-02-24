@@ -4,7 +4,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use app_infra::db::{get_app_setting, init_db, new_db_pool, set_app_setting};
+use app_infra::db::{DbConn, get_app_setting, init_db, open_db, set_app_setting};
 use uuid::Uuid;
 
 fn create_temp_dir(prefix: &str) -> PathBuf {
@@ -21,10 +21,11 @@ fn unique_temp_db_path(prefix: &str) -> PathBuf {
     std::env::temp_dir().join(format!("rtool-{prefix}-{}-{now}.db", std::process::id()))
 }
 
-fn setup_temp_db(prefix: &str) -> PathBuf {
+async fn setup_temp_db(prefix: &str) -> (DbConn, PathBuf) {
     let path = unique_temp_db_path(prefix);
-    init_db(path.as_path()).expect("init db");
-    path
+    let conn = open_db(path.as_path()).await.expect("open db");
+    init_db(&conn).await.expect("init db");
+    (conn, path)
 }
 
 fn normalized_path(path: &Path) -> String {
@@ -183,10 +184,9 @@ fn default_root_candidates_should_cover_all_platform_profiles() {
     assert!(contains_root(&linux, Path::new("/")));
 }
 
-#[test]
-fn load_or_init_settings_should_force_scope_policy_roots_migration() {
-    let db_path = setup_temp_db("launcher-scope-policy");
-    let db_pool = new_db_pool(db_path.as_path()).expect("new db pool");
+#[tokio::test]
+async fn load_or_init_settings_should_force_scope_policy_roots_migration() {
+    let (db_conn, db_path) = setup_temp_db("launcher-scope-policy").await;
 
     let custom = LauncherSearchSettingsRecord {
         roots: vec!["/tmp/custom-root".to_string()],
@@ -198,11 +198,16 @@ fn load_or_init_settings_should_force_scope_policy_roots_migration() {
     }
     .normalize();
     let serialized = serde_json::to_string(&custom).expect("serialize settings");
-    set_app_setting(&db_pool, SEARCH_SETTINGS_KEY, serialized.as_str()).expect("seed settings");
-    set_app_setting(&db_pool, LAUNCHER_SCOPE_POLICY_APPLIED_KEY, "stale")
+    set_app_setting(&db_conn, SEARCH_SETTINGS_KEY, serialized.as_str())
+        .await
+        .expect("seed settings");
+    set_app_setting(&db_conn, LAUNCHER_SCOPE_POLICY_APPLIED_KEY, "stale")
+        .await
         .expect("seed scope state");
 
-    let migrated = load_or_init_settings(&db_pool).expect("migrate settings");
+    let migrated = load_or_init_settings(&db_conn)
+        .await
+        .expect("migrate settings");
     assert_eq!(migrated.roots, default_search_roots());
     assert_eq!(migrated.exclude_patterns, custom.exclude_patterns);
     assert_eq!(migrated.max_scan_depth, custom.max_scan_depth);
@@ -210,14 +215,17 @@ fn load_or_init_settings_should_force_scope_policy_roots_migration() {
     assert_eq!(migrated.max_total_items, custom.max_total_items);
     assert_eq!(migrated.refresh_interval_secs, custom.refresh_interval_secs);
 
-    let stored_state =
-        get_app_setting(&db_pool, LAUNCHER_SCOPE_POLICY_APPLIED_KEY).expect("read scope state");
+    let stored_state = get_app_setting(&db_conn, LAUNCHER_SCOPE_POLICY_APPLIED_KEY)
+        .await
+        .expect("read scope state");
     assert_eq!(
         stored_state.as_deref(),
         Some(LAUNCHER_SCOPE_POLICY_APPLIED_VALUE)
     );
 
-    let second = load_or_init_settings(&db_pool).expect("second read");
+    let second = load_or_init_settings(&db_conn)
+        .await
+        .expect("second read");
     assert_eq!(second, migrated);
 
     let _ = fs::remove_file(db_path);

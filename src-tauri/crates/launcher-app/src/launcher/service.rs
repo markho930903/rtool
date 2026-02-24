@@ -1,9 +1,11 @@
+use crate::host::LauncherHost;
+use crate::launcher::icon::{
+    resolve_application_icon, resolve_builtin_icon, resolve_file_type_icon,
+};
+use anyhow::Context;
 use app_core::i18n::{DEFAULT_RESOLVED_LOCALE, ResolvedAppLocale, t};
 use app_core::models::{ClipboardWindowOpenedPayload, LauncherActionDto, LauncherItemDto};
 use app_core::{AppError, AppResult, ResultExt};
-use crate::host::LauncherHost;
-use crate::launcher::icon::{resolve_application_icon, resolve_builtin_icon, resolve_file_type_icon};
-use anyhow::Context;
 use serde::Serialize;
 use serde_json::json;
 use std::collections::hash_map::DefaultHasher;

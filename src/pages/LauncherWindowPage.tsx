@@ -5,10 +5,10 @@ import { useTranslation } from "react-i18next";
 
 import { AppEntityIcon } from "@/components/icons/AppEntityIcon";
 import { BootOverlay, useBootState } from "@/components/loading";
-import { Button } from "@/components/ui";
 import PaletteInput from "@/components/palette/PaletteInput";
 import PalettePreview from "@/components/palette/PalettePreview";
 import type { PaletteItem } from "@/components/palette/types";
+import { Button } from "@/components/ui";
 import { useWindowFocusAutoHide } from "@/hooks/window/useWindowFocusAutoHide";
 import { useWindowLayoutPersistence } from "@/hooks/window/useWindowLayoutPersistence";
 import { useLocaleStore } from "@/i18n/store";
@@ -134,7 +134,7 @@ export default function LauncherWindowPage() {
   const items = useLauncherStore((state) => state.items);
   const selectedIndex = useLauncherStore((state) => state.selectedIndex);
   const loading = useLauncherStore((state) => state.loading);
-  const error = useLauncherStore((state) => state.error);
+  const launcherError = useLauncherStore((state) => state.error);
   const reset = useLauncherStore((state) => state.reset);
   const search = useLauncherStore((state) => state.search);
   const moveSelection = useLauncherStore((state) => state.moveSelection);
@@ -205,8 +205,8 @@ export default function LauncherWindowPage() {
         alwaysOnTopRef.current = result;
         setAlwaysOnTop(result);
       })
-      .catch((error: unknown) => {
-        console.warn("[launcher-window] read always-on-top failed", { error });
+      .catch((caughtError: unknown) => {
+        console.warn("[launcher-window] read always-on-top failed", { error: caughtError });
       });
   }, [appWindow]);
 
@@ -221,8 +221,8 @@ export default function LauncherWindowPage() {
         alwaysOnTopRef.current = next;
         setAlwaysOnTop(next);
       })
-      .catch((error: unknown) => {
-        console.warn("[launcher-window] toggle always-on-top failed", { next, error });
+      .catch((caughtError: unknown) => {
+        console.warn("[launcher-window] toggle always-on-top failed", { next, error: caughtError });
       });
   }, [alwaysOnTop, appWindow, cancelScheduledHide]);
 
@@ -383,7 +383,7 @@ export default function LauncherWindowPage() {
             }
           />
 
-          {error ? <div className="px-4 py-3 text-[13px] text-danger">{error}</div> : null}
+          {launcherError ? <div className="px-4 py-3 text-[13px] text-danger">{launcherError}</div> : null}
 
           <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-1.5 pt-1">
             {loading ? (

@@ -1,11 +1,10 @@
-use super::run_blocking_command;
+use crate::command_runtime::{run_command_async, run_command_sync};
 use app_core::models::{LogConfigDto, LogPageDto, LogQueryDto};
 use app_core::{AppError, InvokeError};
 use app_infra::logging::{
     RecordLogInput, export_log_entries, get_log_config, record_log_event, sanitize_for_log,
     sanitize_json_value, update_log_config,
 };
-use app_infra::runtime::blocking::run_blocking;
 use serde_json::Value;
 
 const MAX_MESSAGE_LEN: usize = 2048;
@@ -66,19 +65,14 @@ pub async fn client_log(
         metadata: metadata.clone(),
         raw_ref: None,
     };
-    let request_id_for_record = request_id.clone();
-    run_blocking("client_log_record", move || {
-        if let Err(error) = record_log_event(record) {
-            tracing::warn!(
-                event = "client_log_record_failed",
-                request_id = %request_id_for_record,
-                error_code = error.code,
-                error_detail = error.causes.first().map(String::as_str).unwrap_or_default()
-            );
-        }
-        Ok(())
-    })
-    .await?;
+    if let Err(error) = record_log_event(record).await {
+        tracing::warn!(
+            event = "client_log_record_failed",
+            request_id = %request_id,
+            error_code = error.code,
+            error_detail = error.causes.first().map(String::as_str).unwrap_or_default()
+        );
+    }
 
     match level {
         "trace" => tracing::trace!(
@@ -129,12 +123,11 @@ pub async fn logging_query(
     window_label: Option<String>,
 ) -> Result<LogPageDto, InvokeError> {
     let normalized = query.unwrap_or_default();
-    run_blocking_command(
+    run_command_async(
         "logging_query",
         request_id,
         window_label,
-        "logging_query",
-        move || app_infra::logging::query_log_entries(normalized),
+        move || async move { app_infra::logging::query_log_entries(normalized).await },
     )
     .await
 }
@@ -144,14 +137,12 @@ pub async fn logging_get_config(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<LogConfigDto, InvokeError> {
-    run_blocking_command(
+    run_command_sync(
         "logging_get_config",
         request_id,
         window_label,
-        "logging_get_config",
         get_log_config,
     )
-    .await
 }
 
 #[tauri::command]
@@ -160,12 +151,11 @@ pub async fn logging_update_config(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<LogConfigDto, InvokeError> {
-    run_blocking_command(
+    run_command_async(
         "logging_update_config",
         request_id,
         window_label,
-        "logging_update_config",
-        move || update_log_config(config),
+        move || async move { update_log_config(config).await },
     )
     .await
 }
@@ -178,12 +168,11 @@ pub async fn logging_export_jsonl(
     window_label: Option<String>,
 ) -> Result<String, InvokeError> {
     let normalized = query.unwrap_or_default();
-    run_blocking_command(
+    run_command_async(
         "logging_export_jsonl",
         request_id,
         window_label,
-        "logging_export_jsonl",
-        move || export_log_entries(normalized, output_path),
+        move || async move { export_log_entries(normalized, output_path).await },
     )
     .await
 }

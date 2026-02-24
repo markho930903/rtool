@@ -1,61 +1,41 @@
 use super::*;
 
 impl TransferService {
-    pub(super) async fn blocking_ensure_session_exists(
+    pub(super) async fn ensure_session_exists_async(
         &self,
-        session_id: String,
+        session_id: &str,
     ) -> AppResult<TransferSessionDto> {
-        let pool = self.db_pool.clone();
-        run_blocking("transfer_ensure_session_exists", move || {
-            ensure_session_exists(&pool, session_id.as_str())
-        })
-        .await
+        ensure_session_exists(&self.db_conn, session_id).await
     }
 
-    pub(super) async fn blocking_get_file_bitmap(
+    pub(super) async fn get_file_bitmap_async(
         &self,
-        session_id: String,
-        file_id: String,
+        session_id: &str,
+        file_id: &str,
     ) -> AppResult<Option<Vec<u8>>> {
-        let pool = self.db_pool.clone();
-        run_blocking("transfer_get_file_bitmap", move || {
-            get_file_bitmap(&pool, session_id.as_str(), file_id.as_str())
-        })
-        .await
+        get_file_bitmap(&self.db_conn, session_id, file_id).await
     }
 
-    pub(super) async fn blocking_upsert_files_batch(
+    pub(super) async fn upsert_files_batch_async(
         &self,
-        items: Vec<TransferFilePersistItem>,
+        items: &[TransferFilePersistItem],
     ) -> AppResult<()> {
-        let pool = self.db_pool.clone();
-        run_blocking("transfer_upsert_files_batch", move || {
-            upsert_files_batch(&pool, items.as_slice())
-        })
-        .await
+        upsert_files_batch(&self.db_conn, items).await
     }
 
-    pub(super) async fn blocking_upsert_session_progress(
+    pub(super) async fn upsert_session_progress_async(
         &self,
-        session: TransferSessionDto,
+        session: &TransferSessionDto,
     ) -> AppResult<()> {
-        let pool = self.db_pool.clone();
-        run_blocking("transfer_upsert_session_progress", move || {
-            upsert_session_progress(&pool, &session)
-        })
-        .await
+        upsert_session_progress(&self.db_conn, session).await
     }
 
-    pub(super) async fn blocking_insert_or_update_file(
+    pub(super) async fn insert_or_update_file_async(
         &self,
-        file: TransferFileDto,
-        completed_bitmap: Vec<u8>,
+        file: &TransferFileDto,
+        completed_bitmap: &[u8],
     ) -> AppResult<()> {
-        let pool = self.db_pool.clone();
-        run_blocking("transfer_insert_or_update_file", move || {
-            insert_or_update_file(&pool, &file, completed_bitmap.as_slice())
-        })
-        .await
+        insert_or_update_file(&self.db_conn, file, completed_bitmap).await
     }
 
     pub(super) async fn validate_pair_code(
@@ -63,15 +43,9 @@ impl TransferService {
         peer_device_id: &str,
         pair_code: &str,
     ) -> AppResult<()> {
-        let pool = self.db_pool.clone();
-        let peer_device_id_for_query = peer_device_id.to_string();
-        let blocked_until = run_blocking("transfer_get_peer_blocked_until", move || {
-            Ok(
-                get_peer_by_device_id(&pool, peer_device_id_for_query.as_str())?
-                    .and_then(|peer| peer.blocked_until),
-            )
-        })
-        .await?;
+        let blocked_until = get_peer_by_device_id(&self.db_conn, peer_device_id)
+            .await?
+            .and_then(|peer| peer.blocked_until);
         if let Some(value) = blocked_until
             && value > now_millis()
         {
@@ -101,12 +75,8 @@ impl TransferService {
         }
 
         if entry.code != pair_code {
-            let pool = self.db_pool.clone();
-            let device_id = peer_device_id.to_string();
-            run_blocking("transfer_mark_pair_failure", move || {
-                mark_peer_pair_failure(&pool, device_id.as_str(), Some(now_millis() + 60_000))
-            })
-            .await?;
+            mark_peer_pair_failure(&self.db_conn, peer_device_id, Some(now_millis() + 60_000))
+                .await?;
             return Err(AppError::new("transfer_pair_code_invalid", "配对码错误"));
         }
 

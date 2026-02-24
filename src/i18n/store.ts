@@ -9,8 +9,8 @@ import {
   setStoredLocalePreference,
 } from "@/i18n/runtime";
 import type { AppLocale, LocalePreference, LocaleState } from "@/i18n/types";
-import { logWarn } from "@/services/logger";
 import { fetchBackendLocaleState, saveBackendLocalePreference } from "@/services/locale.service";
+import { logWarn } from "@/services/logger";
 
 interface LocaleActions {
   init: () => void;

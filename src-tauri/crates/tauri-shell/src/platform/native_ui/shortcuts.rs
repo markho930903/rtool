@@ -1,10 +1,10 @@
 use crate::app::state::AppState;
 use crate::constants::{CLIPBOARD_WINDOW_LABEL, CLIPBOARD_WINDOW_OPENED_EVENT};
-use app_core::models::ClipboardWindowOpenedPayload;
 use crate::platform::native_ui::clipboard_window::{
     apply_clipboard_window_mode, set_clipboard_window_compact_state,
 };
 use crate::platform::native_ui::windows::toggle_launcher_window;
+use app_core::models::ClipboardWindowOpenedPayload;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::Shortcut;
 

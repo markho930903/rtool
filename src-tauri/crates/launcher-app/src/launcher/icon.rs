@@ -73,10 +73,7 @@ pub fn resolve_application_icon(app: &dyn LauncherHost, app_path: &Path) -> Icon
     #[cfg(target_os = "macos")]
     {
         if let Some(source) = resolve_macos_icon_source(app_path) {
-            let key = format!(
-                "app:{app_path_key}:{}",
-                source.signature
-            );
+            let key = format!("app:{app_path_key}:{}", source.signature);
             if let Some(payload) = read_cached_icon(app, &key, APP_ICON_TTL) {
                 return payload;
             }

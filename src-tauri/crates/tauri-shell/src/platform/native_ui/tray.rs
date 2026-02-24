@@ -1,12 +1,12 @@
-use app_launcher_app::launcher::service::execute_launcher_action;
 use crate::constants::{
     TRAY_ICON_ID, TRAY_MENU_ID_CLIPBOARD, TRAY_MENU_ID_DASHBOARD, TRAY_MENU_ID_QUIT,
     TRAY_MENU_ID_TOOLS,
 };
-use app_core::i18n::t;
-use app_core::models::LauncherActionDto;
 use crate::host::launcher::TauriLauncherHost;
 use crate::platform::native_ui::windows::focus_main_window;
+use app_core::i18n::t;
+use app_core::models::LauncherActionDto;
+use app_launcher_app::launcher::service::execute_launcher_action;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
 use tauri::{AppHandle, Runtime};

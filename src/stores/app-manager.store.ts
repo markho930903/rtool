@@ -684,9 +684,7 @@ export const useAppManagerStore = create<AppManagerStore>((set, get) => ({
       set({ cleanupError: "暂无可重试的失败项" });
       return;
     }
-    const retryableIds = cleanupResult.failed
-      .map((row) => row.itemId)
-      .filter((itemId) => itemId !== "main-app");
+    const retryableIds = cleanupResult.failed.map((row) => row.itemId).filter((itemId) => itemId !== "main-app");
     if (retryableIds.length === 0) {
       set({ cleanupError: "暂无可重试的残留项" });
       return;

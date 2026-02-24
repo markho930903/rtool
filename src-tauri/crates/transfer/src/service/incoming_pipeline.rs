@@ -76,7 +76,7 @@ impl TransferService {
 
         for manifest_file in manifest_files {
             let mut bitmap = self
-                .blocking_get_file_bitmap(session.id.clone(), manifest_file.file_id.clone())
+                .get_file_bitmap_async(session.id.as_str(), manifest_file.file_id.as_str())
                 .await
                 .unwrap_or_default()
                 .unwrap_or_else(|| empty_bitmap(manifest_file.chunk_count));
@@ -119,7 +119,7 @@ impl TransferService {
                 preview_data: Some(part_path.to_string_lossy().to_string()),
                 is_folder_archive: manifest_file.is_folder_archive,
             };
-            self.blocking_insert_or_update_file(file.clone(), bitmap.clone())
+            self.insert_or_update_file_async(&file, bitmap.as_slice())
                 .await?;
             file_id_to_idx.insert(file.id.clone(), runtimes.len());
             let writer = ChunkWriter::open(part_path.as_path(), Some(file.size_bytes)).await?;
@@ -171,10 +171,7 @@ impl TransferService {
             .writer
             .write_chunk(chunk_index, runtime.file.chunk_size, payload.as_slice())
             .await?;
-        if !app_infra::transfer::resume::is_chunk_done(
-            runtime.bitmap.as_slice(),
-            chunk_index,
-        ) {
+        if !app_infra::transfer::resume::is_chunk_done(runtime.bitmap.as_slice(), chunk_index) {
             mark_chunk_done(runtime.bitmap.as_mut_slice(), chunk_index)?;
             let previous = runtime.file.transferred_bytes;
             runtime.file.transferred_bytes = completed_bytes(
@@ -232,11 +229,9 @@ impl TransferService {
         .await?;
         if source_hash != blake3 {
             runtime.file.status = TransferStatus::Failed;
-            self.blocking_insert_or_update_file(
-                runtime.file.clone(),
-                empty_bitmap(runtime.file.chunk_count),
-            )
-            .await?;
+            let bitmap = empty_bitmap(runtime.file.chunk_count);
+            self.insert_or_update_file_async(&runtime.file, bitmap.as_slice())
+                .await?;
             return Err(AppError::new("transfer_file_hash_mismatch", "文件校验失败")
                 .with_context("fileId", runtime.file.id.clone()));
         }

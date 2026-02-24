@@ -39,9 +39,7 @@ impl TransferService {
         let codec = handshake.codec;
         let session_key = handshake.session_key;
 
-        let mut session = self
-            .blocking_ensure_session_exists(session_id.to_string())
-            .await?;
+        let mut session = self.ensure_session_exists_async(session_id).await?;
         ensure_outgoing_session_active(
             session_id,
             session.status,
@@ -49,8 +47,7 @@ impl TransferService {
         )?;
         session.status = TransferStatus::Running;
         session.started_at = Some(now_millis());
-        self.blocking_upsert_session_progress(session.clone())
-            .await?;
+        self.upsert_session_progress_async(&session).await?;
 
         let (mut reader, mut writer) = stream.into_split();
         let missing_by_file = Self::exchange_outgoing_manifest(

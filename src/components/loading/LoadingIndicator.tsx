@@ -1,5 +1,6 @@
-import { cx } from "@/components/ui/utils";
 import type { ReactNode } from "react";
+
+import { cx } from "@/components/ui/utils";
 
 export type LoadingIndicatorSize = "xs" | "sm";
 export type LoadingIndicatorMode = "inline" | "overlay";
@@ -101,13 +102,15 @@ export default function LoadingIndicator(props: LoadingIndicatorProps) {
           className={cx(
             "absolute inset-0 z-[1] flex items-center justify-center",
             blockInteraction ? "pointer-events-auto" : "pointer-events-none",
-            props.overlayClassName
+            props.overlayClassName,
           )}
           aria-label={ariaLabel}
           aria-live="polite"
           role="status"
         >
-          {showMask ? <div aria-hidden="true" className={cx("absolute inset-0 bg-surface-scrim/26", props.maskClassName)} /> : null}
+          {showMask ? (
+            <div aria-hidden="true" className={cx("absolute inset-0 bg-surface-scrim/26", props.maskClassName)} />
+          ) : null}
           <IndicatorView
             ariaLabel={ariaLabel}
             className={cx("relative", props.className)}

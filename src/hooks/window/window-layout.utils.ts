@@ -1,5 +1,5 @@
-import { runRecoverableSync } from "@/services/recoverable";
 import type { StoredWindowLayout, WindowLayoutBounds } from "@/hooks/window/window-layout.types";
+import { runRecoverableSync } from "@/services/recoverable";
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);

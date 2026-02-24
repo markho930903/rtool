@@ -1,12 +1,12 @@
 mod invoke;
 mod setup;
 
-use app_launcher_app::launcher::index::stop_background_indexer;
 use crate::constants::{
     MAIN_WINDOW_LABEL, SHORTCUT_CLIPBOARD_WINDOW, SHORTCUT_CLIPBOARD_WINDOW_COMPACT,
     SHORTCUT_LAUNCHER_FALLBACK, SHORTCUT_LAUNCHER_PRIMARY,
 };
 use crate::platform::native_ui::shortcuts;
+use app_launcher_app::launcher::index::stop_background_indexer;
 use setup::{log_error_fallback, log_warn_fallback};
 use tauri_plugin_global_shortcut::ShortcutState;
 

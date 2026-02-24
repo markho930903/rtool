@@ -1,5 +1,4 @@
 use super::run_command_sync;
-use app_launcher_app::launcher::service::invalidate_launcher_cache;
 use crate::app::state::AppState;
 use app_core::i18n::DEFAULT_RESOLVED_LOCALE;
 use app_core::i18n_catalog::{
@@ -7,6 +6,7 @@ use app_core::i18n_catalog::{
     reload_overlays,
 };
 use app_core::{AppError, InvokeError};
+use app_launcher_app::launcher::service::invalidate_launcher_cache;
 use tauri::{AppHandle, State};
 
 fn map_i18n_error(error: anyhow::Error) -> AppError {

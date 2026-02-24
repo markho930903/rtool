@@ -1,11 +1,11 @@
 import { useTranslation } from "react-i18next";
 
-import { Button } from "@/components/ui";
 import {
   isTransferRetryableStatus,
   isTransferRunningLikeStatus,
   type TransferSession,
 } from "@/components/transfer/types";
+import { Button } from "@/components/ui";
 
 interface TransferSessionListProps {
   sessions: TransferSession[];

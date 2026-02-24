@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 
-import { Button, Input, Select } from "@/components/ui";
 import type { TransferPeer } from "@/components/transfer/types";
+import { Button, Input, Select } from "@/components/ui";
 
 interface TransferPeerPanelProps {
   peers: TransferPeer[];

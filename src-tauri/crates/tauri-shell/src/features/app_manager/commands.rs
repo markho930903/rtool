@@ -1,10 +1,6 @@
 use super::{run_blocking_command, run_command_sync};
-use app_launcher_app::app_manager::{
-    cleanup_managed_app_residue, export_managed_app_scan_result, get_managed_app_detail,
-    list_managed_apps, open_uninstall_help, poll_managed_apps_auto_refresh,
-    refresh_managed_apps_index, scan_managed_app_residue, set_managed_app_startup,
-    uninstall_managed_app,
-};
+use crate::host::launcher::TauriLauncherHost;
+use anyhow::Context;
 use app_core::models::{
     AppManagerActionResultDto, AppManagerCleanupInputDto, AppManagerCleanupResultDto,
     AppManagerDetailQueryDto, AppManagerExportScanInputDto, AppManagerExportScanResultDto,
@@ -13,8 +9,12 @@ use app_core::models::{
     ManagedAppDetailDto,
 };
 use app_core::{AppError, AppResult, InvokeError, ResultExt};
-use crate::host::launcher::TauriLauncherHost;
-use anyhow::Context;
+use app_launcher_app::app_manager::{
+    cleanup_managed_app_residue, export_managed_app_scan_result, get_managed_app_detail,
+    list_managed_apps, open_uninstall_help, poll_managed_apps_auto_refresh,
+    refresh_managed_apps_index, scan_managed_app_residue, set_managed_app_startup,
+    uninstall_managed_app,
+};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;

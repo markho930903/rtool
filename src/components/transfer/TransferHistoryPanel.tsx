@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 
-import { Button } from "@/components/ui";
 import type { TransferSession } from "@/components/transfer/types";
+import { Button } from "@/components/ui";
 
 interface TransferHistoryPanelProps {
   history: TransferSession[];

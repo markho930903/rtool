@@ -63,7 +63,13 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Che
   }
 
   return (
-    <label className={cx("inline-flex gap-2 text-sm text-text-secondary", wrapperAlignClassMap[resolvedAlign], wrapperClassName)}>
+    <label
+      className={cx(
+        "inline-flex gap-2 text-sm text-text-secondary",
+        wrapperAlignClassMap[resolvedAlign],
+        wrapperClassName,
+      )}
+    >
       <input {...rest} ref={ref} type="checkbox" disabled={disabled} className={inputClassName} />
       <span className={cx("inline-flex min-w-0 flex-col gap-0.5", labelClassName)}>
         {finalLabel ? <span className="leading-5">{finalLabel}</span> : null}

@@ -1,5 +1,6 @@
-import type { PaletteItem } from "@/components/palette/types";
 import { useTranslation } from "react-i18next";
+
+import type { PaletteItem } from "@/components/palette/types";
 
 interface PaletteListProps {
   items: PaletteItem[];

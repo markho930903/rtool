@@ -26,7 +26,7 @@
   "metric.uptime.title": "App uptime",
   "metric.uptime.hint": "Since process startup",
   "metric.database.title": "Database size",
-  "metric.database.hint": "rtool.db file size",
+  "metric.database.hint": "rtool-turso.db file size",
   "metric.systemMemory.title": "System memory usage",
   "panel.application.title": "application",
   "panel.application.subtitle": "Application",

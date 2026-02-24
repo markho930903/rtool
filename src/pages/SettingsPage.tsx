@@ -1,21 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
+import { LoadingIndicator } from "@/components/loading";
+import { Button, Input, Select, SwitchField } from "@/components/ui";
+import type { SelectOptionInput } from "@/components/ui";
 import { SUPPORTED_LOCALES } from "@/i18n/constants";
 import { localeActions, useLocaleStore } from "@/i18n/store";
 import type { LocalePreference } from "@/i18n/types";
 import { useLayoutStore } from "@/layouts/layout.store";
 import type { LayoutPreference } from "@/layouts/layout.types";
-import { LoadingIndicator } from "@/components/loading";
-import { Button, Input, Select, SwitchField } from "@/components/ui";
-import type { SelectOptionInput } from "@/components/ui";
-import {
-  importBackendLocaleFile,
-  listBackendLocales,
-  reloadBackendLocales,
-  type BackendLocaleCatalogList,
-} from "@/services/locale.service";
-import { transferGetSettings, transferUpdateSettings } from "@/services/transfer.service";
 import {
   launcherGetIndexStatus,
   launcherGetSearchSettings,
@@ -24,6 +17,13 @@ import {
   type LauncherIndexStatus,
   type LauncherSearchSettings,
 } from "@/services/launcher.service";
+import {
+  importBackendLocaleFile,
+  listBackendLocales,
+  reloadBackendLocales,
+  type BackendLocaleCatalogList,
+} from "@/services/locale.service";
+import { transferGetSettings, transferUpdateSettings } from "@/services/transfer.service";
 import { useLoggingStore } from "@/stores/logging.store";
 import { useSettingsStore } from "@/stores/settings.store";
 
@@ -188,15 +188,9 @@ export default function SettingsPage() {
   const [launcherRootsInput, setLauncherRootsInput] = useState("");
   const [launcherExcludeInput, setLauncherExcludeInput] = useState("");
   const [launcherDepthInput, setLauncherDepthInput] = useState(String(DEFAULT_LAUNCHER_DEPTH));
-  const [launcherItemsPerRootInput, setLauncherItemsPerRootInput] = useState(
-    String(DEFAULT_LAUNCHER_ITEMS_PER_ROOT),
-  );
-  const [launcherTotalItemsInput, setLauncherTotalItemsInput] = useState(
-    String(DEFAULT_LAUNCHER_TOTAL_ITEMS),
-  );
-  const [launcherRefreshInput, setLauncherRefreshInput] = useState(
-    String(DEFAULT_LAUNCHER_REFRESH_INTERVAL),
-  );
+  const [launcherItemsPerRootInput, setLauncherItemsPerRootInput] = useState(String(DEFAULT_LAUNCHER_ITEMS_PER_ROOT));
+  const [launcherTotalItemsInput, setLauncherTotalItemsInput] = useState(String(DEFAULT_LAUNCHER_TOTAL_ITEMS));
+  const [launcherRefreshInput, setLauncherRefreshInput] = useState(String(DEFAULT_LAUNCHER_REFRESH_INTERVAL));
   const [launcherMessage, setLauncherMessage] = useState<MessageState | null>(null);
 
   const [logMinLevel, setLogMinLevel] = useState("info");
@@ -458,10 +452,7 @@ export default function SettingsPage() {
     () => parsePositiveInt(launcherItemsPerRootInput),
     [launcherItemsPerRootInput],
   );
-  const parsedLauncherTotalItems = useMemo(
-    () => parsePositiveInt(launcherTotalItemsInput),
-    [launcherTotalItemsInput],
-  );
+  const parsedLauncherTotalItems = useMemo(() => parsePositiveInt(launcherTotalItemsInput), [launcherTotalItemsInput]);
   const parsedLauncherRefresh = useMemo(() => parsePositiveInt(launcherRefreshInput), [launcherRefreshInput]);
   const launcherRoots = useMemo(() => parseLineArray(launcherRootsInput), [launcherRootsInput]);
   const launcherExcludes = useMemo(() => parseLineArray(launcherExcludeInput), [launcherExcludeInput]);
@@ -1327,7 +1318,11 @@ export default function SettingsPage() {
 
                 <div className="max-w-[760px] rounded-lg border border-border-muted bg-surface-soft px-3 py-3 text-xs text-text-secondary">
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                    <span>{t("launcher.status.ready", { value: launcherStatus?.ready ? t("launcher.value.yes") : t("launcher.value.no") })}</span>
+                    <span>
+                      {t("launcher.status.ready", {
+                        value: launcherStatus?.ready ? t("launcher.value.yes") : t("launcher.value.no"),
+                      })}
+                    </span>
                     <span>
                       {t("launcher.status.building", {
                         value: launcherStatus?.building ? t("launcher.value.yes") : t("launcher.value.no"),

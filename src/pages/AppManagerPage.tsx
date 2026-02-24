@@ -12,9 +12,9 @@ import type {
   AppReadonlyReasonCode,
   ManagedApp,
 } from "@/components/app-manager/types";
-import { LoadingIndicator } from "@/components/loading";
 import { AppEntityIcon } from "@/components/icons/AppEntityIcon";
 import { resolvePathIcon } from "@/components/icons/pathIcon";
+import { LoadingIndicator } from "@/components/loading";
 import { Button, Dialog, Input, RadioGroup, Select, SwitchField, Tooltip } from "@/components/ui";
 import { appManagerRevealPath } from "@/services/app-manager.service";
 import { useAppManagerStore } from "@/stores/app-manager.store";
@@ -255,7 +255,7 @@ export default function AppManagerPage() {
   const indexedAt = useAppManagerStore((state) => state.indexedAt);
   const revision = useAppManagerStore((state) => state.revision);
   const indexState = useAppManagerStore((state) => state.indexState);
-  const error = useAppManagerStore((state) => state.error);
+  const appManagerError = useAppManagerStore((state) => state.error);
   const detailError = useAppManagerStore((state) => state.detailError);
   const scanError = useAppManagerStore((state) => state.scanError);
   const cleanupError = useAppManagerStore((state) => state.cleanupError);
@@ -526,8 +526,8 @@ export default function AppManagerPage() {
     setRevealingRelatedId(entry.id);
     try {
       await appManagerRevealPath(entry.path);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+    } catch (caughtError) {
+      const message = caughtError instanceof Error ? caughtError.message : String(caughtError);
       setRelatedRevealError(t("detail.revealFailed", { message }));
     } finally {
       setRevealingRelatedId(null);
@@ -637,9 +637,9 @@ export default function AppManagerPage() {
               </div>
             ) : null}
 
-            {error ? (
+            {appManagerError ? (
               <div className="rounded-md border border-danger/35 bg-danger/10 px-2.5 py-2 text-xs text-danger">
-                {error}
+                {appManagerError}
               </div>
             ) : null}
             {lastActionResult ? (
@@ -775,7 +775,9 @@ export default function AppManagerPage() {
                         disabled={selectedDetailLoading}
                         onClick={() => void loadDetail(selectedApp.id, true)}
                       >
-                        {selectedDetailLoading ? t("detail.calculating") : t("actions.refreshDetail", { defaultValue: "刷新详情" })}
+                        {selectedDetailLoading
+                          ? t("detail.calculating")
+                          : t("actions.refreshDetail", { defaultValue: "刷新详情" })}
                       </Button>
                       <Button
                         size="default"

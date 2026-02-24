@@ -40,7 +40,7 @@
 | 国际化   | i18next               |
 | 后端框架 | Tauri 2.x             |
 | 后端语言 | Rust                  |
-| 数据库   | SQLite                |
+| 数据库   | Turso (libsql 本地模式) |
 
 ## 快速开始
 
@@ -125,6 +125,29 @@ rtool/
 
 - Windows/macOS：`用户常用目录 + 应用目录 + 系统根目录`
 - Linux：保守默认行为（不扩展为 Win/mac 的完整三层集合）
+
+## 数据库说明
+
+- 当前数据库为 Turso 本地模式（`libsql`），库文件为 `rtool-turso.db`。
+- 启动时在新库初始化成功后，会自动尝试清理历史 SQLite 文件：
+  - `rtool.db`
+  - `rtool.db-wal`
+  - `rtool.db-shm`
+- 当前版本不提供旧 SQLite 数据自动迁移，请按“新库冷启动”处理历史数据。
+
+### 本地 Turso 性能策略
+
+- 全链路采用异步 `libsql` 访问（命令层/服务层/存储层不再使用 DB 同步桥接）。
+- 初始化启用 `PRAGMA foreign_keys=ON`、`WAL`、`synchronous=NORMAL`、`temp_store=MEMORY`、`busy_timeout`，并在建表后执行 `PRAGMA optimize`。
+- 高频配置读写采用批量访问，减少多次往返与 autocommit 开销。
+- 日志关键词检索优先走 `FTS5`（`log_entries_fts`），`LIKE` 仅作为回退路径。
+- 历史清理依赖外键级联删除（`transfer_sessions -> transfer_files`），避免重复清理语句。
+
+### 为什么当前不接 Turso 云端
+
+- 当前版本目标是桌面端本地优先与冷启动稳定，不引入网络依赖、鉴权与同步复杂度。
+- 因此本版本不使用 `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN`，也不启用远端复制/同步链路。
+- 后续若要扩展云端，可在保持本地默认模式的前提下增加可选配置开关。
 
 ## 许可证
 

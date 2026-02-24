@@ -1,16 +1,4 @@
 import type {
-  AppManagerActionResultDto,
-  AppManagerCleanupInputDto,
-  AppManagerCleanupResultDto,
-  AppManagerExportScanResultDto,
-  AppManagerPageDto,
-  AppManagerQueryDto,
-  AppManagerResidueScanResultDto,
-  AppManagerStartupUpdateInputDto,
-  AppManagerUninstallInputDto,
-  ManagedAppDetailDto,
-} from "@/contracts";
-import type {
   AppManagerActionResult,
   AppManagerCleanupInput,
   AppManagerCleanupResult,
@@ -22,6 +10,18 @@ import type {
   AppManagerStartupUpdateInput,
   AppManagerUninstallInput,
 } from "@/components/app-manager/types";
+import type {
+  AppManagerActionResultDto,
+  AppManagerCleanupInputDto,
+  AppManagerCleanupResultDto,
+  AppManagerExportScanResultDto,
+  AppManagerPageDto,
+  AppManagerQueryDto,
+  AppManagerResidueScanResultDto,
+  AppManagerStartupUpdateInputDto,
+  AppManagerUninstallInputDto,
+  ManagedAppDetailDto,
+} from "@/contracts";
 import { invokeWithLog } from "@/services/invoke";
 
 export async function appManagerList(query?: AppManagerQuery): Promise<AppManagerPage> {
@@ -54,7 +54,9 @@ export async function appManagerCleanup(input: AppManagerCleanupInput): Promise<
 }
 
 export async function appManagerExportScanResult(appId: string): Promise<AppManagerExportScanResult> {
-  const dto = await invokeWithLog<AppManagerExportScanResultDto>("app_manager_export_scan_result", { input: { appId } });
+  const dto = await invokeWithLog<AppManagerExportScanResultDto>("app_manager_export_scan_result", {
+    input: { appId },
+  });
   return dto as AppManagerExportScanResult;
 }
 

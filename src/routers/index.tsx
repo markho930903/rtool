@@ -9,8 +9,8 @@ import LauncherWindowPage from "@/pages/LauncherWindowPage";
 import LogCenterPage from "@/pages/LogCenterPage";
 import NotFoundPage from "@/pages/NotFoundPage";
 import SettingsPage from "@/pages/SettingsPage";
-import TransferPage from "@/pages/TransferPage";
 import ToolsPage from "@/pages/ToolsPage";
+import TransferPage from "@/pages/TransferPage";
 import { getMainLayoutRouteConfig, getStandaloneRouteConfig, type AppRouteId } from "@/routers/routes.config";
 
 const routeElementMap: Record<AppRouteId, ReactElement> = {

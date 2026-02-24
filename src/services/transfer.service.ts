@@ -1,14 +1,4 @@
 import type {
-  TransferHistoryFilterDto,
-  TransferHistoryPageDto,
-  TransferPairingCodeDto,
-  TransferPeerDto,
-  TransferSendFilesInputDto,
-  TransferSessionDto,
-  TransferSettingsDto,
-  TransferUpdateSettingsInputDto,
-} from "@/contracts";
-import type {
   TransferDirection,
   TransferFileInput,
   TransferHistoryFilter,
@@ -18,6 +8,16 @@ import type {
   TransferSession,
   TransferSettings,
 } from "@/components/transfer/types";
+import type {
+  TransferHistoryFilterDto,
+  TransferHistoryPageDto,
+  TransferPairingCodeDto,
+  TransferPeerDto,
+  TransferSendFilesInputDto,
+  TransferSessionDto,
+  TransferSettingsDto,
+  TransferUpdateSettingsInputDto,
+} from "@/contracts";
 import { invokeWithLog } from "@/services/invoke";
 
 export interface TransferUpdateSettingsInput {

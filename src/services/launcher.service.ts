@@ -6,12 +6,7 @@ import type {
 } from "@/contracts";
 import { invokeWithLog } from "@/services/invoke";
 
-export type {
-  LauncherIndexStatus,
-  LauncherRebuildResult,
-  LauncherSearchSettings,
-  LauncherUpdateSearchSettingsInput,
-};
+export type { LauncherIndexStatus, LauncherRebuildResult, LauncherSearchSettings, LauncherUpdateSearchSettingsInput };
 
 export async function launcherGetSearchSettings(): Promise<LauncherSearchSettings> {
   return invokeWithLog<LauncherSearchSettings>("launcher_get_search_settings");

@@ -95,7 +95,7 @@ function resolveErrorMessage(error: unknown, payload: InvokeErrorPayload | null)
 
 export async function invokeWithLog<T>(
   command: CommandKey,
-  payload?: Record<string, unknown>,
+  commandPayload?: Record<string, unknown>,
   options?: InvokeWithLogOptions,
 ): Promise<T> {
   const requestId = createRequestId();
@@ -103,7 +103,7 @@ export async function invokeWithLog<T>(
   const startedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
 
   const requestPayload = {
-    ...(payload ?? {}),
+    ...(commandPayload ?? {}),
     requestId,
     windowLabel,
   };
@@ -143,8 +143,8 @@ export async function invokeWithLog<T>(
     return result;
   } catch (error) {
     const endedAt = typeof performance !== "undefined" ? performance.now() : Date.now();
-    const payload = toInvokeErrorPayload(error);
-    const message = resolveErrorMessage(error, payload);
+    const invokeErrorPayload = toInvokeErrorPayload(error);
+    const message = resolveErrorMessage(error, invokeErrorPayload);
     logError(
       "invoke",
       "command_failed",
@@ -154,9 +154,9 @@ export async function invokeWithLog<T>(
         windowLabel,
         durationMs: Math.round(endedAt - startedAt),
         error: message,
-        errorCode: payload?.code ?? "unknown_error",
-        errorCauses: payload?.causes ?? [],
-        errorContext: payload?.context ?? [],
+        errorCode: invokeErrorPayload?.code ?? "unknown_error",
+        errorCauses: invokeErrorPayload?.causes ?? [],
+        errorContext: invokeErrorPayload?.context ?? [],
       },
       requestId,
     );

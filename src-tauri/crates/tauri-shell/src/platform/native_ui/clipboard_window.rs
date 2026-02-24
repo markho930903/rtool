@@ -3,9 +3,9 @@ use crate::constants::{
     CLIPBOARD_COMPACT_WIDTH_LOGICAL, CLIPBOARD_MIN_HEIGHT_LOGICAL, CLIPBOARD_REGULAR_WIDTH_LOGICAL,
     CLIPBOARD_WINDOW_LABEL,
 };
+use anyhow::Context;
 use app_core::models::ClipboardWindowModeAppliedDto;
 use app_core::{AppError, AppResult, ResultExt};
-use anyhow::Context;
 use tauri::{AppHandle, LogicalSize, Manager, PhysicalPosition};
 
 fn clamp_clipboard_window_position(

@@ -5,7 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use app_core::models::{ClipboardFilterDto, ClipboardItemDto, ClipboardSettingsDto};
 use app_core::{AppError, AppResult, ResultExt};
 use app_infra::clipboard::build_clipboard_item;
-use app_infra::db::{self, DbPool};
+use app_infra::db::{self, DbConn};
 use sysinfo::Disks;
 
 pub const CLIPBOARD_MAX_ITEMS_DEFAULT: u32 = 1000;
@@ -148,7 +148,7 @@ fn now_millis() -> i64 {
 
 #[derive(Clone)]
 pub struct ClipboardService {
-    db_pool: DbPool,
+    db_conn: DbConn,
     db_path: PathBuf,
     settings: Arc<RwLock<ClipboardRuntimeSettings>>,
 }
@@ -166,24 +166,28 @@ pub struct ClipboardSettingsUpdateResult {
 }
 
 impl ClipboardService {
-    pub fn new(db_pool: DbPool, db_path: PathBuf) -> AppResult<Self> {
-        let stored = db::get_clipboard_max_items(&db_pool)?.unwrap_or(CLIPBOARD_MAX_ITEMS_DEFAULT);
+    pub async fn new(db_conn: DbConn, db_path: PathBuf) -> AppResult<Self> {
+        let stored = db::get_clipboard_max_items(&db_conn)
+            .await?
+            .unwrap_or(CLIPBOARD_MAX_ITEMS_DEFAULT);
         let max_items = stored.clamp(CLIPBOARD_MAX_ITEMS_MIN, CLIPBOARD_MAX_ITEMS_MAX);
-        let size_cleanup_enabled = db::get_clipboard_size_cleanup_enabled(&db_pool)?
+        let size_cleanup_enabled = db::get_clipboard_size_cleanup_enabled(&db_conn)
+            .await?
             .unwrap_or(CLIPBOARD_SIZE_CLEANUP_ENABLED_DEFAULT);
-        let stored_max_total_size_mb = db::get_clipboard_max_total_size_mb(&db_pool)?
+        let stored_max_total_size_mb = db::get_clipboard_max_total_size_mb(&db_conn)
+            .await?
             .unwrap_or(CLIPBOARD_MAX_TOTAL_SIZE_MB_DEFAULT);
         let max_total_size_mb = stored_max_total_size_mb.clamp(
             CLIPBOARD_MAX_TOTAL_SIZE_MB_MIN,
             CLIPBOARD_MAX_TOTAL_SIZE_MB_MAX,
         );
 
-        db::set_clipboard_max_items(&db_pool, max_items)?;
-        db::set_clipboard_size_cleanup_enabled(&db_pool, size_cleanup_enabled)?;
-        db::set_clipboard_max_total_size_mb(&db_pool, max_total_size_mb)?;
+        db::set_clipboard_max_items(&db_conn, max_items).await?;
+        db::set_clipboard_size_cleanup_enabled(&db_conn, size_cleanup_enabled).await?;
+        db::set_clipboard_max_total_size_mb(&db_conn, max_total_size_mb).await?;
 
         let service = Self {
-            db_pool,
+            db_conn,
             db_path,
             settings: Arc::new(RwLock::new(ClipboardRuntimeSettings {
                 max_items,
@@ -191,7 +195,7 @@ impl ClipboardService {
                 max_total_size_mb,
             })),
         };
-        let _ = service.enforce_capacity()?;
+        let _ = service.enforce_capacity().await?;
         Ok(service)
     }
 
@@ -216,7 +220,7 @@ impl ClipboardService {
         ensure_available_space(available, CLIPBOARD_MIN_FREE_DISK_BYTES)
     }
 
-    fn enforce_capacity(&self) -> AppResult<Vec<String>> {
+    async fn enforce_capacity(&self) -> AppResult<Vec<String>> {
         let settings = self.current_settings();
         let size_limit = if settings.size_cleanup_enabled {
             Some(u64::from(settings.max_total_size_mb).saturating_mul(1024 * 1024))
@@ -224,7 +228,7 @@ impl ClipboardService {
             None
         };
         let removed_items =
-            db::prune_clipboard_items(&self.db_pool, settings.max_items, size_limit)?;
+            db::prune_clipboard_items(&self.db_conn, settings.max_items, size_limit).await?;
         let mut removed_ids = Vec::with_capacity(removed_items.len());
         for removed in removed_items {
             removed_ids.push(removed.id);
@@ -235,56 +239,58 @@ impl ClipboardService {
         Ok(removed_ids)
     }
 
-    pub fn save_text(
+    pub async fn save_text(
         &self,
         text: String,
         source_app: Option<String>,
     ) -> AppResult<ClipboardSaveResult> {
         self.ensure_disk_space_for_new_item()?;
         let item = build_clipboard_item(text, source_app);
-        let stored = db::insert_clipboard_item(&self.db_pool, &item)?;
-        let removed_ids = self.enforce_capacity()?;
+        let stored = db::insert_clipboard_item(&self.db_conn, &item).await?;
+        let removed_ids = self.enforce_capacity().await?;
         Ok(ClipboardSaveResult {
             item: stored,
             removed_ids,
         })
     }
 
-    pub fn save_item(&self, item: ClipboardItemDto) -> AppResult<ClipboardSaveResult> {
+    pub async fn save_item(&self, item: ClipboardItemDto) -> AppResult<ClipboardSaveResult> {
         self.ensure_disk_space_for_new_item()?;
-        let stored = db::insert_clipboard_item(&self.db_pool, &item)?;
-        let removed_ids = self.enforce_capacity()?;
+        let stored = db::insert_clipboard_item(&self.db_conn, &item).await?;
+        let removed_ids = self.enforce_capacity().await?;
         Ok(ClipboardSaveResult {
             item: stored,
             removed_ids,
         })
     }
 
-    pub fn list(&self, filter: ClipboardFilterDto) -> AppResult<Vec<ClipboardItemDto>> {
-        db::list_clipboard_items(&self.db_pool, &filter)
+    pub async fn list(&self, filter: ClipboardFilterDto) -> AppResult<Vec<ClipboardItemDto>> {
+        db::list_clipboard_items(&self.db_conn, &filter).await
     }
 
-    pub fn pin(&self, id: String, pinned: bool) -> AppResult<ClipboardItemDto> {
-        db::pin_clipboard_item(&self.db_pool, &id, pinned)?;
-        db::get_clipboard_item(&self.db_pool, &id)?
+    pub async fn pin(&self, id: String, pinned: bool) -> AppResult<ClipboardItemDto> {
+        db::pin_clipboard_item(&self.db_conn, &id, pinned).await?;
+        db::get_clipboard_item(&self.db_conn, &id)
+            .await?
             .ok_or_else(|| AppError::new("clipboard_not_found", "未找到对应剪贴板记录"))
     }
 
-    pub fn touch_item(&self, id: String) -> AppResult<ClipboardItemDto> {
+    pub async fn touch_item(&self, id: String) -> AppResult<ClipboardItemDto> {
         let created_at = now_millis();
-        db::touch_clipboard_item(&self.db_pool, &id, created_at)?
+        db::touch_clipboard_item(&self.db_conn, &id, created_at)
+            .await?
             .ok_or_else(|| AppError::new("clipboard_not_found", "未找到对应剪贴板记录"))
     }
 
-    pub fn delete(&self, id: String) -> AppResult<()> {
-        if let Some(preview_path) = db::delete_clipboard_item(&self.db_pool, &id)? {
+    pub async fn delete(&self, id: String) -> AppResult<()> {
+        if let Some(preview_path) = db::delete_clipboard_item(&self.db_conn, &id).await? {
             remove_preview_file(&preview_path);
         }
         Ok(())
     }
 
-    pub fn clear_all(&self) -> AppResult<()> {
-        let removed_paths = db::clear_all_clipboard_items(&self.db_pool)?;
+    pub async fn clear_all(&self) -> AppResult<()> {
+        let removed_paths = db::clear_all_clipboard_items(&self.db_conn).await?;
         for preview_path in removed_paths {
             remove_preview_file(&preview_path);
         }
@@ -300,7 +306,7 @@ impl ClipboardService {
         }
     }
 
-    pub fn update_settings(
+    pub async fn update_settings(
         &self,
         max_items: u32,
         size_cleanup_enabled: Option<bool>,
@@ -312,15 +318,15 @@ impl ClipboardService {
         let max_total_size_mb =
             validate_max_total_size_mb(max_total_size_mb.unwrap_or(current.max_total_size_mb))?;
 
-        db::set_clipboard_max_items(&self.db_pool, max_items)?;
-        db::set_clipboard_size_cleanup_enabled(&self.db_pool, size_cleanup_enabled)?;
-        db::set_clipboard_max_total_size_mb(&self.db_pool, max_total_size_mb)?;
+        db::set_clipboard_max_items(&self.db_conn, max_items).await?;
+        db::set_clipboard_size_cleanup_enabled(&self.db_conn, size_cleanup_enabled).await?;
+        db::set_clipboard_max_total_size_mb(&self.db_conn, max_total_size_mb).await?;
         self.set_cached_settings(ClipboardRuntimeSettings {
             max_items,
             size_cleanup_enabled,
             max_total_size_mb,
         })?;
-        let removed_ids = self.enforce_capacity()?;
+        let removed_ids = self.enforce_capacity().await?;
         Ok(ClipboardSettingsUpdateResult {
             settings: ClipboardSettingsDto {
                 max_items,

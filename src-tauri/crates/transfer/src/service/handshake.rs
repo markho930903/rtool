@@ -101,13 +101,12 @@ fn validate_peer_protocol(
     context_value: &str,
 ) -> AppResult<()> {
     if peer_protocol_version != PROTOCOL_VERSION {
-        return Err(AppError::new(
-            "transfer_protocol_version_mismatch",
-            "对端协议版本不匹配",
-        )
-        .with_context(context_key, context_value.to_string())
-        .with_context("peerProtocolVersion", peer_protocol_version.to_string())
-        .with_context("localProtocolVersion", PROTOCOL_VERSION.to_string()));
+        return Err(
+            AppError::new("transfer_protocol_version_mismatch", "对端协议版本不匹配")
+                .with_context(context_key, context_value.to_string())
+                .with_context("peerProtocolVersion", peer_protocol_version.to_string())
+                .with_context("localProtocolVersion", PROTOCOL_VERSION.to_string()),
+        );
     }
 
     for capability in [
@@ -179,15 +178,11 @@ impl TransferService {
             server_nonce.as_str(),
         );
         if proof != expected {
-            let pool = self.db_pool.clone();
-            let peer_device_id_for_failure = peer_device_id.clone();
-            run_blocking("transfer_mark_pair_failure", move || {
-                mark_peer_pair_failure(
-                    &pool,
-                    peer_device_id_for_failure.as_str(),
-                    Some(now_millis() + 60_000),
-                )
-            })
+            mark_peer_pair_failure(
+                &self.db_conn,
+                peer_device_id.as_str(),
+                Some(now_millis() + 60_000),
+            )
             .await?;
             write_frame(
                 stream,
@@ -201,12 +196,7 @@ impl TransferService {
             return Err(AppError::new("transfer_auth_failed", "配对码校验失败"));
         }
 
-        let pool = self.db_pool.clone();
-        let peer_device_id_for_success = peer_device_id.clone();
-        run_blocking("transfer_mark_pair_success", move || {
-            mark_peer_pair_success(&pool, peer_device_id_for_success.as_str(), now_millis())
-        })
-        .await?;
+        mark_peer_pair_success(&self.db_conn, peer_device_id.as_str(), now_millis()).await?;
         write_frame(
             stream,
             &TransferFrame::AuthOk {

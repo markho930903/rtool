@@ -1,10 +1,11 @@
 mod image_preview;
 mod processor;
 
-use app_clipboard::service::ClipboardService;
 use crate::constants::CLIPBOARD_PLUGIN_UPDATE_EVENT;
-use std::sync::{Arc, Mutex};
+use app_clipboard::service::ClipboardService;
+use std::sync::Arc;
 use tauri::{AppHandle, Listener, Manager, Runtime};
+use tokio::sync::Mutex;
 
 pub(crate) fn start_clipboard_watcher<R: Runtime>(
     app_handle: AppHandle<R>,
@@ -23,8 +24,10 @@ pub(crate) fn start_clipboard_watcher<R: Runtime>(
 
     let processor_ref = Arc::clone(&processor);
     let _listener_id = app_handle.listen_any(CLIPBOARD_PLUGIN_UPDATE_EVENT, move |_| {
-        if let Ok(mut guard) = processor_ref.lock() {
-            guard.handle_update_event();
-        }
+        let processor_ref = Arc::clone(&processor_ref);
+        tauri::async_runtime::spawn(async move {
+            let mut guard = processor_ref.lock().await;
+            guard.handle_update_event().await;
+        });
     });
 }

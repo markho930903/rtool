@@ -169,7 +169,9 @@ export function getStandaloneRouteConfig(): AppRouteConfig[] {
 }
 
 export function getMainMenuRouteConfig() {
-  return ROUTE_CONFIG.filter((item): item is AppRouteConfig & { menu: NonNullable<AppRouteConfig["menu"]> } => Boolean(item.menu))
+  return ROUTE_CONFIG.filter((item): item is AppRouteConfig & { menu: NonNullable<AppRouteConfig["menu"]> } =>
+    Boolean(item.menu),
+  )
     .sort((left, right) => left.menu.order - right.menu.order)
     .map((item) => ({
       id: item.id,
@@ -182,7 +184,8 @@ export function getMainMenuRouteConfig() {
 
 export function getHomeModuleRouteConfig() {
   return ROUTE_CONFIG.filter(
-    (item): item is AppRouteConfig & { homeModule: NonNullable<AppRouteConfig["homeModule"]> } => Boolean(item.homeModule),
+    (item): item is AppRouteConfig & { homeModule: NonNullable<AppRouteConfig["homeModule"]> } =>
+      Boolean(item.homeModule),
   )
     .sort((left, right) => left.homeModule.order - right.homeModule.order)
     .map((item) => ({
@@ -217,7 +220,9 @@ function isRouteMatch(pathname: string, routePath: string): boolean {
 
 export function resolveWindowModeByPath(pathname: string): WindowMode {
   const normalized = normalizePathname(pathname);
-  const matched = ROUTE_CONFIG.find((item) => item.windowMode !== null && item.to !== "/*" && isRouteMatch(normalized, item.to));
+  const matched = ROUTE_CONFIG.find(
+    (item) => item.windowMode !== null && item.to !== "/*" && isRouteMatch(normalized, item.to),
+  );
   return matched?.windowMode ?? "dashboard";
 }
 

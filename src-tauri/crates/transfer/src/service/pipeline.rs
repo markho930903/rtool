@@ -144,7 +144,7 @@ impl TransferService {
             return Ok(false);
         }
         let items = dirty_files.values().cloned().collect::<Vec<_>>();
-        self.blocking_upsert_files_batch(items).await?;
+        self.upsert_files_batch_async(items.as_slice()).await?;
         if clear_after_flush {
             dirty_files.clear();
         }
@@ -159,7 +159,7 @@ impl TransferService {
     ) -> AppResult<()> {
         self.flush_dirty_files(dirty_files, clear_dirty_after_flush)
             .await?;
-        self.blocking_upsert_session_progress(session.clone()).await
+        self.upsert_session_progress_async(session).await
     }
 
     pub(super) async fn flush_ack_buffer<W>(
@@ -227,8 +227,7 @@ impl TransferService {
         session: &TransferSessionDto,
         options: TerminalPersistOptions,
     ) -> AppResult<()> {
-        self.blocking_upsert_session_progress(session.clone())
-            .await?;
+        self.upsert_session_progress_async(session).await?;
         if let Some(codec) = options.codec {
             self.maybe_emit_snapshot_with_codec(
                 session,

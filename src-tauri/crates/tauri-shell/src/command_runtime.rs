@@ -12,7 +12,11 @@ pub(crate) fn normalize_request_id(request_id: Option<String>) -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
-pub(crate) fn command_start(command: &str, request_id: &str, window_label: Option<&str>) -> Instant {
+pub(crate) fn command_start(
+    command: &str,
+    request_id: &str,
+    window_label: Option<&str>,
+) -> Instant {
     tracing::info!(
         event = "command_start",
         command = command,

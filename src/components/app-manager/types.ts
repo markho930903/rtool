@@ -1,7 +1,4 @@
-export type AppReadonlyReasonCode =
-  | "permission_denied"
-  | "managed_by_policy"
-  | "feature_disabled";
+export type AppReadonlyReasonCode = "permission_denied" | "managed_by_policy" | "feature_disabled";
 
 export type AppManagerScope = "user" | "system";
 export type AppManagerPathType = "file" | "directory";

@@ -1,3 +1,6 @@
+use crate::host::LauncherHost;
+use crate::launcher::icon::{resolve_application_icon, resolve_builtin_icon};
+use anyhow::Context;
 use app_core::models::{
     AppManagerActionCode, AppManagerActionResultDto, AppManagerCapabilitiesDto,
     AppManagerCleanupDeleteMode, AppManagerCleanupInputDto, AppManagerCleanupItemResultDto,
@@ -10,15 +13,11 @@ use app_core::models::{
     AppManagerResidueMatchReason, AppManagerResidueScanInputDto, AppManagerResidueScanResultDto,
     AppManagerRiskLevel, AppManagerScanWarningCode, AppManagerScanWarningDetailCode,
     AppManagerScanWarningDto, AppManagerScope, AppManagerSizeAccuracy, AppManagerSource,
-    AppManagerStartupScope,
-    AppManagerStartupUpdateInputDto, AppManagerUninstallInputDto, AppManagerUninstallKind,
-    AppReadonlyReasonCode, AppRelatedRootDto, AppSizeSummaryDto, ManagedAppDetailDto,
-    ManagedAppDto,
+    AppManagerStartupScope, AppManagerStartupUpdateInputDto, AppManagerUninstallInputDto,
+    AppManagerUninstallKind, AppReadonlyReasonCode, AppRelatedRootDto, AppSizeSummaryDto,
+    ManagedAppDetailDto, ManagedAppDto,
 };
 use app_core::{AppError, AppResult, ResultExt};
-use crate::host::LauncherHost;
-use crate::launcher::icon::{resolve_application_icon, resolve_builtin_icon};
-use anyhow::Context;
 #[cfg(target_os = "macos")]
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -32,22 +31,22 @@ use std::sync::{Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 mod api;
-mod index;
 mod cleanup;
+mod index;
+mod naming;
 mod residue;
+mod size;
 mod startup;
 mod uninstall;
-mod naming;
-mod size;
 
 pub use api::*;
-use index::*;
 use cleanup::*;
+use index::*;
+use naming::*;
 use residue::*;
+use size::*;
 use startup::*;
 use uninstall::*;
-use naming::*;
-use size::*;
 
 const INDEX_CACHE_TTL: Duration = Duration::from_secs(30);
 const INDEX_DISK_CACHE_FILE: &str = "app_manager_index_cache.json";

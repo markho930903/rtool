@@ -1,6 +1,6 @@
 use app_clipboard::service::ClipboardService;
 use app_core::i18n::{AppLocaleState, LocaleStateDto, ResolvedAppLocale};
-use app_infra::db::DbPool;
+use app_infra::db::DbConn;
 use app_transfer::service::TransferService;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -9,7 +9,7 @@ use std::time::Instant;
 #[derive(Clone)]
 pub struct AppState {
     pub db_path: PathBuf,
-    pub db_pool: DbPool,
+    pub db_conn: DbConn,
     pub clipboard_service: ClipboardService,
     pub transfer_service: TransferService,
     pub locale_state: Arc<Mutex<AppLocaleState>>,

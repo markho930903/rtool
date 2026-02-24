@@ -1,12 +1,11 @@
-use rusqlite::{OptionalExtension, params, params_from_iter};
-
+use crate::db::{DbConn, get_app_settings_batch, set_app_settings_batch};
 use app_core::models::{
     TransferDirection, TransferFileDto, TransferHistoryFilterDto, TransferHistoryPageDto,
     TransferPeerDto, TransferPeerTrustLevel, TransferSessionDto, TransferSettingsDto,
     TransferStatus,
 };
 use app_core::{AppError, AppResult};
-use crate::db::{DbPool, get_app_setting, set_app_setting};
+use libsql::{params, params_from_iter};
 
 pub const TRANSFER_DEFAULT_DOWNLOAD_DIR_KEY: &str = "transfer.default_download_dir";
 pub const TRANSFER_MAX_PARALLEL_FILES_KEY: &str = "transfer.max_parallel_files";
@@ -67,10 +66,7 @@ fn parse_transfer_trust_level(
         .map_err(|error| error.with_context("sourceField", source_field))
 }
 
-pub fn load_settings(
-    pool: &DbPool,
-    default_download_dir: String,
-) -> AppResult<TransferSettingsDto> {
+pub async fn load_settings(conn: &DbConn, default_download_dir: String) -> AppResult<TransferSettingsDto> {
     let mut settings = TransferSettingsDto {
         default_download_dir,
         max_parallel_files: 2,
@@ -86,105 +82,120 @@ pub fn load_settings(
         ack_flush_interval_ms: 20,
     };
 
-    if let Some(value) = get_app_setting(pool, TRANSFER_DEFAULT_DOWNLOAD_DIR_KEY)? {
-        settings.default_download_dir = value;
+    let keys = [
+        TRANSFER_DEFAULT_DOWNLOAD_DIR_KEY,
+        TRANSFER_MAX_PARALLEL_FILES_KEY,
+        TRANSFER_MAX_INFLIGHT_CHUNKS_KEY,
+        TRANSFER_CHUNK_SIZE_KB_KEY,
+        TRANSFER_AUTO_CLEANUP_DAYS_KEY,
+        TRANSFER_RESUME_ENABLED_KEY,
+        TRANSFER_DISCOVERY_ENABLED_KEY,
+        TRANSFER_PAIRING_REQUIRED_KEY,
+        TRANSFER_DB_FLUSH_INTERVAL_MS_KEY,
+        TRANSFER_EVENT_EMIT_INTERVAL_MS_KEY,
+        TRANSFER_ACK_BATCH_SIZE_KEY,
+        TRANSFER_ACK_FLUSH_INTERVAL_MS_KEY,
+    ];
+    let values = get_app_settings_batch(conn, &keys).await?;
+
+    if let Some(value) = values.get(TRANSFER_DEFAULT_DOWNLOAD_DIR_KEY) {
+        settings.default_download_dir = value.to_string();
     }
-    settings.max_parallel_files =
-        parse_u32(get_app_setting(pool, TRANSFER_MAX_PARALLEL_FILES_KEY)?, 2).clamp(1, 8);
-    settings.max_inflight_chunks =
-        parse_u32(get_app_setting(pool, TRANSFER_MAX_INFLIGHT_CHUNKS_KEY)?, 16).clamp(1, 64);
-    settings.chunk_size_kb =
-        parse_u32(get_app_setting(pool, TRANSFER_CHUNK_SIZE_KB_KEY)?, 1024).clamp(64, 4096);
-    settings.auto_cleanup_days =
-        parse_u32(get_app_setting(pool, TRANSFER_AUTO_CLEANUP_DAYS_KEY)?, 30).clamp(1, 365);
-    settings.resume_enabled = parse_bool(get_app_setting(pool, TRANSFER_RESUME_ENABLED_KEY)?, true);
-    settings.discovery_enabled =
-        parse_bool(get_app_setting(pool, TRANSFER_DISCOVERY_ENABLED_KEY)?, true);
+    settings.max_parallel_files = parse_u32(
+        values.get(TRANSFER_MAX_PARALLEL_FILES_KEY).cloned(),
+        2,
+    )
+    .clamp(1, 8);
+    settings.max_inflight_chunks = parse_u32(
+        values.get(TRANSFER_MAX_INFLIGHT_CHUNKS_KEY).cloned(),
+        16,
+    )
+    .clamp(1, 64);
+    settings.chunk_size_kb = parse_u32(values.get(TRANSFER_CHUNK_SIZE_KB_KEY).cloned(), 1024)
+        .clamp(64, 4096);
+    settings.auto_cleanup_days = parse_u32(
+        values.get(TRANSFER_AUTO_CLEANUP_DAYS_KEY).cloned(),
+        30,
+    )
+    .clamp(1, 365);
+    settings.resume_enabled = parse_bool(values.get(TRANSFER_RESUME_ENABLED_KEY).cloned(), true);
+    settings.discovery_enabled = parse_bool(
+        values.get(TRANSFER_DISCOVERY_ENABLED_KEY).cloned(),
+        true,
+    );
     settings.pairing_required =
-        parse_bool(get_app_setting(pool, TRANSFER_PAIRING_REQUIRED_KEY)?, true);
+        parse_bool(values.get(TRANSFER_PAIRING_REQUIRED_KEY).cloned(), true);
     settings.db_flush_interval_ms = parse_u32(
-        get_app_setting(pool, TRANSFER_DB_FLUSH_INTERVAL_MS_KEY)?,
+        values.get(TRANSFER_DB_FLUSH_INTERVAL_MS_KEY).cloned(),
         400,
     )
     .clamp(100, 5000);
     settings.event_emit_interval_ms = parse_u32(
-        get_app_setting(pool, TRANSFER_EVENT_EMIT_INTERVAL_MS_KEY)?,
+        values.get(TRANSFER_EVENT_EMIT_INTERVAL_MS_KEY).cloned(),
         250,
     )
     .clamp(100, 2000);
-    settings.ack_batch_size =
-        parse_u32(get_app_setting(pool, TRANSFER_ACK_BATCH_SIZE_KEY)?, 64).clamp(1, 512);
+    settings.ack_batch_size = parse_u32(values.get(TRANSFER_ACK_BATCH_SIZE_KEY).cloned(), 64)
+        .clamp(1, 512);
     settings.ack_flush_interval_ms = parse_u32(
-        get_app_setting(pool, TRANSFER_ACK_FLUSH_INTERVAL_MS_KEY)?,
+        values.get(TRANSFER_ACK_FLUSH_INTERVAL_MS_KEY).cloned(),
         20,
     )
     .clamp(5, 2000);
 
-    save_settings(pool, &settings)?;
+    save_settings(conn, &settings).await?;
     Ok(settings)
 }
 
-pub fn save_settings(pool: &DbPool, settings: &TransferSettingsDto) -> AppResult<()> {
-    set_app_setting(
-        pool,
-        TRANSFER_DEFAULT_DOWNLOAD_DIR_KEY,
-        settings.default_download_dir.as_str(),
-    )?;
-    set_app_setting(
-        pool,
-        TRANSFER_MAX_PARALLEL_FILES_KEY,
-        settings.max_parallel_files.to_string().as_str(),
-    )?;
-    set_app_setting(
-        pool,
-        TRANSFER_MAX_INFLIGHT_CHUNKS_KEY,
-        settings.max_inflight_chunks.to_string().as_str(),
-    )?;
-    set_app_setting(
-        pool,
-        TRANSFER_CHUNK_SIZE_KB_KEY,
-        settings.chunk_size_kb.to_string().as_str(),
-    )?;
-    set_app_setting(
-        pool,
-        TRANSFER_AUTO_CLEANUP_DAYS_KEY,
-        settings.auto_cleanup_days.to_string().as_str(),
-    )?;
-    set_app_setting(
-        pool,
-        TRANSFER_RESUME_ENABLED_KEY,
-        to_bool_string(settings.resume_enabled),
-    )?;
-    set_app_setting(
-        pool,
-        TRANSFER_DISCOVERY_ENABLED_KEY,
-        to_bool_string(settings.discovery_enabled),
-    )?;
-    set_app_setting(
-        pool,
-        TRANSFER_PAIRING_REQUIRED_KEY,
-        to_bool_string(settings.pairing_required),
-    )?;
-    set_app_setting(
-        pool,
-        TRANSFER_DB_FLUSH_INTERVAL_MS_KEY,
-        settings.db_flush_interval_ms.to_string().as_str(),
-    )?;
-    set_app_setting(
-        pool,
-        TRANSFER_EVENT_EMIT_INTERVAL_MS_KEY,
-        settings.event_emit_interval_ms.to_string().as_str(),
-    )?;
-    set_app_setting(
-        pool,
-        TRANSFER_ACK_BATCH_SIZE_KEY,
-        settings.ack_batch_size.to_string().as_str(),
-    )?;
-    set_app_setting(
-        pool,
-        TRANSFER_ACK_FLUSH_INTERVAL_MS_KEY,
-        settings.ack_flush_interval_ms.to_string().as_str(),
-    )?;
+pub async fn save_settings(conn: &DbConn, settings: &TransferSettingsDto) -> AppResult<()> {
+    let max_parallel_files = settings.max_parallel_files.to_string();
+    let max_inflight_chunks = settings.max_inflight_chunks.to_string();
+    let chunk_size_kb = settings.chunk_size_kb.to_string();
+    let auto_cleanup_days = settings.auto_cleanup_days.to_string();
+    let db_flush_interval_ms = settings.db_flush_interval_ms.to_string();
+    let event_emit_interval_ms = settings.event_emit_interval_ms.to_string();
+    let ack_batch_size = settings.ack_batch_size.to_string();
+    let ack_flush_interval_ms = settings.ack_flush_interval_ms.to_string();
+
+    let entries = [
+        (
+            TRANSFER_DEFAULT_DOWNLOAD_DIR_KEY,
+            settings.default_download_dir.as_str(),
+        ),
+        (TRANSFER_MAX_PARALLEL_FILES_KEY, max_parallel_files.as_str()),
+        (
+            TRANSFER_MAX_INFLIGHT_CHUNKS_KEY,
+            max_inflight_chunks.as_str(),
+        ),
+        (TRANSFER_CHUNK_SIZE_KB_KEY, chunk_size_kb.as_str()),
+        (TRANSFER_AUTO_CLEANUP_DAYS_KEY, auto_cleanup_days.as_str()),
+        (
+            TRANSFER_RESUME_ENABLED_KEY,
+            to_bool_string(settings.resume_enabled),
+        ),
+        (
+            TRANSFER_DISCOVERY_ENABLED_KEY,
+            to_bool_string(settings.discovery_enabled),
+        ),
+        (
+            TRANSFER_PAIRING_REQUIRED_KEY,
+            to_bool_string(settings.pairing_required),
+        ),
+        (
+            TRANSFER_DB_FLUSH_INTERVAL_MS_KEY,
+            db_flush_interval_ms.as_str(),
+        ),
+        (
+            TRANSFER_EVENT_EMIT_INTERVAL_MS_KEY,
+            event_emit_interval_ms.as_str(),
+        ),
+        (TRANSFER_ACK_BATCH_SIZE_KEY, ack_batch_size.as_str()),
+        (
+            TRANSFER_ACK_FLUSH_INTERVAL_MS_KEY,
+            ack_flush_interval_ms.as_str(),
+        ),
+    ];
+    set_app_settings_batch(conn, entries.as_slice()).await?;
     Ok(())
 }
 
@@ -194,8 +205,7 @@ pub struct TransferFilePersistItem {
     pub completed_bitmap: Vec<u8>,
 }
 
-pub fn upsert_peer(pool: &DbPool, peer: &TransferPeerDto) -> AppResult<()> {
-    let conn = pool.get()?;
+pub async fn upsert_peer(conn: &DbConn, peer: &TransferPeerDto) -> AppResult<()> {
     conn.execute(
         "INSERT INTO transfer_peers (device_id, display_name, last_seen_at, paired_at, trust_level, failed_attempts, blocked_until)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
@@ -203,62 +213,53 @@ pub fn upsert_peer(pool: &DbPool, peer: &TransferPeerDto) -> AppResult<()> {
            display_name = excluded.display_name,
            last_seen_at = excluded.last_seen_at",
         params![
-            peer.device_id,
-            peer.display_name,
+            peer.device_id.as_str(),
+            peer.display_name.as_str(),
             peer.last_seen_at,
             peer.paired_at,
             peer.trust_level.as_str(),
             peer.failed_attempts,
             peer.blocked_until,
         ],
-    )?;
+    )
+    .await?;
     Ok(())
 }
 
-pub fn get_peer_by_device_id(pool: &DbPool, device_id: &str) -> AppResult<Option<TransferPeerDto>> {
-    let conn = pool.get()?;
-    let peer_row = conn
-        .query_row(
+pub async fn get_peer_by_device_id(conn: &DbConn, device_id: &str) -> AppResult<Option<TransferPeerDto>> {
+    let mut rows = conn
+        .query(
             "SELECT device_id, display_name, last_seen_at, paired_at, trust_level, failed_attempts, blocked_until
              FROM transfer_peers
              WHERE device_id = ?1
              LIMIT 1",
             params![device_id],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, i64>(2)?,
-                    row.get::<_, Option<i64>>(3)?,
-                    row.get::<_, String>(4)?,
-                    row.get::<_, u32>(5)?,
-                    row.get::<_, Option<i64>>(6)?,
-                ))
-            },
         )
-        .optional()?;
-    let Some((device_id, display_name, last_seen_at, paired_at, trust_level_raw, failed_attempts, blocked_until)) =
-        peer_row
-    else {
+        .await?;
+
+    let Some(row) = rows.next().await? else {
         return Ok(None);
     };
+
     Ok(Some(TransferPeerDto {
-        device_id,
-        display_name,
+        device_id: row.get::<String>(0)?,
+        display_name: row.get::<String>(1)?,
         address: String::new(),
         listen_port: 0,
-        last_seen_at,
-        paired_at,
-        trust_level: parse_transfer_trust_level(trust_level_raw, "transfer_peers.trust_level")?,
-        failed_attempts,
-        blocked_until,
+        last_seen_at: row.get::<i64>(2)?,
+        paired_at: row.get::<Option<i64>>(3)?,
+        trust_level: parse_transfer_trust_level(
+            row.get::<String>(4)?,
+            "transfer_peers.trust_level",
+        )?,
+        failed_attempts: row.get::<u32>(5)?,
+        blocked_until: row.get::<Option<i64>>(6)?,
         pairing_required: true,
         online: false,
     }))
 }
 
-pub fn mark_peer_pair_success(pool: &DbPool, device_id: &str, paired_at: i64) -> AppResult<()> {
-    let conn = pool.get()?;
+pub async fn mark_peer_pair_success(conn: &DbConn, device_id: &str, paired_at: i64) -> AppResult<()> {
     conn.execute(
         "UPDATE transfer_peers
          SET paired_at = ?2,
@@ -271,16 +272,16 @@ pub fn mark_peer_pair_success(pool: &DbPool, device_id: &str, paired_at: i64) ->
             paired_at,
             TransferPeerTrustLevel::Trusted.as_str()
         ],
-    )?;
+    )
+    .await?;
     Ok(())
 }
 
-pub fn mark_peer_pair_failure(
-    pool: &DbPool,
+pub async fn mark_peer_pair_failure(
+    conn: &DbConn,
     device_id: &str,
     blocked_until: Option<i64>,
 ) -> AppResult<()> {
-    let conn = pool.get()?;
     conn.execute(
         "INSERT INTO transfer_peers (device_id, display_name, last_seen_at, paired_at, trust_level, failed_attempts, blocked_until)
          VALUES (?1, ?1, 0, NULL, ?3, 1, ?2)
@@ -288,54 +289,36 @@ pub fn mark_peer_pair_failure(
            failed_attempts = transfer_peers.failed_attempts + 1,
            blocked_until = ?2",
         params![device_id, blocked_until, TransferPeerTrustLevel::Other.as_str()],
-    )?;
+    )
+    .await?;
     Ok(())
 }
 
-pub fn list_stored_peers(pool: &DbPool) -> AppResult<Vec<TransferPeerDto>> {
-    let conn = pool.get()?;
-    let mut statement = conn.prepare(
-        "SELECT device_id, display_name, last_seen_at, paired_at, trust_level, failed_attempts, blocked_until
-         FROM transfer_peers
-         ORDER BY last_seen_at DESC",
-    )?;
-
-    let rows = statement.query_map([], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, i64>(2)?,
-            row.get::<_, Option<i64>>(3)?,
-            row.get::<_, String>(4)?,
-            row.get::<_, u32>(5)?,
-            row.get::<_, Option<i64>>(6)?,
-        ))
-    })?;
+pub async fn list_stored_peers(conn: &DbConn) -> AppResult<Vec<TransferPeerDto>> {
+    let mut rows = conn
+        .query(
+            "SELECT device_id, display_name, last_seen_at, paired_at, trust_level, failed_attempts, blocked_until
+             FROM transfer_peers
+             ORDER BY last_seen_at DESC",
+            (),
+        )
+        .await?;
 
     let mut peers = Vec::new();
-    for row in rows {
-        let (
-            device_id,
-            display_name,
-            last_seen_at,
-            paired_at,
-            trust_level_raw,
-            failed_attempts,
-            blocked_until,
-        ) = row?;
+    while let Some(row) = rows.next().await? {
         peers.push(TransferPeerDto {
-            device_id,
-            display_name,
+            device_id: row.get::<String>(0)?,
+            display_name: row.get::<String>(1)?,
             address: String::new(),
             listen_port: 0,
-            last_seen_at,
-            paired_at,
+            last_seen_at: row.get::<i64>(2)?,
+            paired_at: row.get::<Option<i64>>(3)?,
             trust_level: parse_transfer_trust_level(
-                trust_level_raw,
+                row.get::<String>(4)?,
                 "transfer_peers.trust_level",
             )?,
-            failed_attempts,
-            blocked_until,
+            failed_attempts: row.get::<u32>(5)?,
+            blocked_until: row.get::<Option<i64>>(6)?,
             pairing_required: true,
             online: false,
         });
@@ -343,8 +326,7 @@ pub fn list_stored_peers(pool: &DbPool) -> AppResult<Vec<TransferPeerDto>> {
     Ok(peers)
 }
 
-pub fn insert_session(pool: &DbPool, session: &TransferSessionDto) -> AppResult<()> {
-    let conn = pool.get()?;
+pub async fn insert_session(conn: &DbConn, session: &TransferSessionDto) -> AppResult<()> {
     conn.execute(
         "INSERT INTO transfer_sessions
          (id, direction, peer_device_id, peer_name, status, total_bytes, transferred_bytes, avg_speed_bps, save_dir,
@@ -365,32 +347,32 @@ pub fn insert_session(pool: &DbPool, session: &TransferSessionDto) -> AppResult<
           error_message = excluded.error_message,
           cleanup_after_at = excluded.cleanup_after_at",
         params![
-            session.id,
+            session.id.as_str(),
             session.direction.as_str(),
-            session.peer_device_id,
-            session.peer_name,
+            session.peer_device_id.as_str(),
+            session.peer_name.as_str(),
             session.status.as_str(),
             to_db_i64(session.total_bytes),
             to_db_i64(session.transferred_bytes),
             to_db_i64(session.avg_speed_bps),
-            session.save_dir,
+            session.save_dir.as_str(),
             session.created_at,
             session.started_at,
             session.finished_at,
-            session.error_code,
-            session.error_message,
+            session.error_code.as_deref(),
+            session.error_message.as_deref(),
             session.cleanup_after_at,
         ],
-    )?;
+    )
+    .await?;
     Ok(())
 }
 
-pub fn insert_or_update_file(
-    pool: &DbPool,
+pub async fn insert_or_update_file(
+    conn: &DbConn,
     file: &TransferFileDto,
     completed_bitmap: &[u8],
 ) -> AppResult<()> {
-    let conn = pool.get()?;
     conn.execute(
         "INSERT INTO transfer_files
          (id, session_id, relative_path, source_path, target_path, size_bytes, transferred_bytes, chunk_size, chunk_count,
@@ -407,36 +389,37 @@ pub fn insert_or_update_file(
           preview_data = COALESCE(excluded.preview_data, transfer_files.preview_data),
           updated_at = strftime('%s','now') * 1000",
         params![
-            file.id,
-            file.session_id,
-            file.relative_path,
-            file.source_path,
-            file.target_path,
+            file.id.as_str(),
+            file.session_id.as_str(),
+            file.relative_path.as_str(),
+            file.source_path.as_deref(),
+            file.target_path.as_deref(),
             to_db_i64(file.size_bytes),
             to_db_i64(file.transferred_bytes),
             file.chunk_size,
             file.chunk_count,
             completed_bitmap,
-            file.blake3,
-            file.mime_type,
-            file.preview_kind,
-            file.preview_data,
+            file.blake3.as_deref(),
+            file.mime_type.as_deref(),
+            file.preview_kind.as_deref(),
+            file.preview_data.as_deref(),
             file.status.as_str(),
             if file.is_folder_archive { 1 } else { 0 },
         ],
-    )?;
+    )
+    .await?;
     Ok(())
 }
 
-pub fn upsert_files_batch(pool: &DbPool, items: &[TransferFilePersistItem]) -> AppResult<()> {
+pub async fn upsert_files_batch(conn: &DbConn, items: &[TransferFilePersistItem]) -> AppResult<()> {
     if items.is_empty() {
         return Ok(());
     }
 
-    let mut conn = pool.get()?;
-    let transaction = conn.transaction()?;
-    {
-        let mut statement = transaction.prepare(
+    let tx = conn.transaction().await?;
+    for item in items {
+        let file = &item.file;
+        tx.execute(
             "INSERT INTO transfer_files
              (id, session_id, relative_path, source_path, target_path, size_bytes, transferred_bytes, chunk_size, chunk_count,
               completed_bitmap, blake3, mime_type, preview_kind, preview_data, status, is_folder_archive, updated_at)
@@ -451,39 +434,34 @@ pub fn upsert_files_batch(pool: &DbPool, items: &[TransferFilePersistItem]) -> A
               preview_kind = COALESCE(excluded.preview_kind, transfer_files.preview_kind),
               preview_data = COALESCE(excluded.preview_data, transfer_files.preview_data),
               updated_at = strftime('%s','now') * 1000",
-        )?;
-
-        for item in items {
-            let file = &item.file;
-            statement.execute(params![
-                file.id,
-                file.session_id,
-                file.relative_path,
-                file.source_path,
-                file.target_path,
+            params![
+                file.id.as_str(),
+                file.session_id.as_str(),
+                file.relative_path.as_str(),
+                file.source_path.as_deref(),
+                file.target_path.as_deref(),
                 to_db_i64(file.size_bytes),
                 to_db_i64(file.transferred_bytes),
                 file.chunk_size,
                 file.chunk_count,
                 item.completed_bitmap.as_slice(),
-                file.blake3,
-                file.mime_type,
-                file.preview_kind,
-                file.preview_data,
+                file.blake3.as_deref(),
+                file.mime_type.as_deref(),
+                file.preview_kind.as_deref(),
+                file.preview_data.as_deref(),
                 file.status.as_str(),
                 if file.is_folder_archive { 1 } else { 0 },
-            ])?;
-        }
+            ],
+        )
+        .await?;
     }
-
-    transaction.commit()?;
+    tx.commit().await?;
     Ok(())
 }
 
-pub fn upsert_session_progress(pool: &DbPool, session: &TransferSessionDto) -> AppResult<()> {
-    let mut conn = pool.get()?;
-    let transaction = conn.transaction()?;
-    transaction.execute(
+pub async fn upsert_session_progress(conn: &DbConn, session: &TransferSessionDto) -> AppResult<()> {
+    let tx = conn.transaction().await?;
+    tx.execute(
         "INSERT INTO transfer_sessions
          (id, direction, peer_device_id, peer_name, status, total_bytes, transferred_bytes, avg_speed_bps, save_dir,
           created_at, started_at, finished_at, error_code, error_message, cleanup_after_at)
@@ -503,190 +481,118 @@ pub fn upsert_session_progress(pool: &DbPool, session: &TransferSessionDto) -> A
           error_message = excluded.error_message,
           cleanup_after_at = excluded.cleanup_after_at",
         params![
-            session.id,
+            session.id.as_str(),
             session.direction.as_str(),
-            session.peer_device_id,
-            session.peer_name,
+            session.peer_device_id.as_str(),
+            session.peer_name.as_str(),
             session.status.as_str(),
             to_db_i64(session.total_bytes),
             to_db_i64(session.transferred_bytes),
             to_db_i64(session.avg_speed_bps),
-            session.save_dir,
+            session.save_dir.as_str(),
             session.created_at,
             session.started_at,
             session.finished_at,
-            session.error_code,
-            session.error_message,
+            session.error_code.as_deref(),
+            session.error_message.as_deref(),
             session.cleanup_after_at,
         ],
-    )?;
-    transaction.commit()?;
+    )
+    .await?;
+    tx.commit().await?;
     Ok(())
 }
 
-pub fn get_file_bitmap(
-    pool: &DbPool,
-    session_id: &str,
-    file_id: &str,
-) -> AppResult<Option<Vec<u8>>> {
-    let conn = pool.get()?;
-    let value = conn
-        .query_row(
+pub async fn get_file_bitmap(conn: &DbConn, session_id: &str, file_id: &str) -> AppResult<Option<Vec<u8>>> {
+    let mut rows = conn
+        .query(
             "SELECT completed_bitmap FROM transfer_files WHERE session_id = ?1 AND id = ?2 LIMIT 1",
             params![session_id, file_id],
-            |row| row.get::<_, Vec<u8>>(0),
         )
-        .optional()?;
-    Ok(value)
+        .await?;
+
+    if let Some(row) = rows.next().await? {
+        return Ok(Some(row.get::<Vec<u8>>(0)?));
+    }
+    Ok(None)
 }
 
-pub fn get_session(pool: &DbPool, session_id: &str) -> AppResult<Option<TransferSessionDto>> {
-    let conn = pool.get()?;
-    let session_row = conn
-        .query_row(
+pub async fn get_session(conn: &DbConn, session_id: &str) -> AppResult<Option<TransferSessionDto>> {
+    let mut rows = conn
+        .query(
             "SELECT id, direction, peer_device_id, peer_name, status, total_bytes, transferred_bytes, avg_speed_bps, save_dir,
                     created_at, started_at, finished_at, error_code, error_message, cleanup_after_at
              FROM transfer_sessions
              WHERE id = ?1
              LIMIT 1",
             params![session_id],
-            |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, String>(4)?,
-                    row.get::<_, i64>(5)?,
-                    row.get::<_, i64>(6)?,
-                    row.get::<_, i64>(7)?,
-                    row.get::<_, String>(8)?,
-                    row.get::<_, i64>(9)?,
-                    row.get::<_, Option<i64>>(10)?,
-                    row.get::<_, Option<i64>>(11)?,
-                    row.get::<_, Option<String>>(12)?,
-                    row.get::<_, Option<String>>(13)?,
-                    row.get::<_, Option<i64>>(14)?,
-                ))
-            },
         )
-        .optional()?;
+        .await?;
 
-    let Some((
-        id,
-        direction_raw,
-        peer_device_id,
-        peer_name,
-        status_raw,
-        total_bytes,
-        transferred_bytes,
-        avg_speed_bps,
-        save_dir,
-        created_at,
-        started_at,
-        finished_at,
-        error_code,
-        error_message,
-        cleanup_after_at,
-    )) = session_row
-    else {
+    let Some(row) = rows.next().await? else {
         return Ok(None);
     };
+
     let mut session = TransferSessionDto {
-        id,
-        direction: parse_transfer_direction(direction_raw, "transfer_sessions.direction")?,
-        peer_device_id,
-        peer_name,
-        status: parse_transfer_status(status_raw, "transfer_sessions.status")?,
-        total_bytes: from_db_i64(total_bytes),
-        transferred_bytes: from_db_i64(transferred_bytes),
-        avg_speed_bps: from_db_i64(avg_speed_bps),
-        save_dir,
-        created_at,
-        started_at,
-        finished_at,
-        error_code,
-        error_message,
-        cleanup_after_at,
+        id: row.get::<String>(0)?,
+        direction: parse_transfer_direction(row.get::<String>(1)?, "transfer_sessions.direction")?,
+        peer_device_id: row.get::<String>(2)?,
+        peer_name: row.get::<String>(3)?,
+        status: parse_transfer_status(row.get::<String>(4)?, "transfer_sessions.status")?,
+        total_bytes: from_db_i64(row.get::<i64>(5)?),
+        transferred_bytes: from_db_i64(row.get::<i64>(6)?),
+        avg_speed_bps: from_db_i64(row.get::<i64>(7)?),
+        save_dir: row.get::<String>(8)?,
+        created_at: row.get::<i64>(9)?,
+        started_at: row.get::<Option<i64>>(10)?,
+        finished_at: row.get::<Option<i64>>(11)?,
+        error_code: row.get::<Option<String>>(12)?,
+        error_message: row.get::<Option<String>>(13)?,
+        cleanup_after_at: row.get::<Option<i64>>(14)?,
         files: Vec::new(),
     };
 
-    session.files = list_session_files(pool, session.id.as_str())?;
+    session.files = list_session_files(conn, session.id.as_str()).await?;
     Ok(Some(session))
 }
 
-pub fn list_session_files(pool: &DbPool, session_id: &str) -> AppResult<Vec<TransferFileDto>> {
-    let conn = pool.get()?;
-    let mut statement = conn.prepare(
-        "SELECT id, session_id, relative_path, source_path, target_path, size_bytes, transferred_bytes, chunk_size, chunk_count,
-                status, blake3, mime_type, preview_kind, preview_data, is_folder_archive
-         FROM transfer_files
-         WHERE session_id = ?1
-         ORDER BY relative_path ASC",
-    )?;
-
-    let rows = statement.query_map(params![session_id], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, String>(2)?,
-            row.get::<_, Option<String>>(3)?,
-            row.get::<_, Option<String>>(4)?,
-            row.get::<_, i64>(5)?,
-            row.get::<_, i64>(6)?,
-            row.get::<_, u32>(7)?,
-            row.get::<_, u32>(8)?,
-            row.get::<_, String>(9)?,
-            row.get::<_, Option<String>>(10)?,
-            row.get::<_, Option<String>>(11)?,
-            row.get::<_, Option<String>>(12)?,
-            row.get::<_, Option<String>>(13)?,
-            row.get::<_, i64>(14)? == 1,
-        ))
-    })?;
+pub async fn list_session_files(conn: &DbConn, session_id: &str) -> AppResult<Vec<TransferFileDto>> {
+    let mut rows = conn
+        .query(
+            "SELECT id, session_id, relative_path, source_path, target_path, size_bytes, transferred_bytes, chunk_size, chunk_count,
+                    status, blake3, mime_type, preview_kind, preview_data, is_folder_archive
+             FROM transfer_files
+             WHERE session_id = ?1
+             ORDER BY relative_path ASC",
+            params![session_id],
+        )
+        .await?;
 
     let mut files = Vec::new();
-    for row in rows {
-        let (
-            id,
-            session_id,
-            relative_path,
-            source_path,
-            target_path,
-            size_bytes,
-            transferred_bytes,
-            chunk_size,
-            chunk_count,
-            status_raw,
-            blake3,
-            mime_type,
-            preview_kind,
-            preview_data,
-            is_folder_archive,
-        ) = row?;
+    while let Some(row) = rows.next().await? {
         files.push(TransferFileDto {
-            id,
-            session_id,
-            relative_path,
-            source_path,
-            target_path,
-            size_bytes: from_db_i64(size_bytes),
-            transferred_bytes: from_db_i64(transferred_bytes),
-            chunk_size,
-            chunk_count,
-            status: parse_transfer_status(status_raw, "transfer_files.status")?,
-            blake3,
-            mime_type,
-            preview_kind,
-            preview_data,
-            is_folder_archive,
+            id: row.get::<String>(0)?,
+            session_id: row.get::<String>(1)?,
+            relative_path: row.get::<String>(2)?,
+            source_path: row.get::<Option<String>>(3)?,
+            target_path: row.get::<Option<String>>(4)?,
+            size_bytes: from_db_i64(row.get::<i64>(5)?),
+            transferred_bytes: from_db_i64(row.get::<i64>(6)?),
+            chunk_size: row.get::<u32>(7)?,
+            chunk_count: row.get::<u32>(8)?,
+            status: parse_transfer_status(row.get::<String>(9)?, "transfer_files.status")?,
+            blake3: row.get::<Option<String>>(10)?,
+            mime_type: row.get::<Option<String>>(11)?,
+            preview_kind: row.get::<Option<String>>(12)?,
+            preview_data: row.get::<Option<String>>(13)?,
+            is_folder_archive: row.get::<i64>(14)? == 1,
         });
     }
     Ok(files)
 }
 
-fn list_files_for_sessions(
-    pool: &DbPool,
+async fn list_files_for_sessions(
+    conn: &DbConn,
     session_ids: &[String],
 ) -> AppResult<std::collections::HashMap<String, Vec<TransferFileDto>>> {
     if session_ids.is_empty() {
@@ -704,173 +610,117 @@ fn list_files_for_sessions(
          WHERE session_id IN ({placeholders})
          ORDER BY session_id ASC, relative_path ASC"
     );
+    let session_ids_owned = session_ids.to_vec();
 
-    let conn = pool.get()?;
-    let mut statement = conn.prepare(sql.as_str())?;
-    let rows = statement.query_map(params_from_iter(session_ids.iter()), |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, String>(2)?,
-            row.get::<_, Option<String>>(3)?,
-            row.get::<_, Option<String>>(4)?,
-            row.get::<_, i64>(5)?,
-            row.get::<_, i64>(6)?,
-            row.get::<_, u32>(7)?,
-            row.get::<_, u32>(8)?,
-            row.get::<_, String>(9)?,
-            row.get::<_, Option<String>>(10)?,
-            row.get::<_, Option<String>>(11)?,
-            row.get::<_, Option<String>>(12)?,
-            row.get::<_, Option<String>>(13)?,
-            row.get::<_, i64>(14)? == 1,
-        ))
-    })?;
+    let mut rows = conn
+        .query(sql.as_str(), params_from_iter(session_ids_owned))
+        .await?;
 
     let mut grouped = std::collections::HashMap::<String, Vec<TransferFileDto>>::new();
-    for row in rows {
-        let (
-            id,
-            session_id,
-            relative_path,
-            source_path,
-            target_path,
-            size_bytes,
-            transferred_bytes,
-            chunk_size,
-            chunk_count,
-            status_raw,
-            blake3,
-            mime_type,
-            preview_kind,
-            preview_data,
-            is_folder_archive,
-        ) = row?;
+    while let Some(row) = rows.next().await? {
+        let session_id = row.get::<String>(1)?;
         let file = TransferFileDto {
-            id,
+            id: row.get::<String>(0)?,
             session_id: session_id.clone(),
-            relative_path,
-            source_path,
-            target_path,
-            size_bytes: from_db_i64(size_bytes),
-            transferred_bytes: from_db_i64(transferred_bytes),
-            chunk_size,
-            chunk_count,
-            status: parse_transfer_status(status_raw, "transfer_files.status")?,
-            blake3,
-            mime_type,
-            preview_kind,
-            preview_data,
-            is_folder_archive,
+            relative_path: row.get::<String>(2)?,
+            source_path: row.get::<Option<String>>(3)?,
+            target_path: row.get::<Option<String>>(4)?,
+            size_bytes: from_db_i64(row.get::<i64>(5)?),
+            transferred_bytes: from_db_i64(row.get::<i64>(6)?),
+            chunk_size: row.get::<u32>(7)?,
+            chunk_count: row.get::<u32>(8)?,
+            status: parse_transfer_status(row.get::<String>(9)?, "transfer_files.status")?,
+            blake3: row.get::<Option<String>>(10)?,
+            mime_type: row.get::<Option<String>>(11)?,
+            preview_kind: row.get::<Option<String>>(12)?,
+            preview_data: row.get::<Option<String>>(13)?,
+            is_folder_archive: row.get::<i64>(14)? == 1,
         };
-        grouped
-            .entry(session_id)
-            .or_default()
-            .push(file);
+        grouped.entry(session_id).or_default().push(file);
     }
+
     Ok(grouped)
 }
 
-pub fn list_history(
-    pool: &DbPool,
+pub async fn list_history(
+    conn: &DbConn,
     filter: &TransferHistoryFilterDto,
 ) -> AppResult<TransferHistoryPageDto> {
-    let conn = pool.get()?;
     let limit = filter.limit.unwrap_or(30).clamp(1, HISTORY_LIMIT_MAX) as i64;
     let cursor = filter.cursor.clone().unwrap_or_default();
+    let (cursor_created_at, cursor_id) = if cursor.trim().is_empty() {
+        (None, None)
+    } else if let Some((created_at, id)) = cursor.split_once(':') {
+        (created_at.parse::<i64>().ok(), Some(id.to_string()))
+    } else {
+        (cursor.parse::<i64>().ok(), None)
+    };
     let status = filter
         .status
         .map(|value| value.as_str().to_string())
         .unwrap_or_default();
     let peer = filter.peer_device_id.clone().unwrap_or_default();
-
-    let mut statement = conn.prepare(
-        "SELECT id, direction, peer_device_id, peer_name, status, total_bytes, transferred_bytes, avg_speed_bps, save_dir,
-                created_at, started_at, finished_at, error_code, error_message, cleanup_after_at
-         FROM transfer_sessions
-         WHERE (?1 = '' OR created_at < CAST(?1 AS INTEGER))
-           AND (?2 = '' OR status = ?2)
-           AND (?3 = '' OR peer_device_id = ?3)
-         ORDER BY created_at DESC
-         LIMIT ?4",
-    )?;
-
-    let rows = statement.query_map(params![cursor, status, peer, limit], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, String>(2)?,
-            row.get::<_, String>(3)?,
-            row.get::<_, String>(4)?,
-            row.get::<_, i64>(5)?,
-            row.get::<_, i64>(6)?,
-            row.get::<_, i64>(7)?,
-            row.get::<_, String>(8)?,
-            row.get::<_, i64>(9)?,
-            row.get::<_, Option<i64>>(10)?,
-            row.get::<_, Option<i64>>(11)?,
-            row.get::<_, Option<String>>(12)?,
-            row.get::<_, Option<String>>(13)?,
-            row.get::<_, Option<i64>>(14)?,
-        ))
-    })?;
+    let cursor_enabled = if cursor_created_at.is_some() { 1 } else { 0 };
+    let cursor_created_at = cursor_created_at.unwrap_or_default();
+    let cursor_id = cursor_id.unwrap_or_default();
+    let mut rows = conn
+        .query(
+            "SELECT id, direction, peer_device_id, peer_name, status, total_bytes, transferred_bytes, avg_speed_bps, save_dir,
+                    created_at, started_at, finished_at, error_code, error_message, cleanup_after_at
+             FROM transfer_sessions
+             WHERE (?1 = 0 OR created_at < ?2 OR (created_at = ?2 AND id < ?3))
+               AND (?4 = '' OR status = ?4)
+               AND (?5 = '' OR peer_device_id = ?5)
+             ORDER BY created_at DESC, id DESC
+             LIMIT ?6",
+            params![
+                cursor_enabled,
+                cursor_created_at,
+                cursor_id,
+                status,
+                peer,
+                limit
+            ],
+        )
+        .await?;
 
     let mut items = Vec::new();
-    for row in rows {
-        let (
-            id,
-            direction_raw,
-            peer_device_id,
-            peer_name,
-            status_raw,
-            total_bytes,
-            transferred_bytes,
-            avg_speed_bps,
-            save_dir,
-            created_at,
-            started_at,
-            finished_at,
-            error_code,
-            error_message,
-            cleanup_after_at,
-        ) = row?;
+    while let Some(row) = rows.next().await? {
         items.push(TransferSessionDto {
-            id,
-            direction: parse_transfer_direction(direction_raw, "transfer_sessions.direction")?,
-            peer_device_id,
-            peer_name,
-            status: parse_transfer_status(status_raw, "transfer_sessions.status")?,
-            total_bytes: from_db_i64(total_bytes),
-            transferred_bytes: from_db_i64(transferred_bytes),
-            avg_speed_bps: from_db_i64(avg_speed_bps),
-            save_dir,
-            created_at,
-            started_at,
-            finished_at,
-            error_code,
-            error_message,
-            cleanup_after_at,
+            id: row.get::<String>(0)?,
+            direction: parse_transfer_direction(row.get::<String>(1)?, "transfer_sessions.direction")?,
+            peer_device_id: row.get::<String>(2)?,
+            peer_name: row.get::<String>(3)?,
+            status: parse_transfer_status(row.get::<String>(4)?, "transfer_sessions.status")?,
+            total_bytes: from_db_i64(row.get::<i64>(5)?),
+            transferred_bytes: from_db_i64(row.get::<i64>(6)?),
+            avg_speed_bps: from_db_i64(row.get::<i64>(7)?),
+            save_dir: row.get::<String>(8)?,
+            created_at: row.get::<i64>(9)?,
+            started_at: row.get::<Option<i64>>(10)?,
+            finished_at: row.get::<Option<i64>>(11)?,
+            error_code: row.get::<Option<String>>(12)?,
+            error_message: row.get::<Option<String>>(13)?,
+            cleanup_after_at: row.get::<Option<i64>>(14)?,
             files: Vec::new(),
         });
     }
 
     let session_ids = items.iter().map(|item| item.id.clone()).collect::<Vec<_>>();
-    let mut files_by_session = list_files_for_sessions(pool, session_ids.as_slice())?;
+    let mut files_by_session = list_files_for_sessions(conn, session_ids.as_slice()).await?;
     for item in &mut items {
-        item.files = files_by_session
-            .remove(item.id.as_str())
-            .unwrap_or_default();
+        item.files = files_by_session.remove(item.id.as_str()).unwrap_or_default();
     }
 
-    let next_cursor = items.last().map(|value| value.created_at.to_string());
+    let next_cursor = items
+        .last()
+        .map(|value| format!("{}:{}", value.created_at, value.id));
     Ok(TransferHistoryPageDto { items, next_cursor })
 }
 
-pub fn clear_history(pool: &DbPool, all: bool, older_than_days: u32) -> AppResult<()> {
-    let conn = pool.get()?;
+pub async fn clear_history(conn: &DbConn, all: bool, older_than_days: u32) -> AppResult<()> {
     if all {
-        conn.execute("DELETE FROM transfer_files", [])?;
-        conn.execute("DELETE FROM transfer_sessions", [])?;
+        conn.execute("DELETE FROM transfer_sessions", ()).await?;
         return Ok(());
     }
 
@@ -881,34 +731,27 @@ pub fn clear_history(pool: &DbPool, all: bool, older_than_days: u32) -> AppResul
         - i64::from(older_than_days.clamp(1, 365)) * 86_400_000;
 
     conn.execute(
-        "DELETE FROM transfer_files WHERE session_id IN (SELECT id FROM transfer_sessions WHERE created_at < ?1)",
-        params![threshold],
-    )?;
-    conn.execute(
         "DELETE FROM transfer_sessions WHERE created_at < ?1",
         params![threshold],
-    )?;
+    )
+    .await?;
     Ok(())
 }
 
-pub fn cleanup_expired(pool: &DbPool, now_millis: i64) -> AppResult<()> {
-    let conn = pool.get()?;
-    conn.execute(
-        "DELETE FROM transfer_files WHERE session_id IN (SELECT id FROM transfer_sessions WHERE cleanup_after_at IS NOT NULL AND cleanup_after_at <= ?1)",
-        params![now_millis],
-    )?;
+pub async fn cleanup_expired(conn: &DbConn, now_millis: i64) -> AppResult<()> {
     conn.execute(
         "DELETE FROM transfer_sessions WHERE cleanup_after_at IS NOT NULL AND cleanup_after_at <= ?1",
         params![now_millis],
-    )?;
+    )
+    .await?;
     Ok(())
 }
 
-pub fn list_failed_sessions(
-    pool: &DbPool,
+pub async fn list_failed_sessions(
+    conn: &DbConn,
     session_id: &str,
 ) -> AppResult<Option<TransferSessionDto>> {
-    let session = get_session(pool, session_id)?;
+    let session = get_session(conn, session_id).await?;
     let Some(value) = session else {
         return Ok(None);
     };
@@ -964,8 +807,8 @@ pub fn merge_online_peers(
     peers
 }
 
-pub fn ensure_session_exists(pool: &DbPool, session_id: &str) -> AppResult<TransferSessionDto> {
-    get_session(pool, session_id)?.ok_or_else(|| {
+pub async fn ensure_session_exists(conn: &DbConn, session_id: &str) -> AppResult<TransferSessionDto> {
+    get_session(conn, session_id).await?.ok_or_else(|| {
         AppError::new("transfer_session_not_found", "未找到对应传输会话")
             .with_context("sessionId", session_id.to_string())
     })

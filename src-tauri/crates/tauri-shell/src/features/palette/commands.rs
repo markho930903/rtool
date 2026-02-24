@@ -1,8 +1,8 @@
 use super::run_command_sync;
-use app_launcher_app::launcher::palette::{execute_palette_action, search_palette};
+use crate::host::launcher::TauriLauncherHost;
 use app_core::InvokeError;
 use app_core::models::{ActionResultDto, PaletteItemDto};
-use crate::host::launcher::TauriLauncherHost;
+use app_launcher_app::launcher::palette::{execute_palette_action, search_palette};
 
 #[tauri::command]
 pub fn palette_search(

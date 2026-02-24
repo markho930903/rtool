@@ -1,24 +1,26 @@
+use crate::host::LauncherHost;
+use crate::launcher::icon::{resolve_builtin_icon, resolve_file_type_icon};
 use app_core::i18n::t;
 use app_core::models::{
     LauncherActionDto, LauncherIndexStatusDto, LauncherItemDto, LauncherRebuildResultDto,
     LauncherSearchSettingsDto, LauncherUpdateSearchSettingsInputDto,
 };
 use app_core::{AppError, AppResult};
-use crate::host::LauncherHost;
-use crate::launcher::icon::{resolve_builtin_icon, resolve_file_type_icon};
-use app_infra::db::{DbPool, get_app_setting, set_app_setting};
+use app_infra::db::{DbConn, get_app_setting, set_app_setting};
+use libsql::params_from_iter;
 use regex::Regex;
-use rusqlite::{OptionalExtension, params, params_from_iter};
 use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashSet, VecDeque};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::path::{Component, Path, PathBuf};
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use tokio::sync::Mutex;
+use tokio::time::sleep;
 
 const INDEX_READY_KEY: &str = "launcher.index.ready";
 const INDEX_LAST_BUILD_MS_KEY: &str = "launcher.index.lastBuildMs";
@@ -384,7 +386,7 @@ fn log_scan_truncation(
     }
 }
 
-pub fn start_background_indexer(db_pool: DbPool) {
+pub fn start_background_indexer(db_conn: DbConn) {
     let started = indexer_started_flag();
     let stopped = indexer_stopped_flag();
     if started.swap(true, Ordering::SeqCst) {
@@ -392,43 +394,31 @@ pub fn start_background_indexer(db_pool: DbPool) {
     }
     stopped.store(false, Ordering::SeqCst);
 
-    let spawn_result = thread::Builder::new()
-        .name("launcher-indexer".to_string())
-        .spawn(move || {
-            index_building_flag().store(true, Ordering::SeqCst);
-            let initial_result = refresh_index(&db_pool, RefreshReason::Startup);
-            index_building_flag().store(false, Ordering::SeqCst);
-            if let Err(error) = initial_result {
-                let _ = write_meta(&db_pool, INDEX_READY_KEY, "0");
-                let _ = write_meta(&db_pool, INDEX_LAST_ERROR_KEY, error.to_string().as_str());
+    tauri::async_runtime::spawn(async move {
+        index_building_flag().store(true, Ordering::SeqCst);
+        let initial_result = refresh_index(&db_conn, RefreshReason::Startup).await;
+        index_building_flag().store(false, Ordering::SeqCst);
+        if let Err(error) = initial_result {
+            let error_text = error.to_string();
+            let _ = write_meta(&db_conn, INDEX_READY_KEY, "0").await;
+            let _ = write_meta(&db_conn, INDEX_LAST_ERROR_KEY, error_text.as_str()).await;
+            tracing::warn!(event = "launcher_index_initial_build_failed", error = error_text);
+        }
+
+        loop {
+            if wait_for_next_refresh(&db_conn, stopped).await {
+                break;
+            }
+            if let Err(error) = refresh_index(&db_conn, RefreshReason::Periodic).await {
+                let error_text = error.to_string();
+                let _ = write_meta(&db_conn, INDEX_LAST_ERROR_KEY, error_text.as_str()).await;
                 tracing::warn!(
-                    event = "launcher_index_initial_build_failed",
-                    error = error.to_string()
+                    event = "launcher_index_periodic_refresh_failed",
+                    error = error_text
                 );
             }
-
-            loop {
-                if wait_for_next_refresh(&db_pool, stopped) {
-                    break;
-                }
-                if let Err(error) = refresh_index(&db_pool, RefreshReason::Periodic) {
-                    let _ = write_meta(&db_pool, INDEX_LAST_ERROR_KEY, error.to_string().as_str());
-                    tracing::warn!(
-                        event = "launcher_index_periodic_refresh_failed",
-                        error = error.to_string()
-                    );
-                }
-            }
-        });
-
-    if let Err(error) = spawn_result {
-        started.store(false, Ordering::SeqCst);
-        tracing::error!(
-            event = "launcher_indexer_spawn_failed",
-            error = error.to_string()
-        );
-        return;
-    }
+        }
+    });
 
     tracing::info!(event = "launcher_indexer_started");
 }
@@ -443,16 +433,16 @@ pub fn stop_background_indexer() {
     started.store(false, Ordering::SeqCst);
 }
 
-pub fn get_search_settings(db_pool: &DbPool) -> AppResult<LauncherSearchSettingsDto> {
-    let settings = load_or_init_settings(db_pool)?;
+pub async fn get_search_settings_async(db_conn: &DbConn) -> AppResult<LauncherSearchSettingsDto> {
+    let settings = load_or_init_settings(db_conn).await?;
     Ok(settings.to_dto())
 }
 
-pub fn update_search_settings(
-    db_pool: &DbPool,
+pub async fn update_search_settings_async(
+    db_conn: &DbConn,
     input: LauncherUpdateSearchSettingsInputDto,
 ) -> AppResult<LauncherSearchSettingsDto> {
-    let current = load_or_init_settings(db_pool)?;
+    let current = load_or_init_settings(db_conn).await?;
     let next = LauncherSearchSettingsRecord {
         roots: input.roots.unwrap_or(current.roots),
         exclude_patterns: input.exclude_patterns.unwrap_or(current.exclude_patterns),
@@ -467,37 +457,45 @@ pub fn update_search_settings(
     }
     .normalize();
 
-    save_settings(db_pool, &next)?;
+    save_settings(db_conn, &next).await?;
     Ok(next.to_dto())
 }
 
-pub fn get_index_status(db_pool: &DbPool) -> AppResult<LauncherIndexStatusDto> {
-    let ready = read_meta(db_pool, INDEX_READY_KEY)?
+pub async fn get_index_status_async(db_conn: &DbConn) -> AppResult<LauncherIndexStatusDto> {
+    let ready = read_meta(db_conn, INDEX_READY_KEY)
+        .await?
         .as_deref()
         .map(is_truthy_flag)
         .unwrap_or(false);
-    let indexed_items = read_meta(db_pool, INDEX_LAST_ITEM_COUNT_KEY)?
+    let indexed_items = read_meta(db_conn, INDEX_LAST_ITEM_COUNT_KEY)
+        .await?
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(0);
-    let indexed_roots = read_meta(db_pool, INDEX_LAST_ROOT_COUNT_KEY)?
+    let indexed_roots = read_meta(db_conn, INDEX_LAST_ROOT_COUNT_KEY)
+        .await?
         .and_then(|value| value.parse::<u32>().ok())
         .unwrap_or(0);
-    let last_build_ms =
-        read_meta(db_pool, INDEX_LAST_BUILD_MS_KEY)?.and_then(|value| value.parse().ok());
-    let last_duration_ms =
-        read_meta(db_pool, INDEX_LAST_DURATION_MS_KEY)?.and_then(|value| value.parse::<u64>().ok());
-    let last_error = read_meta(db_pool, INDEX_LAST_ERROR_KEY)?
+    let last_build_ms = read_meta(db_conn, INDEX_LAST_BUILD_MS_KEY)
+        .await?
+        .and_then(|value| value.parse().ok());
+    let last_duration_ms = read_meta(db_conn, INDEX_LAST_DURATION_MS_KEY)
+        .await?
+        .and_then(|value| value.parse::<u64>().ok());
+    let last_error = read_meta(db_conn, INDEX_LAST_ERROR_KEY)
+        .await?
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty());
-    let index_version = read_meta(db_pool, INDEX_VERSION_KEY)?
+    let index_version = read_meta(db_conn, INDEX_VERSION_KEY)
+        .await?
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| INDEX_VERSION_VALUE.to_string());
-    let truncated = read_meta(db_pool, INDEX_LAST_TRUNCATED_KEY)?
+    let truncated = read_meta(db_conn, INDEX_LAST_TRUNCATED_KEY)
+        .await?
         .as_deref()
         .map(is_truthy_flag)
         .unwrap_or(false);
 
-    let settings = load_or_init_settings(db_pool)?;
+    let settings = load_or_init_settings(db_conn).await?;
     Ok(LauncherIndexStatusDto {
         ready,
         building: index_building_flag().load(Ordering::SeqCst),
@@ -512,11 +510,11 @@ pub fn get_index_status(db_pool: &DbPool) -> AppResult<LauncherIndexStatusDto> {
     })
 }
 
-pub fn rebuild_index_now(db_pool: &DbPool) -> AppResult<LauncherRebuildResultDto> {
+pub async fn rebuild_index_now_async(db_conn: &DbConn) -> AppResult<LauncherRebuildResultDto> {
     let started_at = Instant::now();
-    refresh_index(db_pool, RefreshReason::Manual)?;
+    refresh_index(db_conn, RefreshReason::Manual).await?;
     let duration_ms = u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX);
-    let status = get_index_status(db_pool)?;
+    let status = get_index_status_async(db_conn).await?;
     Ok(LauncherRebuildResultDto {
         success: status.ready,
         duration_ms,
@@ -527,24 +525,22 @@ pub fn rebuild_index_now(db_pool: &DbPool) -> AppResult<LauncherRebuildResultDto
     })
 }
 
-pub fn search_indexed_items(
+pub async fn search_indexed_items_async(
     app: &dyn LauncherHost,
-    db_pool: &DbPool,
+    db_conn: &DbConn,
     normalized_query: &str,
     locale: &str,
     limit: usize,
 ) -> AppResult<IndexedSearchResult> {
-    let ready = read_index_ready(db_pool)?;
+    let ready = read_index_ready(db_conn).await?;
     let limit = limit.max(1);
     let candidate_limit = (limit * QUERY_OVERSCAN_FACTOR).clamp(limit, MAX_QUERY_CANDIDATE_LIMIT);
-    let conn = db_pool.get()?;
-
     let rows = if normalized_query.is_empty() {
-        query_index_rows_default(&conn, candidate_limit as i64)?
+        query_index_rows_default(db_conn, candidate_limit as i64).await?
     } else {
         let fts_query = build_fts_query(normalized_query);
         if let Some(fts_query) = fts_query {
-            match query_index_rows_fts(&conn, fts_query.as_str(), candidate_limit as i64) {
+            match query_index_rows_fts(db_conn, fts_query.as_str(), candidate_limit as i64).await {
                 Ok(rows) => rows,
                 Err(error) => {
                     tracing::warn!(
@@ -552,11 +548,11 @@ pub fn search_indexed_items(
                         query = normalized_query,
                         error = error.to_string()
                     );
-                    query_index_rows_like(&conn, normalized_query, candidate_limit as i64)?
+                    query_index_rows_like(db_conn, normalized_query, candidate_limit as i64).await?
                 }
             }
         } else {
-            query_index_rows_like(&conn, normalized_query, candidate_limit as i64)?
+            query_index_rows_like(db_conn, normalized_query, candidate_limit as i64).await?
         }
     };
 
@@ -622,37 +618,36 @@ pub fn search_indexed_items(
     Ok(IndexedSearchResult { items, ready })
 }
 
-fn refresh_index(db_pool: &DbPool, reason: RefreshReason) -> AppResult<()> {
-    let _lock_guard = index_rebuild_lock()
-        .lock()
-        .map_err(|_| AppError::new("launcher_index_lock_failed", "启动器索引构建锁异常"))?;
+async fn refresh_index(db_conn: &DbConn, reason: RefreshReason) -> AppResult<()> {
+    let _lock_guard = index_rebuild_lock().lock().await;
     index_building_flag().store(true, Ordering::SeqCst);
 
     let started_at = Instant::now();
-    let result = refresh_index_inner(db_pool, reason, started_at);
+    let result = refresh_index_inner(db_conn, reason, started_at).await;
     index_building_flag().store(false, Ordering::SeqCst);
     if let Err(error) = &result {
+        let error_text = error.to_string();
         if matches!(reason, RefreshReason::Startup) {
-            let _ = write_meta(db_pool, INDEX_READY_KEY, "0");
+            let _ = write_meta(db_conn, INDEX_READY_KEY, "0").await;
         }
-        let _ = write_meta(db_pool, INDEX_LAST_ERROR_KEY, error.to_string().as_str());
+        let _ = write_meta(db_conn, INDEX_LAST_ERROR_KEY, error_text.as_str()).await;
     }
     result
 }
 
-fn refresh_index_inner(
-    db_pool: &DbPool,
+async fn refresh_index_inner(
+    db_conn: &DbConn,
     reason: RefreshReason,
     started_at: Instant,
 ) -> AppResult<()> {
     if matches!(reason, RefreshReason::Startup) {
-        write_meta(db_pool, INDEX_READY_KEY, "0")?;
+        write_meta(db_conn, INDEX_READY_KEY, "0").await?;
     }
 
-    let settings = load_or_init_settings(db_pool)?;
+    let settings = load_or_init_settings(db_conn).await?;
     let exclusion_rules = build_exclusion_rules(settings.exclude_patterns.as_slice());
     let scan_token = now_unix_millis().to_string();
-    write_meta(db_pool, INDEX_VERSION_KEY, INDEX_VERSION_VALUE)?;
+    write_meta(db_conn, INDEX_VERSION_KEY, INDEX_VERSION_VALUE).await?;
 
     let single_system_root_scope = has_single_system_root_scope(&settings);
     let mut indexed_items: usize = 0;
@@ -705,40 +700,45 @@ fn refresh_index_inner(
             );
         }
 
-        upsert_entries_batched(db_pool, outcome.entries.as_slice(), scan_token.as_str())?;
-        delete_stale_entries_for_root(db_pool, root.as_str(), scan_token.as_str())?;
+        upsert_entries_batched(db_conn, outcome.entries.as_slice(), scan_token.as_str()).await?;
+        delete_stale_entries_for_root(db_conn, root.as_str(), scan_token.as_str()).await?;
     }
 
-    purge_removed_roots(db_pool, settings.roots.as_slice())?;
+    purge_removed_roots(db_conn, settings.roots.as_slice()).await?;
 
     let duration_ms = u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX);
-    write_meta(db_pool, INDEX_READY_KEY, "1")?;
+    write_meta(db_conn, INDEX_READY_KEY, "1").await?;
     write_meta(
-        db_pool,
+        db_conn,
         INDEX_LAST_BUILD_MS_KEY,
         now_unix_millis().to_string().as_str(),
-    )?;
+    )
+    .await?;
     write_meta(
-        db_pool,
+        db_conn,
         INDEX_LAST_DURATION_MS_KEY,
         duration_ms.to_string().as_str(),
-    )?;
+    )
+    .await?;
     write_meta(
-        db_pool,
+        db_conn,
         INDEX_LAST_ITEM_COUNT_KEY,
         indexed_items.to_string().as_str(),
-    )?;
+    )
+    .await?;
     write_meta(
-        db_pool,
+        db_conn,
         INDEX_LAST_ROOT_COUNT_KEY,
         indexed_roots.to_string().as_str(),
-    )?;
+    )
+    .await?;
     write_meta(
-        db_pool,
+        db_conn,
         INDEX_LAST_TRUNCATED_KEY,
         if truncated { "1" } else { "0" },
-    )?;
-    write_meta(db_pool, INDEX_LAST_ERROR_KEY, "")?;
+    )
+    .await?;
+    write_meta(db_conn, INDEX_LAST_ERROR_KEY, "").await?;
 
     tracing::info!(
         event = "launcher_index_refresh_finished",
@@ -751,34 +751,80 @@ fn refresh_index_inner(
     Ok(())
 }
 
-fn upsert_entries_batched(
-    db_pool: &DbPool,
+async fn upsert_entries_batched(
+    db_conn: &DbConn,
     entries: &[LauncherIndexEntry],
     scan_token: &str,
 ) -> AppResult<()> {
     const UPSERT_BATCH_SIZE: usize = 2_000;
     for chunk in entries.chunks(UPSERT_BATCH_SIZE) {
-        let mut conn = db_pool.get()?;
-        let transaction = conn.transaction()?;
-        upsert_entries(&transaction, chunk, scan_token)?;
-        transaction.commit()?;
+        let transaction = db_conn.transaction().await?;
+        for entry in chunk {
+            transaction
+                .execute(
+                    r#"
+                    INSERT INTO launcher_index_entries (
+                        path,
+                        kind,
+                        name,
+                        parent,
+                        ext,
+                        mtime,
+                        size,
+                        source_root,
+                        searchable_text,
+                        scan_token
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                    ON CONFLICT(path) DO UPDATE SET
+                        kind = excluded.kind,
+                        name = excluded.name,
+                        parent = excluded.parent,
+                        ext = excluded.ext,
+                        mtime = excluded.mtime,
+                        size = excluded.size,
+                        source_root = excluded.source_root,
+                        searchable_text = excluded.searchable_text,
+                        scan_token = excluded.scan_token
+                    "#,
+                    (
+                        entry.path.as_str(),
+                        entry.kind.as_str(),
+                        entry.name.as_str(),
+                        entry.parent.as_str(),
+                        entry.ext.as_deref(),
+                        entry.mtime,
+                        entry.size,
+                        entry.source_root.as_str(),
+                        entry.searchable_text.as_str(),
+                        scan_token,
+                    ),
+                )
+                .await?;
+        }
+        transaction.commit().await?;
     }
     Ok(())
 }
 
-fn delete_stale_entries_for_root(db_pool: &DbPool, root: &str, scan_token: &str) -> AppResult<()> {
-    let conn = db_pool.get()?;
-    conn.execute(
+async fn delete_stale_entries_for_root(
+    db_conn: &DbConn,
+    root: &str,
+    scan_token: &str,
+) -> AppResult<()> {
+    db_conn
+        .execute(
         "DELETE FROM launcher_index_entries
          WHERE source_root = ?1
            AND COALESCE(scan_token, '') <> ?2",
-        params![root, scan_token],
-    )?;
+        (root, scan_token),
+    )
+    .await?;
     Ok(())
 }
 
-fn wait_for_next_refresh(db_pool: &DbPool, stopped: &AtomicBool) -> bool {
-    let refresh_interval_secs = load_or_init_settings(db_pool)
+async fn wait_for_next_refresh(db_conn: &DbConn, stopped: &AtomicBool) -> bool {
+    let refresh_interval_secs = load_or_init_settings(db_conn)
+        .await
         .map(|value| value.refresh_interval_secs)
         .unwrap_or(DEFAULT_REFRESH_INTERVAL_SECS);
     let target_ms = i64::from(refresh_interval_secs).saturating_mul(1000);
@@ -788,64 +834,17 @@ fn wait_for_next_refresh(db_pool: &DbPool, stopped: &AtomicBool) -> bool {
         if stopped.load(Ordering::SeqCst) {
             return true;
         }
-        thread::sleep(Duration::from_millis(poll_ms as u64));
+        sleep(Duration::from_millis(poll_ms as u64)).await;
         elapsed += poll_ms;
     }
     stopped.load(Ordering::SeqCst)
 }
 
-fn upsert_entries(
-    transaction: &rusqlite::Transaction<'_>,
-    entries: &[LauncherIndexEntry],
-    scan_token: &str,
-) -> AppResult<()> {
-    for entry in entries {
-        transaction.execute(
-            r#"
-            INSERT INTO launcher_index_entries (
-                path,
-                kind,
-                name,
-                parent,
-                ext,
-                mtime,
-                size,
-                source_root,
-                searchable_text,
-                scan_token
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
-            ON CONFLICT(path) DO UPDATE SET
-                kind = excluded.kind,
-                name = excluded.name,
-                parent = excluded.parent,
-                ext = excluded.ext,
-                mtime = excluded.mtime,
-                size = excluded.size,
-                source_root = excluded.source_root,
-                searchable_text = excluded.searchable_text,
-                scan_token = excluded.scan_token
-            "#,
-            params![
-                entry.path,
-                entry.kind.as_str(),
-                entry.name,
-                entry.parent,
-                entry.ext,
-                entry.mtime,
-                entry.size,
-                entry.source_root,
-                entry.searchable_text,
-                scan_token,
-            ],
-        )?;
-    }
-    Ok(())
-}
-
-fn purge_removed_roots(db_pool: &DbPool, roots: &[String]) -> AppResult<()> {
-    let conn = db_pool.get()?;
+async fn purge_removed_roots(db_conn: &DbConn, roots: &[String]) -> AppResult<()> {
     if roots.is_empty() {
-        conn.execute("DELETE FROM launcher_index_entries", [])?;
+        db_conn
+            .execute("DELETE FROM launcher_index_entries", ())
+            .await?;
         return Ok(());
     }
 
@@ -855,15 +854,19 @@ fn purge_removed_roots(db_pool: &DbPool, roots: &[String]) -> AppResult<()> {
         .join(", ");
     let sql =
         format!("DELETE FROM launcher_index_entries WHERE source_root NOT IN ({placeholders})");
-    conn.execute(sql.as_str(), params_from_iter(roots.iter()))?;
+    let root_refs = roots.iter().map(String::as_str).collect::<Vec<_>>();
+    db_conn
+        .execute(sql.as_str(), params_from_iter(root_refs))
+        .await?;
     Ok(())
 }
 
-fn query_index_rows_default(
-    conn: &rusqlite::Connection,
+async fn query_index_rows_default(
+    db_conn: &DbConn,
     limit: i64,
 ) -> AppResult<Vec<(String, String, String, String)>> {
-    let mut statement = conn.prepare(
+    let mut rows = db_conn
+        .query(
         r#"
         SELECT path, kind, name, parent
         FROM launcher_index_entries
@@ -877,16 +880,28 @@ fn query_index_rows_default(
             path COLLATE NOCASE ASC
         LIMIT ?1
         "#,
-    )?;
-    read_rows(statement.query(params![limit])?)
+        [limit],
+    )
+    .await?;
+    let mut values = Vec::new();
+    while let Some(row) = rows.next().await? {
+        values.push((
+            row.get::<String>(0)?,
+            row.get::<String>(1)?,
+            row.get::<String>(2)?,
+            row.get::<String>(3)?,
+        ));
+    }
+    Ok(values)
 }
 
-fn query_index_rows_fts(
-    conn: &rusqlite::Connection,
+async fn query_index_rows_fts(
+    db_conn: &DbConn,
     fts_query: &str,
     limit: i64,
 ) -> AppResult<Vec<(String, String, String, String)>> {
-    let mut statement = conn.prepare(
+    let mut rows = db_conn
+        .query(
         r#"
         SELECT e.path, e.kind, e.name, e.parent
         FROM launcher_index_entries_fts f
@@ -903,17 +918,29 @@ fn query_index_rows_fts(
             e.path COLLATE NOCASE ASC
         LIMIT ?2
         "#,
-    )?;
-    read_rows(statement.query(params![fts_query, limit])?)
+        (fts_query, limit),
+    )
+    .await?;
+    let mut values = Vec::new();
+    while let Some(row) = rows.next().await? {
+        values.push((
+            row.get::<String>(0)?,
+            row.get::<String>(1)?,
+            row.get::<String>(2)?,
+            row.get::<String>(3)?,
+        ));
+    }
+    Ok(values)
 }
 
-fn query_index_rows_like(
-    conn: &rusqlite::Connection,
+async fn query_index_rows_like(
+    db_conn: &DbConn,
     normalized_query: &str,
     limit: i64,
 ) -> AppResult<Vec<(String, String, String, String)>> {
     let pattern = format!("%{}%", escape_like_pattern(normalized_query));
-    let mut statement = conn.prepare(
+    let mut rows = db_conn
+        .query(
         r#"
         SELECT path, kind, name, parent
         FROM launcher_index_entries
@@ -928,14 +955,17 @@ fn query_index_rows_like(
             path COLLATE NOCASE ASC
         LIMIT ?2
         "#,
-    )?;
-    read_rows(statement.query(params![pattern, limit])?)
-}
-
-fn read_rows(mut rows: rusqlite::Rows<'_>) -> AppResult<Vec<(String, String, String, String)>> {
+        (pattern.as_str(), limit),
+    )
+    .await?;
     let mut values = Vec::new();
-    while let Some(row) = rows.next()? {
-        values.push((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?));
+    while let Some(row) = rows.next().await? {
+        values.push((
+            row.get::<String>(0)?,
+            row.get::<String>(1)?,
+            row.get::<String>(2)?,
+            row.get::<String>(3)?,
+        ));
     }
     Ok(values)
 }
@@ -1319,41 +1349,44 @@ fn should_skip_dir_traversal(path: &Path) -> bool {
             .is_some_and(|extension| extension.eq_ignore_ascii_case("app"))
 }
 
-fn read_index_ready(db_pool: &DbPool) -> AppResult<bool> {
-    let value = read_meta(db_pool, INDEX_READY_KEY)?;
+async fn read_index_ready(db_conn: &DbConn) -> AppResult<bool> {
+    let value = read_meta(db_conn, INDEX_READY_KEY).await?;
     Ok(value.as_deref().map(is_truthy_flag).unwrap_or(false))
 }
 
-fn read_meta(db_pool: &DbPool, key: &str) -> AppResult<Option<String>> {
-    let conn = db_pool.get()?;
-    conn.query_row(
-        "SELECT value FROM launcher_index_meta WHERE key = ?1 LIMIT 1",
-        params![key],
-        |row| row.get::<_, String>(0),
-    )
-    .optional()
-    .map_err(Into::into)
+async fn read_meta(db_conn: &DbConn, key: &str) -> AppResult<Option<String>> {
+    let mut rows = db_conn
+        .query(
+            "SELECT value FROM launcher_index_meta WHERE key = ?1 LIMIT 1",
+            [key],
+        )
+        .await?;
+    if let Some(row) = rows.next().await? {
+        return Ok(Some(row.get::<String>(0)?));
+    }
+    Ok(None)
 }
 
-fn write_meta(db_pool: &DbPool, key: &str, value: &str) -> AppResult<()> {
-    let conn = db_pool.get()?;
-    conn.execute(
-        "INSERT INTO launcher_index_meta (key, value) VALUES (?1, ?2)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        params![key, value],
-    )?;
+async fn write_meta(db_conn: &DbConn, key: &str, value: &str) -> AppResult<()> {
+    db_conn
+        .execute(
+            "INSERT INTO launcher_index_meta (key, value) VALUES (?1, ?2)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+        .await?;
     Ok(())
 }
 
-fn load_or_init_settings(db_pool: &DbPool) -> AppResult<LauncherSearchSettingsRecord> {
+async fn load_or_init_settings(db_conn: &DbConn) -> AppResult<LauncherSearchSettingsRecord> {
     let fallback = LauncherSearchSettingsRecord::default().normalize();
-    let settings = match get_app_setting(db_pool, SEARCH_SETTINGS_KEY)? {
+    let settings = match get_app_setting(db_conn, SEARCH_SETTINGS_KEY).await? {
         Some(raw_value) => {
             match serde_json::from_str::<LauncherSearchSettingsRecord>(raw_value.as_str()) {
                 Ok(parsed) => {
                     let normalized = parsed.clone().normalize();
                     if normalized != parsed {
-                        save_settings(db_pool, &normalized)?;
+                        save_settings(db_conn, &normalized).await?;
                     }
                     normalized
                 }
@@ -1362,25 +1395,26 @@ fn load_or_init_settings(db_pool: &DbPool) -> AppResult<LauncherSearchSettingsRe
                         event = "launcher_settings_parse_failed",
                         error = error.to_string()
                     );
-                    save_settings(db_pool, &fallback)?;
+                    save_settings(db_conn, &fallback).await?;
                     fallback
                 }
             }
         }
         None => {
-            save_settings(db_pool, &fallback)?;
+            save_settings(db_conn, &fallback).await?;
             fallback
         }
     };
 
-    enforce_scope_policy_migration(db_pool, settings)
+    enforce_scope_policy_migration(db_conn, settings).await
 }
 
-fn enforce_scope_policy_migration(
-    db_pool: &DbPool,
+async fn enforce_scope_policy_migration(
+    db_conn: &DbConn,
     mut settings: LauncherSearchSettingsRecord,
 ) -> AppResult<LauncherSearchSettingsRecord> {
-    let from_state = get_app_setting(db_pool, LAUNCHER_SCOPE_POLICY_APPLIED_KEY)?
+    let from_state = get_app_setting(db_conn, LAUNCHER_SCOPE_POLICY_APPLIED_KEY)
+        .await?
         .filter(|value| !value.trim().is_empty());
     if from_state.as_deref() == Some(LAUNCHER_SCOPE_POLICY_APPLIED_VALUE) {
         return Ok(settings);
@@ -1388,12 +1422,13 @@ fn enforce_scope_policy_migration(
 
     let old_roots_count = settings.roots.len() as u32;
     settings.roots = default_search_roots();
-    save_settings(db_pool, &settings)?;
+    save_settings(db_conn, &settings).await?;
     set_app_setting(
-        db_pool,
+        db_conn,
         LAUNCHER_SCOPE_POLICY_APPLIED_KEY,
         LAUNCHER_SCOPE_POLICY_APPLIED_VALUE,
-    )?;
+    )
+    .await?;
 
     tracing::info!(
         event = "launcher_scope_policy_migrated",
@@ -1407,12 +1442,12 @@ fn enforce_scope_policy_migration(
     Ok(settings)
 }
 
-fn save_settings(db_pool: &DbPool, settings: &LauncherSearchSettingsRecord) -> AppResult<()> {
+async fn save_settings(db_conn: &DbConn, settings: &LauncherSearchSettingsRecord) -> AppResult<()> {
     let serialized = serde_json::to_string(settings).map_err(|error| {
         AppError::new("launcher_settings_serialize_failed", "启动器设置序列化失败")
             .with_source(error)
     })?;
-    set_app_setting(db_pool, SEARCH_SETTINGS_KEY, serialized.as_str())
+    set_app_setting(db_conn, SEARCH_SETTINGS_KEY, serialized.as_str()).await
 }
 
 fn sanitize_roots(roots: Vec<String>) -> Vec<String> {

@@ -264,9 +264,7 @@ fn detect_path_type(path: &Path) -> AppManagerPathType {
 pub(super) fn build_app_detail(app: ManagedAppDto) -> ManagedAppDetailDto {
     let app_size_path = resolve_app_size_path(Path::new(app.path.as_str()));
     let size_snapshot = resolve_app_size_snapshot(app_size_path.as_path());
-    let app_size_bytes = size_snapshot
-        .size_bytes
-        .or(app.size_bytes);
+    let app_size_bytes = size_snapshot.size_bytes.or(app.size_bytes);
     let related_roots = collect_related_root_specs(&app)
         .into_iter()
         .map(|root| {

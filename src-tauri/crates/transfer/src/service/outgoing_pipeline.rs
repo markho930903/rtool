@@ -122,7 +122,7 @@ impl TransferService {
 
         for (index, file) in session.files.iter_mut().enumerate() {
             let bitmap = self
-                .blocking_get_file_bitmap(session.id.clone(), file.id.clone())
+                .get_file_bitmap_async(session.id.as_str(), file.id.as_str())
                 .await
                 .unwrap_or_default()
                 .unwrap_or_else(|| empty_bitmap(file.chunk_count));
@@ -191,10 +191,7 @@ impl TransferService {
             if runtime.file_done_sent || runtime.remaining_chunks == 0 {
                 continue;
             }
-            if app_infra::transfer::resume::is_chunk_done(
-                runtime.bitmap.as_slice(),
-                chunk_index,
-            ) {
+            if app_infra::transfer::resume::is_chunk_done(runtime.bitmap.as_slice(), chunk_index) {
                 continue;
             }
 

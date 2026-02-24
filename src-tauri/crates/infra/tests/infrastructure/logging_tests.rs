@@ -64,3 +64,15 @@ fn should_sanitize_data_url() {
     let result = sanitize_for_log("data:image/png;base64,AAAAA");
     assert!(result.starts_with("[data-url redacted"));
 }
+
+#[test]
+fn should_build_log_fts_query_with_prefix_tokens() {
+    let query = build_log_fts_query("error timeout io");
+    assert_eq!(query.as_deref(), Some("error* AND timeout* AND io*"));
+}
+
+#[test]
+fn should_fallback_when_keyword_cannot_build_fts_query() {
+    let query = build_log_fts_query("   ");
+    assert!(query.is_none());
+}

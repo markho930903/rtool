@@ -1,15 +1,15 @@
-use super::{run_blocking_command, run_command_async, run_command_sync};
-use app_clipboard::service::ClipboardService;
+use super::{run_command_async, run_command_sync};
 use crate::app::state::AppState;
+use crate::features::clipboard::events::emit_clipboard_sync;
+use anyhow::Context;
+use app_clipboard::service::ClipboardService;
 use app_core::models::{
     ClipboardFilterDto, ClipboardItemDto, ClipboardSettingsDto, ClipboardSyncPayload,
     ClipboardWindowModeAppliedDto,
 };
 use app_core::{AppError, AppResult, InvokeError, ResultExt};
-use crate::features::clipboard::events::emit_clipboard_sync;
 use app_infra::db;
 use app_infra::runtime::blocking::run_blocking;
-use anyhow::Context;
 use arboard::{Clipboard as ArboardClipboard, ImageData};
 use base64::Engine as _;
 use image::ImageReader;
@@ -260,23 +260,18 @@ fn copy_files_to_clipboard_with_verify(
 }
 
 async fn fetch_clipboard_item_or_not_found(
-    pool: db::DbPool,
+    db_conn: db::DbConn,
     query_id: String,
-    query_label: &'static str,
 ) -> AppResult<ClipboardItemDto> {
-    let item = run_blocking(query_label, move || {
-        db::get_clipboard_item(&pool, &query_id)
-    })
-    .await?;
+    let item = db::get_clipboard_item(&db_conn, &query_id).await?;
     item.ok_or_else(|| AppError::new("clipboard_not_found", "未找到对应剪贴板记录"))
 }
 
 async fn touch_clipboard_item(
     service: ClipboardService,
     item_id: String,
-    touch_label: &'static str,
 ) -> AppResult<ClipboardItemDto> {
-    run_blocking(touch_label, move || service.touch_item(item_id)).await
+    service.touch_item(item_id).await
 }
 
 fn emit_clipboard_touch_sync(app: &AppHandle, touched: ClipboardItemDto, reason: &str) {
@@ -300,12 +295,11 @@ pub async fn clipboard_list(
 ) -> Result<Vec<ClipboardItemDto>, InvokeError> {
     let service = state.clipboard_service.clone();
     let filter = filter.unwrap_or_else(default_filter);
-    run_blocking_command(
+    run_command_async(
         "clipboard_list",
         request_id,
         window_label,
-        "clipboard_list",
-        move || service.list(filter),
+        move || async move { service.list(filter).await },
     )
     .await
 }
@@ -325,7 +319,7 @@ pub async fn clipboard_pin(
         window_label,
         move || async move {
             let service = state.clipboard_service.clone();
-            let updated = run_blocking("clipboard_pin", move || service.pin(id, pinned)).await?;
+            let updated = service.pin(id, pinned).await?;
             emit_clipboard_sync(
                 &app,
                 ClipboardSyncPayload {
@@ -356,7 +350,7 @@ pub async fn clipboard_delete(
         move || async move {
             let service = state.clipboard_service.clone();
             let removed_id = id.clone();
-            run_blocking("clipboard_delete", move || service.delete(id)).await?;
+            service.delete(id).await?;
             emit_clipboard_sync(
                 &app,
                 ClipboardSyncPayload {
@@ -385,7 +379,7 @@ pub async fn clipboard_clear_all(
         window_label,
         move || async move {
             let service = state.clipboard_service.clone();
-            run_blocking("clipboard_clear_all", move || service.clear_all()).await?;
+            service.clear_all().await?;
             emit_clipboard_sync(
                 &app,
                 ClipboardSyncPayload {
@@ -415,8 +409,7 @@ pub async fn clipboard_save_text(
         window_label,
         move || async move {
             let service = state.clipboard_service.clone();
-            let saved =
-                run_blocking("clipboard_save_text", move || service.save_text(text, None)).await?;
+            let saved = service.save_text(text, None).await?;
             emit_clipboard_sync(
                 &app,
                 ClipboardSyncPayload {
@@ -439,12 +432,11 @@ pub async fn clipboard_get_settings(
     window_label: Option<String>,
 ) -> Result<ClipboardSettingsDto, InvokeError> {
     let service = state.clipboard_service.clone();
-    run_blocking_command(
+    run_command_async(
         "clipboard_get_settings",
         request_id,
         window_label,
-        "clipboard_get_settings",
-        move || Ok(service.get_settings()),
+        move || async move { Ok::<ClipboardSettingsDto, AppError>(service.get_settings()) },
     )
     .await
 }
@@ -465,10 +457,9 @@ pub async fn clipboard_update_settings(
         window_label,
         move || async move {
             let service = state.clipboard_service.clone();
-            let updated = run_blocking("clipboard_update_settings", move || {
-                service.update_settings(max_items, size_cleanup_enabled, max_total_size_mb)
-            })
-            .await?;
+            let updated = service
+                .update_settings(max_items, size_cleanup_enabled, max_total_size_mb)
+                .await?;
             if !updated.removed_ids.is_empty() {
                 emit_clipboard_sync(
                     &app,
@@ -538,12 +529,7 @@ pub async fn clipboard_copy_back(
         request_id,
         window_label,
         move || async move {
-            let item = fetch_clipboard_item_or_not_found(
-                state.db_pool.clone(),
-                id.clone(),
-                "clipboard_copy_back_query",
-            )
-            .await?;
+            let item = fetch_clipboard_item_or_not_found(state.db_conn.clone(), id.clone()).await?;
             if item.item_type == "file" {
                 let file_paths = parse_file_paths_from_plain_text(&item.plain_text)?;
                 copy_files_to_clipboard_with_verify(clipboard_plugin.inner(), &file_paths)?;
@@ -554,12 +540,7 @@ pub async fn clipboard_copy_back(
                     .map_err(AppError::from)?;
             }
 
-            let touched = touch_clipboard_item(
-                state.clipboard_service.clone(),
-                id.clone(),
-                "clipboard_copy_back_touch",
-            )
-            .await?;
+            let touched = touch_clipboard_item(state.clipboard_service.clone(), id.clone()).await?;
             emit_clipboard_touch_sync(&app, touched, "copy_back");
             Ok::<(), AppError>(())
         },
@@ -584,12 +565,7 @@ pub async fn clipboard_copy_file_paths(
         request_id,
         window_label,
         move || async move {
-            let item = fetch_clipboard_item_or_not_found(
-                state.db_pool.clone(),
-                id.clone(),
-                "clipboard_copy_file_paths_query",
-            )
-            .await?;
+            let item = fetch_clipboard_item_or_not_found(state.db_conn.clone(), id.clone()).await?;
             if item.item_type != "file" {
                 return Err(AppError::new("clipboard_not_file", "当前条目不是文件类型"));
             }
@@ -599,12 +575,7 @@ pub async fn clipboard_copy_file_paths(
                 .set_text(item.plain_text)
                 .map_err(AppError::from)?;
 
-            let touched = touch_clipboard_item(
-                state.clipboard_service.clone(),
-                id.clone(),
-                "clipboard_copy_file_paths_touch",
-            )
-            .await?;
+            let touched = touch_clipboard_item(state.clipboard_service.clone(), id.clone()).await?;
             emit_clipboard_touch_sync(&app, touched, "copy_file_paths");
             Ok(())
         },
@@ -625,12 +596,7 @@ pub async fn clipboard_copy_image_back(
         request_id,
         window_label,
         move || async move {
-            let item = fetch_clipboard_item_or_not_found(
-                state.db_pool.clone(),
-                id.clone(),
-                "clipboard_copy_image_back_query",
-            )
-            .await?;
+            let item = fetch_clipboard_item_or_not_found(state.db_conn.clone(), id.clone()).await?;
             if item.item_type != "image" {
                 return Err(AppError::new("clipboard_not_image", "当前条目不是图片类型"));
             }
@@ -677,12 +643,7 @@ pub async fn clipboard_copy_image_back(
                 .with_code("clipboard_set_image_failed", "写入图片到剪贴板失败")
                 .with_ctx("itemId", id.clone())?;
 
-            let touched = touch_clipboard_item(
-                state.clipboard_service.clone(),
-                id.clone(),
-                "clipboard_copy_image_back_touch",
-            )
-            .await?;
+            let touched = touch_clipboard_item(state.clipboard_service.clone(), id.clone()).await?;
             emit_clipboard_touch_sync(&app, touched, "copy_image_back");
 
             Ok(())

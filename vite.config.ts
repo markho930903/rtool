@@ -1,9 +1,9 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-import UnoCSS from "unocss/vite";
 import { fileURLToPath } from "node:url";
 
-// @ts-expect-error process is a nodejs global
+import react from "@vitejs/plugin-react";
+import UnoCSS from "unocss/vite";
+import { defineConfig } from "vite";
+
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/

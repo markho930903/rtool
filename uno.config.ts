@@ -1,3 +1,5 @@
+import { icons as lucideIcons } from "@iconify-json/lucide";
+import { icons as notoEmoji } from "@iconify-json/noto";
 import {
   defineConfig,
   presetAttributify,
@@ -10,9 +12,6 @@ import {
   transformerDirectives,
   transformerVariantGroup,
 } from "unocss";
-
-import { icons as lucideIcons } from "@iconify-json/lucide";
-import { icons as notoEmoji } from "@iconify-json/noto";
 
 export default defineConfig({
   safelist: [

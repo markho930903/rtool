@@ -1,11 +1,6 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-import type {
-  LogConfigDto,
-  LogEntryDto,
-  LogPageDto,
-  LogQueryDto,
-} from "@/contracts";
+import type { LogConfigDto, LogEntryDto, LogPageDto, LogQueryDto } from "@/contracts";
 import { invokeWithLog } from "@/services/invoke";
 
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error";

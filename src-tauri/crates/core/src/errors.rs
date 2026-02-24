@@ -287,15 +287,9 @@ impl From<anyhow::Error> for AppError {
     }
 }
 
-impl From<rusqlite::Error> for AppError {
-    fn from(value: rusqlite::Error) -> Self {
+impl From<libsql::Error> for AppError {
+    fn from(value: libsql::Error) -> Self {
         Self::new("db_error", "数据库操作失败").with_source(value)
-    }
-}
-
-impl From<r2d2::Error> for AppError {
-    fn from(value: r2d2::Error) -> Self {
-        Self::new("db_pool_error", "数据库连接池操作失败").with_source(value)
     }
 }
 

@@ -1,5 +1,5 @@
-import { cx } from "@/components/ui/utils";
 import type { AppManagerIconKind } from "@/components/app-manager/types";
+import { cx } from "@/components/ui/utils";
 
 interface AppEntityIconProps {
   iconKind?: AppManagerIconKind;
@@ -10,13 +10,7 @@ interface AppEntityIconProps {
 }
 
 export function AppEntityIcon(props: AppEntityIconProps) {
-  const {
-    iconKind,
-    iconValue,
-    fallbackIcon = "i-noto:desktop-computer",
-    imgClassName,
-    iconClassName,
-  } = props;
+  const { iconKind, iconValue, fallbackIcon = "i-noto:desktop-computer", imgClassName, iconClassName } = props;
 
   if (iconKind === "raster" && iconValue) {
     return (

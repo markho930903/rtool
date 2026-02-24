@@ -72,17 +72,12 @@ impl TransferService {
         &self,
         session: &TransferSessionDto,
     ) -> AppResult<()> {
-        let pool = self.db_pool.clone();
-        let session_for_store = session.clone();
-        run_blocking("transfer_insert_session", move || {
-            insert_session(&pool, &session_for_store)?;
-            for file in &session_for_store.files {
-                let bitmap = empty_bitmap(file.chunk_count);
-                insert_or_update_file(&pool, file, bitmap.as_slice())?;
-            }
-            Ok(())
-        })
-        .await
+        insert_session(&self.db_conn, session).await?;
+        for file in &session.files {
+            let bitmap = empty_bitmap(file.chunk_count);
+            insert_or_update_file(&self.db_conn, file, bitmap.as_slice()).await?;
+        }
+        Ok(())
     }
 
     pub(super) fn attach_outgoing_session_runtime(&self, session_id: &str, pair_code: &str) {

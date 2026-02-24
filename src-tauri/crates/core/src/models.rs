@@ -1,6 +1,6 @@
+use crate::{AppError, AppResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use crate::{AppError, AppResult};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

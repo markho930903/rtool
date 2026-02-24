@@ -85,16 +85,19 @@ impl TransferService {
         write_lock(self.session_last_emit_ms.as_ref(), "session_last_emit_ms").remove(session_id);
     }
 
-    pub fn pause_session(&self, session_id: &str) -> AppResult<()> {
+    pub async fn pause_session(&self, session_id: &str) -> AppResult<()> {
         self.apply_session_control_action(session_id, SessionControlOperation::Pause)
+            .await
     }
 
-    pub fn resume_session(&self, session_id: &str) -> AppResult<()> {
+    pub async fn resume_session(&self, session_id: &str) -> AppResult<()> {
         self.apply_session_control_action(session_id, SessionControlOperation::Resume)
+            .await
     }
 
-    pub fn cancel_session(&self, session_id: &str) -> AppResult<()> {
+    pub async fn cancel_session(&self, session_id: &str) -> AppResult<()> {
         self.apply_session_control_action(session_id, SessionControlOperation::Cancel)
+            .await
     }
 
     fn read_session_control(&self, session_id: &str) -> Option<RuntimeSessionControl> {
@@ -106,7 +109,7 @@ impl TransferService {
             })
     }
 
-    fn apply_session_control_action(
+    async fn apply_session_control_action(
         &self,
         session_id: &str,
         operation: SessionControlOperation,
@@ -114,7 +117,7 @@ impl TransferService {
         let control = self
             .read_session_control(session_id)
             .ok_or_else(|| operation.not_running_error())?;
-        let mut session = ensure_session_exists(&self.db_pool, session_id)?;
+        let mut session = self.ensure_session_exists_async(session_id).await?;
         let transition =
             resolve_session_control_transition(session.status, operation, now_millis())?;
         session.status = transition.status;
@@ -135,7 +138,7 @@ impl TransferService {
             }
         }
 
-        insert_session(&self.db_pool, &session)?;
+        insert_session(&self.db_conn, &session).await?;
         self.maybe_emit_session_snapshot(&session, None, 0, None, true, None, None, None, None);
         Ok(())
     }
@@ -172,9 +175,7 @@ impl TransferService {
         error: &AppError,
     ) -> AppResult<()> {
         let canceled = is_canceled_session_error(error);
-        let mut session = self
-            .blocking_ensure_session_exists(session_id.to_string())
-            .await?;
+        let mut session = self.ensure_session_exists_async(session_id).await?;
         Self::mark_session_terminal_state(
             &mut session,
             if canceled {

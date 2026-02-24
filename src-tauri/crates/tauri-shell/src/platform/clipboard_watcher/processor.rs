@@ -2,10 +2,10 @@ use super::image_preview::{
     build_image_signature, current_source_app, read_image_dimensions_from_header,
     save_clipboard_image_preview,
 };
+use crate::features::clipboard::events::emit_clipboard_sync;
 use app_clipboard::service::ClipboardService;
 use app_core::models::ClipboardSyncPayload;
 use app_infra;
-use crate::features::clipboard::events::emit_clipboard_sync;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager, Runtime};
 
@@ -39,7 +39,7 @@ impl<R: Runtime> ClipboardProcessor<R> {
         }
     }
 
-    fn handle_text(&mut self, text: String, source_app: Option<String>) -> bool {
+    async fn handle_text(&mut self, text: String, source_app: Option<String>) -> bool {
         let trimmed = text.trim().to_string();
         if trimmed.is_empty() || trimmed == self.last_seen {
             return true;
@@ -48,7 +48,7 @@ impl<R: Runtime> ClipboardProcessor<R> {
         self.last_seen = trimmed.clone();
         self.last_image_signature.clear();
 
-        match self.service.save_text(trimmed, source_app) {
+        match self.service.save_text(trimmed, source_app).await {
             Ok(result) => {
                 emit_clipboard_sync(
                     &self.app_handle,
@@ -76,7 +76,7 @@ impl<R: Runtime> ClipboardProcessor<R> {
         true
     }
 
-    fn handle_files(&mut self, files_uris: Vec<String>, source_app: Option<String>) -> bool {
+    async fn handle_files(&mut self, files_uris: Vec<String>, source_app: Option<String>) -> bool {
         let normalized_files: Vec<String> = files_uris
             .into_iter()
             .map(|value| value.trim().to_string())
@@ -94,7 +94,7 @@ impl<R: Runtime> ClipboardProcessor<R> {
         self.last_seen = serialized.clone();
         self.last_image_signature.clear();
 
-        match self.service.save_text(serialized, source_app) {
+        match self.service.save_text(serialized, source_app).await {
             Ok(result) => {
                 emit_clipboard_sync(
                     &self.app_handle,
@@ -122,7 +122,7 @@ impl<R: Runtime> ClipboardProcessor<R> {
         true
     }
 
-    fn handle_image(&mut self, png_bytes: &[u8], source_app: Option<String>) {
+    async fn handle_image(&mut self, png_bytes: &[u8], source_app: Option<String>) {
         let (width_u32, height_u32) =
             if let Some(dimensions) = read_image_dimensions_from_header(png_bytes) {
                 dimensions
@@ -185,7 +185,7 @@ impl<R: Runtime> ClipboardProcessor<R> {
             source_app,
         );
 
-        match self.service.save_item(item) {
+        match self.service.save_item(item).await {
             Ok(result) => {
                 emit_clipboard_sync(
                     &self.app_handle,
@@ -212,14 +212,14 @@ impl<R: Runtime> ClipboardProcessor<R> {
         }
     }
 
-    pub(super) fn handle_update_event(&mut self) {
+    pub(super) async fn handle_update_event(&mut self) {
         let source_app = current_source_app();
         let files_uris_result = {
             let clipboard = self.app_handle.state::<tauri_plugin_clipboard::Clipboard>();
             clipboard.read_files_uris()
         };
         if let Ok(files_uris) = files_uris_result
-            && self.handle_files(files_uris, source_app.clone())
+            && self.handle_files(files_uris, source_app.clone()).await
         {
             return;
         }
@@ -229,7 +229,7 @@ impl<R: Runtime> ClipboardProcessor<R> {
             clipboard.read_image_binary()
         };
         if let Ok(image_binary) = image_binary_result {
-            self.handle_image(&image_binary, source_app.clone());
+            self.handle_image(&image_binary, source_app.clone()).await;
             return;
         }
 
@@ -238,7 +238,7 @@ impl<R: Runtime> ClipboardProcessor<R> {
             clipboard.read_text()
         };
         if let Ok(text) = text_result {
-            self.handle_text(text, source_app);
+            self.handle_text(text, source_app).await;
         }
     }
 }

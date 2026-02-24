@@ -96,11 +96,11 @@ pub(super) fn collect_platform_apps(app: &dyn LauncherHost) -> Vec<ManagedAppDto
 pub(super) fn collect_index_source_fingerprint() -> String {
     #[cfg(target_os = "macos")]
     {
-        return collect_macos_source_fingerprint();
+        collect_macos_source_fingerprint()
     }
     #[cfg(target_os = "windows")]
     {
-        return collect_windows_source_fingerprint();
+        collect_windows_source_fingerprint()
     }
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {

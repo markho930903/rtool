@@ -6,7 +6,6 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
-
 import { Link, type LinkProps } from "react-router";
 
 import type { UiSize } from "@/components/ui/types";

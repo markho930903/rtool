@@ -5,16 +5,17 @@ use tauri::State;
 
 use super::{run_command_async, run_command_sync};
 use crate::app::state::AppState;
+use anyhow::Context;
 use app_core::models::{
     TransferClearHistoryInputDto, TransferHistoryFilterDto, TransferHistoryPageDto,
     TransferPairingCodeDto, TransferPeerDto, TransferSendFilesInputDto, TransferSessionDto,
     TransferSettingsDto, TransferUpdateSettingsInputDto,
 };
 use app_core::{AppError, AppResult, InvokeError, ResultExt};
-use anyhow::Context;
+use app_transfer::service::TransferService;
 
-fn ensure_transfer_bootstrapped(state: &State<'_, AppState>) -> AppResult<()> {
-    state.transfer_service.ensure_bootstrapped()
+fn ensure_transfer_bootstrapped(service: &TransferService) -> AppResult<()> {
+    service.ensure_bootstrapped()
 }
 
 fn open_path(path: &str) -> AppResult<()> {
@@ -72,18 +73,14 @@ pub fn transfer_get_settings(
 }
 
 #[tauri::command]
-pub fn transfer_update_settings(
+pub async fn transfer_update_settings(
     state: State<'_, AppState>,
     input: TransferUpdateSettingsInputDto,
-    request_id: Option<String>,
-    window_label: Option<String>,
+    _request_id: Option<String>,
+    _window_label: Option<String>,
 ) -> Result<TransferSettingsDto, InvokeError> {
-    run_command_sync(
-        "transfer_update_settings",
-        request_id,
-        window_label,
-        move || state.transfer_service.update_settings(input),
-    )
+    let service = state.transfer_service.clone();
+    service.update_settings(input).await.map_err(Into::into)
 }
 
 #[tauri::command]
@@ -103,19 +100,12 @@ pub fn transfer_generate_pairing_code(
 #[tauri::command]
 pub async fn transfer_start_discovery(
     state: State<'_, AppState>,
-    request_id: Option<String>,
-    window_label: Option<String>,
+    _request_id: Option<String>,
+    _window_label: Option<String>,
 ) -> Result<(), InvokeError> {
-    run_command_async(
-        "transfer_start_discovery",
-        request_id,
-        window_label,
-        move || async move {
-            ensure_transfer_bootstrapped(&state)?;
-            state.transfer_service.start_discovery()
-        },
-    )
-    .await
+    let service = state.transfer_service.clone();
+    ensure_transfer_bootstrapped(&service)?;
+    service.start_discovery().map_err(Into::into)
 }
 
 #[tauri::command]
@@ -138,143 +128,115 @@ pub fn transfer_stop_discovery(
 #[tauri::command]
 pub async fn transfer_list_peers(
     state: State<'_, AppState>,
-    request_id: Option<String>,
-    window_label: Option<String>,
+    _request_id: Option<String>,
+    _window_label: Option<String>,
 ) -> Result<Vec<TransferPeerDto>, InvokeError> {
-    run_command_async(
-        "transfer_list_peers",
-        request_id,
-        window_label,
-        move || async move {
-            ensure_transfer_bootstrapped(&state)?;
-            state.transfer_service.list_peers().await
-        },
-    )
-    .await
+    let service = state.transfer_service.clone();
+    ensure_transfer_bootstrapped(&service)?;
+    service.list_peers().await.map_err(Into::into)
 }
 
 #[tauri::command]
 pub async fn transfer_send_files(
     state: State<'_, AppState>,
     input: TransferSendFilesInputDto,
-    request_id: Option<String>,
-    window_label: Option<String>,
+    _request_id: Option<String>,
+    _window_label: Option<String>,
 ) -> Result<TransferSessionDto, InvokeError> {
-    run_command_async(
-        "transfer_send_files",
-        request_id,
-        window_label,
-        move || async move {
-            ensure_transfer_bootstrapped(&state)?;
-            state.transfer_service.send_files(input).await
-        },
-    )
-    .await
+    let service = state.transfer_service.clone();
+    ensure_transfer_bootstrapped(&service)?;
+    service.send_files(input).await.map_err(Into::into)
 }
 
 #[tauri::command]
-pub fn transfer_pause_session(
+pub async fn transfer_pause_session(
     state: State<'_, AppState>,
     session_id: String,
-    request_id: Option<String>,
-    window_label: Option<String>,
+    _request_id: Option<String>,
+    _window_label: Option<String>,
 ) -> Result<(), InvokeError> {
-    run_command_sync(
-        "transfer_pause_session",
-        request_id,
-        window_label,
-        move || state.transfer_service.pause_session(session_id.as_str()),
-    )
+    let service = state.transfer_service.clone();
+    service
+        .pause_session(session_id.as_str())
+        .await
+        .map_err(Into::into)
 }
 
 #[tauri::command]
-pub fn transfer_resume_session(
+pub async fn transfer_resume_session(
     state: State<'_, AppState>,
     session_id: String,
-    request_id: Option<String>,
-    window_label: Option<String>,
+    _request_id: Option<String>,
+    _window_label: Option<String>,
 ) -> Result<(), InvokeError> {
-    run_command_sync(
-        "transfer_resume_session",
-        request_id,
-        window_label,
-        move || state.transfer_service.resume_session(session_id.as_str()),
-    )
+    let service = state.transfer_service.clone();
+    service
+        .resume_session(session_id.as_str())
+        .await
+        .map_err(Into::into)
 }
 
 #[tauri::command]
-pub fn transfer_cancel_session(
+pub async fn transfer_cancel_session(
     state: State<'_, AppState>,
     session_id: String,
-    request_id: Option<String>,
-    window_label: Option<String>,
+    _request_id: Option<String>,
+    _window_label: Option<String>,
 ) -> Result<(), InvokeError> {
-    run_command_sync(
-        "transfer_cancel_session",
-        request_id,
-        window_label,
-        move || state.transfer_service.cancel_session(session_id.as_str()),
-    )
+    let service = state.transfer_service.clone();
+    service
+        .cancel_session(session_id.as_str())
+        .await
+        .map_err(Into::into)
 }
 
 #[tauri::command]
 pub async fn transfer_retry_session(
     state: State<'_, AppState>,
     session_id: String,
-    request_id: Option<String>,
-    window_label: Option<String>,
+    _request_id: Option<String>,
+    _window_label: Option<String>,
 ) -> Result<TransferSessionDto, InvokeError> {
-    run_command_async(
-        "transfer_retry_session",
-        request_id,
-        window_label,
-        move || async move {
-            ensure_transfer_bootstrapped(&state)?;
-            state
-                .transfer_service
-                .retry_session(session_id.as_str())
-                .await
-        },
-    )
-    .await
+    let service = state.transfer_service.clone();
+    ensure_transfer_bootstrapped(&service)?;
+    service
+        .retry_session(session_id.as_str())
+        .await
+        .map_err(Into::into)
 }
 
 #[tauri::command]
-pub fn transfer_list_history(
+pub async fn transfer_list_history(
     state: State<'_, AppState>,
     filter: Option<TransferHistoryFilterDto>,
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<TransferHistoryPageDto, InvokeError> {
-    run_command_sync(
+    let service = state.transfer_service.clone();
+    run_command_async(
         "transfer_list_history",
         request_id,
         window_label,
-        move || {
-            state
-                .transfer_service
-                .list_history(filter.unwrap_or_default())
-        },
+        move || async move { service.list_history(filter.unwrap_or_default()).await },
     )
+    .await
 }
 
 #[tauri::command]
-pub fn transfer_clear_history(
+pub async fn transfer_clear_history(
     state: State<'_, AppState>,
     input: Option<TransferClearHistoryInputDto>,
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<(), InvokeError> {
-    run_command_sync(
+    let service = state.transfer_service.clone();
+    run_command_async(
         "transfer_clear_history",
         request_id,
         window_label,
-        move || {
-            state
-                .transfer_service
-                .clear_history(input.unwrap_or_default())
-        },
+        move || async move { service.clear_history(input.unwrap_or_default()).await },
     )
+    .await
 }
 
 #[tauri::command]

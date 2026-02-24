@@ -73,6 +73,8 @@ impl LauncherHost for TauriLauncherHost {
         compact: bool,
         source: &str,
     ) -> AppResult<app_core::models::ClipboardWindowModeAppliedDto> {
-        crate::platform::native_ui::clipboard_window::apply_clipboard_window_mode(&self.app, compact, source)
+        crate::platform::native_ui::clipboard_window::apply_clipboard_window_mode(
+            &self.app, compact, source,
+        )
     }
 }

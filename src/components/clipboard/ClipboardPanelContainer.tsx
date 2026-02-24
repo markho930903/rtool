@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { ClipboardItem } from "@/components/clipboard/types";
 import ClipboardPanelView from "@/components/clipboard/ClipboardPanelView";
+import type { ClipboardItem } from "@/components/clipboard/types";
+import { useBootState } from "@/components/loading";
 import { useClipboardActionFeedback } from "@/hooks/clipboard/useClipboardActionFeedback";
 import { useClipboardDeleteUndo } from "@/hooks/clipboard/useClipboardDeleteUndo";
 import { useClipboardHotkeys } from "@/hooks/clipboard/useClipboardHotkeys";
-import { useBootState } from "@/components/loading";
 import { useClipboardStore } from "@/stores/clipboard.store";
 
 export interface ClipboardPanelProps {

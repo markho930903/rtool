@@ -21,7 +21,7 @@ export default function TransferPeerPanel(props: TransferPeerPanelProps) {
   }));
 
   return (
-    <section className="rounded-4 border border-border-muted bg-surface p-4">
+    <section className="ui-glass-panel p-4">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-text-primary">{t("peer.title")}</h2>
         <Button
@@ -63,7 +63,7 @@ export default function TransferPeerPanel(props: TransferPeerPanelProps) {
         />
       </div>
 
-      <div className="mt-4 max-h-60 overflow-auto space-y-1 rounded-2 border border-border-muted p-2">
+      <div className="mt-4 max-h-60 overflow-auto space-y-1 rounded-2 border border-border-glass bg-surface-glass-soft p-2 shadow-inset-soft">
         {props.peers.length === 0 ? <p className="text-xs text-text-secondary">{t("peer.empty")}</p> : null}
         {props.peers.map((peer) => (
           <div key={peer.deviceId} className="rounded-2 px-2 py-1.5 text-xs text-text-secondary">

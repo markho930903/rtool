@@ -16,14 +16,14 @@ export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 
 
 const variantClassMap: Record<InputVariant, string> = {
   default:
-    "w-full rounded-md border border-border-muted bg-surface px-3 py-1.5 text-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-accent",
-  tool: "w-full rounded-md border border-border-muted bg-surface px-2.5 py-1.5 text-ui-sm leading-ui-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-accent",
+    "w-full rounded-md border border-border-glass bg-surface-glass-soft px-3 py-1.5 text-sm text-text-primary shadow-inset-soft outline-none transition-colors placeholder:text-text-muted focus:border-border-glass-strong",
+  tool: "w-full rounded-md border border-border-glass bg-surface-glass-soft px-2.5 py-1.5 text-ui-sm leading-ui-sm text-text-primary shadow-inset-soft outline-none transition-colors placeholder:text-text-muted focus:border-border-glass-strong",
   clipboard:
-    "w-full rounded-md border border-border-muted bg-surface px-2.5 py-1.5 text-ui-sm leading-ui-sm text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-accent",
+    "w-full rounded-md border border-border-glass bg-surface-glass-soft px-2.5 py-1.5 text-ui-sm leading-ui-sm text-text-primary shadow-inset-soft outline-none transition-colors placeholder:text-text-muted focus:border-border-glass-strong",
   palette:
     "w-full border-none bg-transparent text-ui-md leading-ui-md text-text-primary outline-none placeholder:text-text-muted",
   theme:
-    "h-8 rounded-lg border border-border-muted bg-surface px-2 text-xs text-text-secondary outline-none transition-colors placeholder:text-text-muted focus:border-accent",
+    "h-8 rounded-lg border border-border-glass bg-surface-glass-soft px-2 text-xs text-text-secondary shadow-inset-soft outline-none transition-colors placeholder:text-text-muted focus:border-border-glass-strong",
 };
 
 const sizeClassMap: Record<InputSize, string> = {

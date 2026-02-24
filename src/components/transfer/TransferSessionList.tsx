@@ -42,7 +42,7 @@ export default function TransferSessionList(props: TransferSessionListProps) {
   const { t } = useTranslation("transfer");
 
   return (
-    <section className="rounded-4 border border-border-muted bg-surface p-4">
+    <section className="ui-glass-panel p-4">
       <h2 className="text-sm font-semibold text-text-primary">{t("session.title")}</h2>
 
       <div className="mt-3 max-h-[28rem] space-y-2 overflow-auto">
@@ -55,7 +55,7 @@ export default function TransferSessionList(props: TransferSessionListProps) {
           const canRetry = isTransferRetryableStatus(session.status);
 
           return (
-            <article key={session.id} className="rounded-3 border border-border-muted p-3">
+            <article key={session.id} className="rounded-3 border border-border-glass bg-surface-glass-soft p-3 shadow-inset-soft">
               <div className="flex items-center justify-between gap-2">
                 <div className="truncate text-xs font-semibold text-text-primary">{session.peerName}</div>
                 <div className="text-[10px] uppercase tracking-wide text-text-secondary">{session.status}</div>

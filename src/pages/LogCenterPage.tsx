@@ -63,9 +63,9 @@ function levelClassName(level: LogLevel): string {
     return "bg-accent/15 text-accent border-accent/35";
   }
   if (level === "debug") {
-    return "bg-surface-soft text-text-secondary border-border-muted";
+    return "bg-surface-glass-soft text-text-secondary border-border-glass";
   }
-  return "bg-surface-soft text-text-muted border-border-muted";
+  return "bg-surface-glass-soft text-text-muted border-border-glass";
 }
 
 export default function LogCenterPage() {
@@ -124,20 +124,20 @@ export default function LogCenterPage() {
 
   return (
     <div className="space-y-3 pb-2">
-      <section className="rounded-2xl border border-border-strong bg-surface p-4">
+      <section className="ui-glass-panel-strong rounded-2xl p-4">
         <div className="font-mono ui-text-micro uppercase tracking-ui-wider text-text-muted">
           rtool / log center / realtime
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <h1 className="m-0 text-xl font-semibold tracking-tight text-text-primary">{t("header.title")}</h1>
           <span
-            className={`rounded-full border px-2 py-0.5 font-mono ui-text-micro uppercase tracking-ui-wide ${
-              streamConnected ? "border-accent/35 bg-accent/10 text-accent" : "border-border-muted text-text-muted"
+            className={`ui-glass-chip px-2 py-0.5 font-mono ui-text-micro uppercase tracking-ui-wide ${
+              streamConnected ? "border-accent/35 bg-accent/10 text-accent" : "border-border-glass text-text-muted"
             }`}
           >
             {streamConnected ? t("stream.on") : t("stream.off")}
           </span>
-          <span className="rounded-full border border-border-muted bg-app px-2 py-0.5 font-mono ui-text-micro uppercase tracking-ui-wide text-text-muted">
+          <span className="ui-glass-chip px-2 py-0.5 font-mono ui-text-micro uppercase tracking-ui-wide text-text-muted">
             {t("minLevel", { level: config?.minLevel ?? t("common:status.empty") })}
           </span>
         </div>
@@ -168,7 +168,7 @@ export default function LogCenterPage() {
 
       <section className="overflow-x-auto pb-1">
         <div className="min-w-[980px] space-y-3">
-          <aside className="space-y-3 rounded-xl border border-border-muted bg-surface p-4">
+          <aside className="ui-glass-panel space-y-3 p-4">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h2 className="m-0 text-sm font-semibold text-text-primary">{t("filters.title")}</h2>
@@ -190,7 +190,7 @@ export default function LogCenterPage() {
               </Button>
             </div>
 
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-border-muted/70 bg-app/40 px-3 py-2">
+            <div className="flex items-center justify-between gap-3 rounded-lg border border-border-glass bg-surface-glass-soft px-3 py-2 shadow-inset-soft">
               <div className="min-w-0 flex flex-1 items-center gap-3">
                 <div className="shrink-0 text-xs text-text-muted">{t("filters.level")}</div>
                 <div className="min-w-0 flex-1 overflow-x-auto">
@@ -203,7 +203,7 @@ export default function LogCenterPage() {
                         className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs transition-colors ${
                           filters.levels.includes(option.value)
                             ? "border-accent/50 bg-accent/15 text-accent"
-                            : "border-border-muted bg-surface text-text-secondary hover:border-border-strong hover:bg-surface-soft"
+                            : "border-border-glass bg-surface-glass-soft text-text-secondary hover:border-border-glass-strong hover:bg-surface-glass"
                         }`}
                         onClick={() => toggleLevel(option.value, !filters.levels.includes(option.value))}
                       >
@@ -296,7 +296,7 @@ export default function LogCenterPage() {
               gridTemplateColumns: "minmax(0, 1.45fr) minmax(360px, 1fr)",
             }}
           >
-            <section className="flex h-[clamp(520px,68vh,760px)] min-h-0 flex-col rounded-xl border border-border-muted bg-surface p-3">
+            <section className="ui-glass-panel flex h-[clamp(520px,68vh,760px)] min-h-0 flex-col p-3">
               <div className="mb-2 flex items-center justify-between">
                 <h2 className="m-0 text-sm font-semibold text-text-primary">{t("list.title")}</h2>
                 <div className="text-xs text-text-muted">{t("list.count", { count: items.length })}</div>
@@ -306,7 +306,7 @@ export default function LogCenterPage() {
                 mode="overlay"
                 loading={loading && items.length === 0}
                 text={t("list.loading")}
-                containerClassName="min-h-0 flex-1 overflow-auto rounded-lg border border-border-muted/80 bg-app/55"
+                containerClassName="min-h-0 flex-1 overflow-auto rounded-lg border border-border-glass bg-surface-glass-soft shadow-inset-soft"
               >
                 <>
                   {!loading && items.length === 0 ? (
@@ -320,10 +320,10 @@ export default function LogCenterPage() {
                         unstyled
                         key={item.id}
                         type="button"
-                        className={`w-full border-b border-border-muted/60 px-3 py-2 text-left transition-colors last:border-b-0 ${
+                        className={`w-full border-b border-border-glass px-3 py-2 text-left transition-colors last:border-b-0 ${
                           selected
                             ? "bg-accent-soft shadow-inset-soft ring-1 ring-accent/20"
-                            : "hover:bg-surface-soft hover:ring-1 hover:ring-border-muted/70"
+                            : "hover:bg-surface-glass-soft hover:ring-1 hover:ring-border-glass"
                         }`}
                         onClick={() => selectLog(item.id)}
                       >
@@ -348,7 +348,7 @@ export default function LogCenterPage() {
                 </>
               </LoadingIndicator>
 
-              <div className="mt-2 flex shrink-0 items-center justify-between gap-2 rounded-md border border-border-muted/70 bg-app/35 px-2.5 py-2">
+              <div className="mt-2 flex shrink-0 items-center justify-between gap-2 rounded-md border border-border-glass bg-surface-glass-soft px-2.5 py-2 shadow-inset-soft">
                 <div className="text-xs text-text-muted">{nextCursor ? t("list.hasMore") : t("list.end")}</div>
                 <Button
                   size="default"
@@ -361,11 +361,11 @@ export default function LogCenterPage() {
               </div>
             </section>
 
-            <aside className="flex h-[clamp(520px,68vh,760px)] min-h-0 flex-col rounded-xl border border-border-muted bg-surface p-4">
+            <aside className="ui-glass-panel flex h-[clamp(520px,68vh,760px)] min-h-0 flex-col p-4">
               <div className="mb-2 flex shrink-0 items-center justify-between">
                 <h2 className="m-0 text-sm font-semibold text-text-primary">{t("detail.title")}</h2>
                 {selectedLog?.aggregatedCount ? (
-                  <span className="rounded border border-border-muted px-2 py-0.5 font-mono ui-text-micro text-text-muted">
+                  <span className="ui-glass-chip rounded px-2 py-0.5 font-mono ui-text-micro text-text-muted">
                     {t("detail.aggregated", { count: selectedLog.aggregatedCount })}
                   </span>
                 ) : null}
@@ -373,12 +373,12 @@ export default function LogCenterPage() {
 
               <div className="min-h-0 flex-1 overflow-y-auto pr-1">
                 {!selectedLog ? (
-                  <div className="grid h-full place-items-center rounded-lg border border-border-muted/70 bg-app/45 px-3 text-xs text-text-muted">
+                  <div className="grid h-full place-items-center rounded-lg border border-border-glass bg-surface-glass-soft px-3 text-xs text-text-muted shadow-inset-soft">
                     {t("detail.selectPrompt")}
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    <div className="rounded-lg border border-border-muted bg-app/60 p-2 text-xs">
+                    <div className="rounded-lg border border-border-glass bg-surface-glass-soft p-2 text-xs shadow-inset-soft">
                       <div className="grid grid-cols-[96px_1fr] gap-1">
                         <span className="text-text-muted">{t("field.time")}</span>
                         <span className="font-mono text-text-secondary">

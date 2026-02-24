@@ -22,6 +22,8 @@ export default defineConfig({
     "i-noto:outbox-tray",
     "i-noto:scroll",
     "i-noto:card-index-dividers",
+    "i-noto:bar-chart",
+    "i-noto:satellite-antenna",
     "i-noto:gear",
     "i-noto:clipboard",
     "i-noto:input-symbols",
@@ -49,14 +51,22 @@ export default defineConfig({
   theme: {
     colors: {
       app: "var(--color-bg-app)",
+      "bg-orb-1": "var(--color-bg-orb-1)",
+      "bg-orb-2": "var(--color-bg-orb-2)",
       elevated: "var(--color-bg-elevated)",
       surface: "var(--color-surface-card)",
+      "surface-card": "var(--color-surface-card)",
       "surface-soft": "var(--color-surface-soft)",
+      "surface-glass": "var(--color-surface-glass)",
+      "surface-glass-strong": "var(--color-surface-glass-strong)",
+      "surface-glass-soft": "var(--color-surface-glass-soft)",
       "surface-overlay": "var(--color-surface-overlay)",
       "surface-popover": "var(--color-surface-popover)",
       "surface-scrim": "var(--color-surface-scrim)",
       "border-muted": "var(--color-border-muted)",
       "border-strong": "var(--color-border-strong)",
+      "border-glass": "var(--color-border-glass)",
+      "border-glass-strong": "var(--color-border-glass-strong)",
       "text-primary": "var(--color-text-primary)",
       "text-secondary": "var(--color-text-secondary)",
       "text-muted": "var(--color-text-muted)",
@@ -69,11 +79,15 @@ export default defineConfig({
       "sidebar-item-active": "var(--color-sidebar-item-active)",
       "popover-highlight": "var(--color-popover-highlight)",
       "shimmer-highlight": "var(--color-shimmer-highlight)",
+      specular: "var(--color-specular)",
     },
     boxShadow: {
       surface: "var(--shadow-surface)",
       overlay: "var(--shadow-overlay)",
       popover: "var(--shadow-popover)",
+      "glass-card": "var(--shadow-glass-card)",
+      "glass-elevated": "var(--shadow-glass-elevated)",
+      "glass-inset": "var(--shadow-glass-inset)",
       "inset-soft": "var(--shadow-inset-soft)",
       "inset-divider": "var(--shadow-inset-divider)",
       "sidebar-item-active": "var(--shadow-sidebar-item-active)",
@@ -168,6 +182,18 @@ html[data-window-label="clipboard_history"] #root {
   overflow: hidden;
 }
 
+html[data-window-label="main"] body {
+  background: transparent;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+html[data-window-label="main"] #root {
+  background: transparent;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
 a {
   color: inherit;
 }
@@ -191,12 +217,21 @@ textarea {
     // layer: global reusable ui primitives only
     // 约束：shortcuts 仅用于跨页面复用的通用样式与设计规范，不承载页面/模块私有布局样式。
     "ui-page": "min-h-screen bg-app text-text-primary",
-    "ui-card": "rounded-2xl border border-border-muted bg-surface",
+    "ui-card":
+      "relative overflow-hidden rounded-2xl border border-border-glass bg-surface-glass shadow-[var(--shadow-surface)] backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]",
     "ui-btn-primary":
       "inline-flex items-center gap-1.5 rounded-xl border border-transparent bg-accent px-4 py-2 text-sm font-medium text-accent-contrast transition-opacity hover:opacity-90",
     "ui-btn-secondary":
-      "inline-flex items-center gap-1.5 rounded-xl border border-border-strong bg-surface px-4 py-2 text-sm text-text-primary transition-colors hover:bg-surface-soft",
+      "inline-flex items-center gap-1.5 rounded-xl border border-border-glass bg-surface-glass-soft px-4 py-2 text-sm text-text-primary shadow-[var(--shadow-inset-soft)] transition-colors hover:border-border-glass-strong hover:bg-surface-glass",
     "ui-section-title": "text-xl font-semibold text-text-primary",
+    "ui-glass-panel":
+      "relative overflow-hidden rounded-xl border border-border-glass bg-surface-glass shadow-[var(--shadow-surface)] backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]",
+    "ui-glass-panel-strong":
+      "relative overflow-hidden rounded-xl border border-border-glass-strong bg-surface-glass-strong shadow-[var(--shadow-overlay)] backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]",
+    "ui-glass-chip":
+      "inline-flex items-center rounded-full border border-border-glass bg-surface-glass-soft px-2 py-0.5 shadow-[var(--shadow-inset-soft)]",
+    "ui-glass-hover":
+      "transition-[background-color,border-color,color,box-shadow,transform] duration-200 ease-out hover:border-border-glass-strong hover:bg-surface-glass-soft hover:shadow-[var(--shadow-inset-soft)]",
     "text-ui-2xs": "[font-size:var(--font-size-ui-2xs)]",
     "text-ui-xs": "[font-size:var(--font-size-ui-xs)]",
     "text-ui-sm": "[font-size:var(--font-size-ui-sm)]",

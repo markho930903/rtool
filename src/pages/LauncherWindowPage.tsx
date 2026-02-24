@@ -356,8 +356,8 @@ export default function LauncherWindowPage() {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden rounded-md bg-transparent p-0">
-      <section className="flex h-full w-full overflow-hidden rounded-md border border-border-muted/85 bg-surface-overlay shadow-overlay backdrop-blur-[24px] backdrop-saturate-140">
-        <div className="flex min-w-0 flex-[1.4] flex-col border-r border-border-muted/85">
+      <section className="rtool-glass-sheen-clip flex h-full w-full overflow-hidden rounded-md border border-border-glass bg-surface-glass-strong shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]">
+        <div className="flex min-w-0 flex-[1.4] flex-col border-r border-border-glass">
           <PaletteInput
             query={query}
             loading={false}
@@ -458,8 +458,8 @@ export default function LauncherWindowPage() {
                               type="button"
                               className={
                                 isSelected
-                                  ? "w-full rounded-md border border-accent bg-accent-soft px-2.5 py-2.25 text-left transition-colors duration-[140ms] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                                  : "w-full rounded-md border border-transparent px-2.5 py-2.25 text-left transition-colors duration-[140ms] hover:bg-surface-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                  ? "w-full rounded-md border border-border-glass-strong bg-surface-glass-soft px-2.5 py-2.25 text-left text-text-primary shadow-inset-soft transition-colors duration-[140ms] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                                  : "w-full rounded-md border border-transparent px-2.5 py-2.25 text-left text-text-secondary transition-colors duration-[140ms] hover:bg-surface-glass-soft hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                               }
                               onMouseEnter={() => setSelectedIndex(index)}
                               onFocus={() => setSelectedIndex(index)}
@@ -499,7 +499,7 @@ export default function LauncherWindowPage() {
               : null}
           </div>
 
-          <footer className="flex gap-4 border-t border-border-muted/85 px-3 py-2 text-[11px] text-text-muted">
+          <footer className="flex gap-4 border-t border-border-glass px-3 py-2 text-[11px] text-text-muted">
             <span>{t("launcher.footer.select")}</span>
             <span>{t("launcher.footer.open")}</span>
             <span>{t("launcher.footer.close")}</span>

@@ -168,7 +168,7 @@ const AppListItem = memo(function AppListItem({
     <button
       type="button"
       className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
-        selected ? "border-accent/70 bg-accent/10" : "border-border-muted bg-surface-soft hover:border-accent/45"
+        selected ? "border-accent/70 bg-accent/10" : "border-border-glass bg-surface-glass-soft shadow-inset-soft hover:border-accent/45"
       }`}
       onClick={() => onSelect(app.id)}
     >
@@ -570,8 +570,8 @@ export default function AppManagerPage() {
   return (
     <section className="h-full min-h-0 p-5">
       <div className="grid h-full min-h-0 gap-4 md:grid-cols-[360px_minmax(0,1fr)]">
-        <aside className="flex h-full min-h-0 flex-col rounded-xl border border-border-muted bg-surface-card shadow-surface">
-          <div className="shrink-0 space-y-2 border-b border-border-muted px-3 py-2.5">
+        <aside className="ui-glass-panel flex h-full min-h-0 flex-col">
+          <div className="shrink-0 space-y-2 border-b border-border-glass px-3 py-2.5">
             <div className="flex items-start justify-between gap-2">
               <div className="space-y-0.5">
                 <h1 className="m-0 text-base font-semibold text-text-primary">{t("title")}</h1>
@@ -606,7 +606,7 @@ export default function AppManagerPage() {
                 }
               }}
             />
-            <div className="rounded-lg border border-border-muted bg-surface-soft px-2.5 py-1.5">
+            <div className="rounded-lg border border-border-glass bg-surface-glass-soft px-2.5 py-1.5 shadow-inset-soft">
               <SwitchField
                 checked={experimentalThirdPartyStartup}
                 controlPosition="end"
@@ -646,7 +646,7 @@ export default function AppManagerPage() {
               <div
                 className={`rounded-md border px-2.5 py-2 text-xs ${
                   lastActionResult.ok
-                    ? "border-border-muted bg-surface-soft text-text-secondary"
+                    ? "border-border-glass bg-surface-glass-soft text-text-secondary"
                     : "border-danger/35 bg-danger/10 text-danger"
                 }`}
               >
@@ -672,7 +672,7 @@ export default function AppManagerPage() {
             >
               <>
                 {!loading && items.length === 0 ? (
-                  <div className="rounded-lg border border-border-muted bg-surface-soft px-3 py-6 text-center text-sm text-text-muted">
+                  <div className="rounded-lg border border-border-glass bg-surface-glass-soft px-3 py-6 text-center text-sm text-text-muted shadow-inset-soft">
                     {t("status.empty")}
                   </div>
                 ) : null}
@@ -711,12 +711,12 @@ export default function AppManagerPage() {
         <div className="h-full min-h-0 overflow-y-auto pr-1">
           <div className="space-y-3 pb-2">
             {!selectedApp ? (
-              <div className="rounded-xl border border-border-muted bg-surface-card px-4 py-8 text-center text-sm text-text-muted">
+              <div className="ui-glass-panel px-4 py-8 text-center text-sm text-text-muted">
                 {t("detail.empty")}
               </div>
             ) : (
               <>
-                <section className="rounded-xl border border-border-muted bg-surface-card px-4 py-4 shadow-surface">
+                <section className="ui-glass-panel px-4 py-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
@@ -824,14 +824,14 @@ export default function AppManagerPage() {
                     <LoadingIndicator
                       mode="overlay"
                       text={t("detail.loading")}
-                      containerClassName="mt-3 rounded-md border border-border-muted/65 bg-surface-soft"
+                      containerClassName="mt-3 rounded-md border border-border-glass bg-surface-glass-soft shadow-inset-soft"
                       minHeightClassName="min-h-16"
                       showMask={false}
                     />
                   ) : null}
                 </section>
 
-                <section className="rounded-xl border border-border-muted bg-surface-card px-4 py-4 shadow-surface">
+                <section className="ui-glass-panel px-4 py-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h3 className="m-0 text-sm font-semibold text-text-primary">{t("detail.relatedRoots")}</h3>
                     <span className="text-xs text-text-secondary">
@@ -848,7 +848,7 @@ export default function AppManagerPage() {
                     </div>
                   ) : null}
 
-                  <div className="mt-3 rounded-lg border border-border-muted bg-surface-soft">
+                  <div className="mt-3 rounded-lg border border-border-glass bg-surface-glass-soft shadow-inset-soft">
                     {relatedLocations.length === 0 ? (
                       <p className="m-0 px-3 py-4 text-xs text-text-muted">
                         {selectedScanLoading ? t("cleanup.scanning") : t("detail.noRelatedRoots")}
@@ -864,7 +864,7 @@ export default function AppManagerPage() {
                             <div
                               key={entry.path}
                               className={`flex w-full items-start gap-2 px-3 py-2.5 text-left transition-colors ${
-                                selected ? "bg-accent/8" : "hover:bg-surface"
+                                selected ? "bg-accent/8" : "hover:bg-surface-glass-soft"
                               }`}
                             >
                               <button
@@ -874,7 +874,7 @@ export default function AppManagerPage() {
                                 className={`mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-colors ${
                                   selected
                                     ? "border-accent bg-accent text-accent-foreground"
-                                    : "border-border-strong bg-surface text-transparent hover:border-accent/55"
+                                    : "border-border-glass bg-surface-glass-soft text-transparent hover:border-accent/55"
                                 } ${selectionDisabled ? "cursor-not-allowed opacity-55" : "cursor-pointer"}`}
                                 onClick={(event) => {
                                   event.preventDefault();
@@ -932,7 +932,7 @@ export default function AppManagerPage() {
                   </div>
                 </section>
 
-                <section className="rounded-xl border border-border-muted bg-surface-card px-4 py-4 shadow-surface">
+                <section className="ui-glass-panel px-4 py-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <h3 className="m-0 text-sm font-semibold text-text-primary">{t("cleanup.title")}</h3>
                     <div className="flex flex-wrap items-center gap-2">
@@ -1044,7 +1044,7 @@ export default function AppManagerPage() {
                           className={`rounded-md border px-3 py-2 text-xs transition-colors ${
                             highlightExportPath
                               ? "border-accent/60 bg-accent/10 text-text-primary"
-                              : "border-border-muted bg-surface text-text-secondary"
+                              : "border-border-glass bg-surface-glass-soft text-text-secondary"
                           }`}
                         >
                           <p className="m-0 break-all">
@@ -1075,7 +1075,7 @@ export default function AppManagerPage() {
                         {selectedScanResult.groups.map((group: AppManagerResidueGroup) => (
                           <div
                             key={group.groupId}
-                            className="rounded-lg border border-border-muted bg-surface-soft px-3 py-2"
+                            className="rounded-lg border border-border-glass bg-surface-glass-soft px-3 py-2 shadow-inset-soft"
                           >
                             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                               <h4 className="m-0 text-xs font-semibold text-text-primary">{group.label}</h4>
@@ -1096,7 +1096,7 @@ export default function AppManagerPage() {
                                     className={`w-full rounded-md border px-2 py-1.5 text-left transition-colors ${
                                       checked
                                         ? "border-accent/55 bg-accent/10"
-                                        : "border-border-muted bg-surface hover:border-accent/35 hover:bg-surface-soft"
+                                        : "border-border-glass bg-surface-glass-soft hover:border-accent/35 hover:bg-surface-glass"
                                     } ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
                                     onClick={() => toggleResidueItem(selectedApp.id, item.itemId, !checked)}
                                   >
@@ -1105,7 +1105,7 @@ export default function AppManagerPage() {
                                         className={`mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
                                           checked
                                             ? "border-accent bg-accent/20 text-accent"
-                                            : "border-border-strong bg-surface-soft text-transparent"
+                                            : "border-border-glass bg-surface-glass-soft text-transparent"
                                         }`}
                                         aria-hidden="true"
                                       >
@@ -1171,7 +1171,7 @@ export default function AppManagerPage() {
                 </section>
 
                 {selectedCleanupResult ? (
-                  <section className="rounded-xl border border-border-muted bg-surface-card px-4 py-4 shadow-surface">
+                  <section className="ui-glass-panel px-4 py-4">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <h3 className="m-0 text-sm font-semibold text-text-primary">{t("result.title")}</h3>
                       <Button
@@ -1198,7 +1198,7 @@ export default function AppManagerPage() {
                       <ResultRows
                         title={t("result.deletedRows")}
                         rows={selectedCleanupResult.deleted}
-                        kindClassName="border-border-muted bg-surface-soft text-text-secondary"
+                        kindClassName="border-border-glass bg-surface-glass-soft text-text-secondary"
                       />
                       <ResultRows
                         title={t("result.skippedRows")}
@@ -1228,7 +1228,7 @@ export default function AppManagerPage() {
           setConfirmTarget(null);
         }}
         canClose={!confirmingDeepUninstall}
-        className="mx-auto mt-[10vh] w-[min(620px,92vw)] rounded-xl border border-border-muted bg-surface-card p-4 shadow-overlay"
+        className="ui-glass-panel-strong mx-auto mt-[10vh] w-[min(620px,92vw)] p-4"
         ariaLabel={t("uninstallDialog.title")}
       >
         <div className="space-y-3">
@@ -1237,7 +1237,7 @@ export default function AppManagerPage() {
             <p className="m-0 text-sm text-text-secondary">{t("uninstallDialog.deepDesc")}</p>
           </div>
           {confirmTarget ? (
-            <div className="space-y-1 rounded-lg border border-border-muted bg-surface-soft px-3 py-2 text-xs text-text-secondary">
+            <div className="space-y-1 rounded-lg border border-border-glass bg-surface-glass-soft px-3 py-2 text-xs text-text-secondary shadow-inset-soft">
               <div>{t("uninstallDialog.appName", { value: confirmTarget.name })}</div>
               <div>{t("uninstallDialog.appPath", { value: confirmTarget.path })}</div>
               <div>{t("uninstallDialog.publisher", { value: confirmTarget.publisher || "-" })}</div>

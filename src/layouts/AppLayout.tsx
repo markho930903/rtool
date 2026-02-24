@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { NavLink, Outlet, useLocation } from "react-router";
 
@@ -25,24 +26,29 @@ const THEME_ICON_MAP: Record<ThemePreference, string> = {
 const NAV_ITEMS = getMainMenuRouteConfig();
 
 const SIDEBAR_ITEM_BASE_CLASS =
-  "relative inline-flex h-14 w-14 select-none flex-col items-center justify-center gap-0.5 overflow-hidden rounded-3 text-text-secondary transition-[background-color,color,box-shadow,transform] duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 [&_.sidebar-item-icon]:transition-transform [&_.sidebar-item-icon]:duration-200 [&_.sidebar-item-label]:transition-colors [&_.sidebar-item-label]:duration-200";
+  "ui-glass-hover relative inline-flex h-14 w-14 select-none flex-col items-center justify-center gap-0.5 overflow-hidden rounded-3 border border-transparent text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 [&_.sidebar-item-icon]:transition-transform [&_.sidebar-item-icon]:duration-200 [&_.sidebar-item-label]:transition-colors [&_.sidebar-item-label]:duration-200";
 
 const SIDEBAR_ITEM_ACTIVE_CLASS =
-  "bg-sidebar-item-active text-text-primary shadow-sidebar-item-active [&_.sidebar-item-icon]:-translate-y-[0.5px] [&_.sidebar-item-label]:text-text-primary";
+  "border-border-glass-strong bg-surface-glass-soft text-text-primary shadow-inset-soft [&_.sidebar-item-icon]:-translate-y-[0.5px] [&_.sidebar-item-label]:text-text-primary";
 
 const SIDEBAR_ITEM_IDLE_CLASS =
-  "text-text-secondary hover:-translate-y-[1px] hover:bg-sidebar-item-hover hover:text-text-primary hover:shadow-sidebar-item-hover hover:[&_.sidebar-item-icon]:-translate-y-[1px] hover:[&_.sidebar-item-label]:text-text-primary active:translate-y-0 active:scale-[0.98]";
+  "text-text-secondary hover:-translate-y-[1px] hover:text-text-primary hover:[&_.sidebar-item-icon]:-translate-y-[1px] hover:[&_.sidebar-item-label]:text-text-primary active:translate-y-0 active:scale-[0.98]";
 
 const TITLEBAR_ICON_BUTTON_CLASS =
-  "inline-flex h-9 w-9 select-none items-center justify-center rounded-3 text-text-secondary transition-[background-color,color,transform] duration-200 ease-out hover:bg-sidebar-item-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 active:scale-[0.97]";
+  "ui-glass-hover inline-flex h-9 w-9 select-none items-center justify-center rounded-3 border border-transparent text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 active:scale-[0.97]";
 
 const TITLEBAR_MENU_ITEM_BASE_CLASS =
-  "flex items-center gap-2.5 rounded-md border px-2.5 py-2 text-text-secondary transition-[border-color,background-color,color] duration-[140ms]";
+  "ui-glass-hover flex items-center gap-2.5 rounded-md px-2.5 py-2.25 text-left text-text-secondary transition-colors duration-[140ms]";
 
-const TITLEBAR_MENU_ITEM_ACTIVE_CLASS = "border-accent/45 bg-accent-soft text-text-primary shadow-inset-soft";
+const TITLEBAR_MENU_ITEM_ACTIVE_CLASS = "bg-surface-glass-soft text-text-primary shadow-inset-soft";
 
-const TITLEBAR_MENU_ITEM_IDLE_CLASS =
-  "border-transparent hover:border-border-muted/70 hover:bg-surface-soft hover:text-text-primary";
+const TITLEBAR_MENU_ITEM_IDLE_CLASS = "hover:text-text-primary";
+
+const MENU_MIN_WIDTH = 220;
+const MENU_MAX_WIDTH = 360;
+const MENU_MIN_HEIGHT = 140;
+const MENU_VIEWPORT_PADDING = 8;
+const MENU_GAP = 8;
 
 function getNextTheme(preference: ThemePreference): ThemePreference {
   if (preference === "system") {
@@ -61,11 +67,11 @@ function MainContent({ isFullHeightRoute }: { isFullHeightRoute: boolean }) {
     <div
       className={
         isFullHeightRoute
-          ? "min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-hidden"
-          : "min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto"
+          ? "relative z-10 min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-hidden"
+          : "relative z-10 min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto"
       }
     >
-      <main className={isFullHeightRoute ? "h-full w-full" : "mx-auto w-full max-w-6xl px-4 py-5 md:px-5"}>
+      <main className="h-full w-full p-4">
         <Outlet />
       </main>
     </div>
@@ -127,7 +133,7 @@ function SideBar() {
   const { t } = useTranslation("layout");
 
   return (
-    <aside className="z-20 flex h-full w-[80px] shrink-0 flex-col items-center overflow-hidden border-r border-border-muted bg-elevated shadow-inset-divider backdrop-blur-xl backdrop-saturate-125">
+    <aside className="rtool-glass-sheen-clip z-20 flex h-full w-[84px] shrink-0 flex-col items-center overflow-hidden border-r border-border-glass bg-surface-glass-soft shadow-inset-soft">
       <div className="h-16 w-full shrink-0" data-tauri-drag-region />
       <nav className="mt-1 flex flex-1 flex-col items-center gap-2 py-2" aria-label={t("nav.mainAria")}>
         {NAV_ITEMS.map((item) => {
@@ -175,8 +181,14 @@ export default function AppLayout() {
   const switchMenuLabel = t("titlebar.switchMenu", { current: currentLabel });
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [menuOpenedByKeyboard, setMenuOpenedByKeyboard] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const [menuPosition, setMenuPosition] = useState({
+    top: 0,
+    left: 0,
+    maxHeight: 320,
+  });
   const ready = themeInitialized && localeInitialized && layoutInitialized;
   const { mounted: bootMounted, visible: bootVisible } = useBootState({
     cycleKey: 1,
@@ -193,118 +205,248 @@ export default function AppLayout() {
 
   useEffect(() => {
     setMenuOpen(false);
+    setMenuOpenedByKeyboard(false);
   }, [location.pathname]);
+
+  const updateMenuPosition = useCallback((anchorRect: DOMRect) => {
+    const measuredWidth = menuRef.current?.offsetWidth ?? MENU_MIN_WIDTH;
+    const measuredHeight = menuRef.current?.offsetHeight ?? 0;
+    const viewportMaxWidth = Math.max(180, window.innerWidth - MENU_VIEWPORT_PADDING * 2);
+    const allowedMaxWidth = Math.min(MENU_MAX_WIDTH, viewportMaxWidth);
+    const popupWidth = Math.min(Math.max(MENU_MIN_WIDTH, measuredWidth, anchorRect.width), allowedMaxWidth);
+    const maxLeft = Math.max(MENU_VIEWPORT_PADDING, window.innerWidth - popupWidth - MENU_VIEWPORT_PADDING);
+    const nextLeft = Math.min(Math.max(anchorRect.left, MENU_VIEWPORT_PADDING), maxLeft);
+
+    const spaceBelow = window.innerHeight - anchorRect.bottom - MENU_GAP - MENU_VIEWPORT_PADDING;
+    const spaceAbove = anchorRect.top - MENU_GAP - MENU_VIEWPORT_PADDING;
+    const renderBelow = spaceBelow >= 180 || spaceBelow >= spaceAbove;
+    const nextMaxHeight = Math.max(MENU_MIN_HEIGHT, renderBelow ? spaceBelow : spaceAbove);
+
+    let nextTop = renderBelow ? anchorRect.bottom + MENU_GAP : anchorRect.top - MENU_GAP - measuredHeight;
+    if (measuredHeight > 0) {
+      const maxTop = Math.max(MENU_VIEWPORT_PADDING, window.innerHeight - measuredHeight - MENU_VIEWPORT_PADDING);
+      nextTop = Math.min(Math.max(nextTop, MENU_VIEWPORT_PADDING), maxTop);
+    } else {
+      nextTop = Math.max(nextTop, MENU_VIEWPORT_PADDING);
+    }
+
+    setMenuPosition({
+      top: nextTop,
+      left: nextLeft,
+      maxHeight: nextMaxHeight,
+    });
+  }, []);
+
+  const openMenu = useCallback(
+    (anchorElement: HTMLElement, viaKeyboard: boolean) => {
+      updateMenuPosition(anchorElement.getBoundingClientRect());
+      setMenuOpenedByKeyboard(viaKeyboard);
+      setMenuOpen(true);
+    },
+    [updateMenuPosition],
+  );
+
+  const closeMenu = useCallback(() => {
+    setMenuOpen(false);
+    setMenuOpenedByKeyboard(false);
+    triggerRef.current?.focus();
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+
+    const syncMenuPosition = () => {
+      const trigger = triggerRef.current;
+      if (!trigger) {
+        return;
+      }
+      updateMenuPosition(trigger.getBoundingClientRect());
+    };
+
+    const rafId = window.requestAnimationFrame(syncMenuPosition);
+    window.addEventListener("resize", syncMenuPosition);
+    window.addEventListener("scroll", syncMenuPosition, true);
+
+    return () => {
+      window.cancelAnimationFrame(rafId);
+      window.removeEventListener("resize", syncMenuPosition);
+      window.removeEventListener("scroll", syncMenuPosition, true);
+    };
+  }, [menuOpen, updateMenuPosition]);
 
   useEffect(() => {
     if (!menuOpen) {
       return;
     }
 
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target;
-      if (!(target instanceof Node)) {
-        return;
-      }
-
-      if (menuRef.current?.contains(target) || triggerRef.current?.contains(target)) {
-        return;
-      }
-
-      setMenuOpen(false);
-    };
-
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") {
-        return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeMenu();
       }
-
-      event.preventDefault();
-      setMenuOpen(false);
-      triggerRef.current?.focus();
     };
 
-    window.addEventListener("pointerdown", handlePointerDown);
     window.addEventListener("keydown", handleKeyDown);
-    return () => {
-      window.removeEventListener("pointerdown", handlePointerDown);
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [menuOpen]);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [closeMenu, menuOpen]);
+
+  useEffect(() => {
+    if (!menuOpen || !menuOpenedByKeyboard) {
+      return;
+    }
+
+    const rafId = window.requestAnimationFrame(() => {
+      const firstItem = menuRef.current?.querySelector<HTMLElement>('[role="menuitem"]');
+      firstItem?.focus();
+    });
+
+    return () => window.cancelAnimationFrame(rafId);
+  }, [menuOpen, menuOpenedByKeyboard]);
+
+  const menuPopup = menuOpen
+    ? createPortal(
+        <div className="fixed inset-0 z-[70]" onPointerDown={closeMenu}>
+          <div
+            ref={menuRef}
+            className="fixed z-[80] overflow-hidden rounded-md border border-border-glass bg-surface-glass-strong p-1.5 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]"
+            style={{
+              top: `${menuPosition.top}px`,
+              left: `${menuPosition.left}px`,
+              minWidth: `${MENU_MIN_WIDTH}px`,
+              maxWidth: `calc(100vw - ${MENU_VIEWPORT_PADDING * 2}px)`,
+            }}
+            role="menu"
+            aria-label={t("titlebar.menuAria")}
+            onPointerDown={(event) => event.stopPropagation()}
+            onKeyDown={(event) => {
+              if (event.key === "Tab") {
+                closeMenu();
+                return;
+              }
+              if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+                return;
+              }
+
+              const items = Array.from(menuRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
+              if (items.length === 0) {
+                return;
+              }
+
+              event.preventDefault();
+              const activeIndex = items.findIndex((item) => item === document.activeElement);
+              if (event.key === "Home") {
+                items[0]?.focus();
+                return;
+              }
+              if (event.key === "End") {
+                items[items.length - 1]?.focus();
+                return;
+              }
+
+              const direction = event.key === "ArrowUp" ? -1 : 1;
+              const current = activeIndex < 0 ? 0 : activeIndex;
+              const nextIndex = (current + direction + items.length) % items.length;
+              items[nextIndex]?.focus();
+            }}
+          >
+            <div className="overflow-y-auto" style={{ maxHeight: `${menuPosition.maxHeight}px` }}>
+              <nav className="flex w-full flex-col items-stretch gap-1" aria-label={t("titlebar.menuAria")}>
+                {NAV_ITEMS.map((item) => {
+                  const label = t(item.labelKey);
+                  return (
+                    <NavLink
+                      key={item.to}
+                      to={item.to}
+                      end={item.end}
+                      role="menuitem"
+                      title={label}
+                      aria-label={label}
+                      onClick={() => {
+                        setMenuOpen(false);
+                        setMenuOpenedByKeyboard(false);
+                      }}
+                      className={({ isActive }) => {
+                        const focusClass = "w-full focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/35";
+                        return [
+                          TITLEBAR_MENU_ITEM_BASE_CLASS,
+                          focusClass,
+                          isActive ? TITLEBAR_MENU_ITEM_ACTIVE_CLASS : TITLEBAR_MENU_ITEM_IDLE_CLASS,
+                        ].join(" ");
+                      }}
+                    >
+                      <span className={`btn-icon shrink-0 text-[1.1rem] ${item.icon}`} aria-hidden="true" />
+                      <span className="truncate text-xs font-medium">{label}</span>
+                    </NavLink>
+                  );
+                })}
+              </nav>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      )
+    : null;
 
   if (layoutPreference === "sidebar") {
     return (
-      <div className="relative flex h-screen overflow-hidden bg-app text-text-primary">
-        <SideBar />
-        <MainContent isFullHeightRoute={isFullHeightRoute} />
+      <div className="relative h-screen w-screen overflow-hidden rounded-md bg-transparent p-0 text-text-primary">
+        <section className="rtool-glass-sheen-clip relative z-10 flex h-full w-full overflow-hidden rounded-md border border-border-glass bg-surface-glass-strong shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]">
+          <div aria-hidden className="rtool-glass-atmosphere" />
+          <SideBar />
+          <MainContent isFullHeightRoute={isFullHeightRoute} />
+        </section>
         {bootMounted ? <BootOverlay variant="main" visible={bootVisible} /> : null}
       </div>
     );
   }
 
   return (
-    <div className="relative flex h-screen flex-col overflow-hidden bg-app text-text-primary">
-      <header className="relative z-20 flex h-12 shrink-0 items-center border-b border-border-muted bg-elevated backdrop-blur-xl backdrop-saturate-125">
-        <div className="relative flex h-full items-center pl-[4.75rem] pr-2">
-          <div className="relative">
-            <Button
-              unstyled
-              ref={triggerRef}
-              type="button"
-              className={TITLEBAR_ICON_BUTTON_CLASS}
-              title={switchMenuLabel}
-              aria-label={switchMenuLabel}
-              aria-expanded={menuOpen}
-              aria-haspopup="menu"
-              onClick={() => setMenuOpen((open) => !open)}
-            >
-              <span className={`btn-icon text-[1.05rem] ${currentNavItem.icon}`} aria-hidden="true" />
-            </Button>
-
-            {menuOpen ? (
-              <div
-                ref={menuRef}
-                className="absolute left-0 top-[calc(100%+0.45rem)] z-50 min-w-[220px] rounded-md border border-border-muted/85 bg-surface-overlay p-2 shadow-overlay backdrop-blur-[24px] backdrop-saturate-140"
-                role="menu"
-                aria-label={t("titlebar.menuAria")}
+    <div className="relative h-screen w-screen overflow-hidden rounded-md bg-transparent p-0 text-text-primary">
+      <section className="rtool-glass-sheen-clip relative z-10 flex h-full w-full flex-col overflow-hidden rounded-md border border-border-glass bg-surface-glass-strong shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]">
+        <div aria-hidden className="rtool-glass-atmosphere" />
+        <header className="rtool-glass-sheen-open relative z-20 flex h-12 shrink-0 items-center border-b border-border-glass bg-surface-glass-soft shadow-inset-soft">
+          <div className="relative flex h-full items-center pl-[4.75rem] pr-2">
+            <div className="relative">
+              <Button
+                unstyled
+                ref={triggerRef}
+                type="button"
+                className={TITLEBAR_ICON_BUTTON_CLASS}
+                title={switchMenuLabel}
+                aria-label={switchMenuLabel}
+                aria-expanded={menuOpen}
+                aria-haspopup="menu"
+                onClick={(event) => {
+                  if (menuOpen) {
+                    closeMenu();
+                    return;
+                  }
+                  openMenu(event.currentTarget, false);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowDown" || event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    openMenu(event.currentTarget, true);
+                  }
+                }}
               >
-                <nav className="flex flex-col gap-1" aria-label={t("titlebar.menuAria")}>
-                  {NAV_ITEMS.map((item) => {
-                    const label = t(item.labelKey);
-                    return (
-                      <NavLink
-                        key={item.to}
-                        to={item.to}
-                        end={item.end}
-                        role="menuitem"
-                        title={label}
-                        aria-label={label}
-                        onClick={() => setMenuOpen(false)}
-                        className={({ isActive }) =>
-                          [
-                            TITLEBAR_MENU_ITEM_BASE_CLASS,
-                            isActive ? TITLEBAR_MENU_ITEM_ACTIVE_CLASS : TITLEBAR_MENU_ITEM_IDLE_CLASS,
-                          ].join(" ")
-                        }
-                      >
-                        <span className={`btn-icon shrink-0 text-[1.1rem] ${item.icon}`} aria-hidden="true" />
-                        <span className="truncate text-xs font-medium">{label}</span>
-                      </NavLink>
-                    );
-                  })}
-                </nav>
-              </div>
-            ) : null}
+                <span className={`btn-icon text-[1.05rem] ${currentNavItem.icon}`} aria-hidden="true" />
+              </Button>
+            </div>
           </div>
-        </div>
 
-        <div className="h-full flex-1" data-tauri-drag-region />
+          <div className="h-full flex-1" data-tauri-drag-region />
 
-        <div className="flex h-full items-center pr-3">
-          <ThemeToggleIconButton />
-        </div>
-      </header>
+          <div className="flex h-full items-center pr-3">
+            <ThemeToggleIconButton />
+          </div>
+        </header>
 
-      <MainContent isFullHeightRoute={isFullHeightRoute} />
+        <MainContent isFullHeightRoute={isFullHeightRoute} />
+      </section>
+      {menuPopup}
       {bootMounted ? <BootOverlay variant="main" visible={bootVisible} /> : null}
     </div>
   );

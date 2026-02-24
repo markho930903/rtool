@@ -60,16 +60,24 @@
   --primitive-radius-lg: 0.875rem;
 
   /* semantic: dark theme defaults */
-  --color-bg-app: rgb(var(--primitive-color-dark-950));
-  --color-bg-elevated: rgb(var(--primitive-color-dark-900) / 84%);
-  --color-surface-card: rgb(var(--primitive-color-dark-800) / 82%);
-  --color-surface-soft: rgb(var(--primitive-color-white) / 4%);
-  --color-surface-overlay: rgb(var(--primitive-color-dark-800) / 94%);
-  --color-surface-popover: rgb(var(--primitive-color-dark-800) / 97%);
-  --color-surface-scrim: rgb(var(--primitive-color-dark-950) / 62%);
+  --color-bg-app: rgb(var(--primitive-color-dark-900));
+  --color-bg-orb-1: rgb(var(--primitive-color-accent-dark) / 9%);
+  --color-bg-orb-2: rgb(var(--primitive-color-white) / 4%);
+  --color-surface-glass-strong: rgb(var(--primitive-color-dark-800) / 60%);
+  --color-surface-glass: rgb(var(--primitive-color-dark-800) / 54%);
+  --color-surface-glass-soft: rgb(var(--primitive-color-white) / 9%);
 
-  --color-border-muted: rgb(var(--primitive-color-white) / 10%);
-  --color-border-strong: rgb(var(--primitive-color-white) / 16%);
+  --color-bg-elevated: var(--color-surface-glass-strong);
+  --color-surface-card: var(--color-surface-glass);
+  --color-surface-soft: var(--color-surface-glass-soft);
+  --color-surface-overlay: rgb(var(--primitive-color-dark-800) / 62%);
+  --color-surface-popover: rgb(var(--primitive-color-dark-800) / 68%);
+  --color-surface-scrim: rgb(var(--primitive-color-dark-950) / 56%);
+
+  --color-border-glass: rgb(var(--primitive-color-white) / 18%);
+  --color-border-glass-strong: rgb(var(--primitive-color-white) / 28%);
+  --color-border-muted: var(--color-border-glass);
+  --color-border-strong: var(--color-border-glass-strong);
 
   --color-text-primary: rgb(var(--primitive-color-dark-200));
   --color-text-secondary: rgb(var(--primitive-color-dark-300));
@@ -84,16 +92,25 @@
   --color-sidebar-item-active: rgb(var(--primitive-color-accent-dark) / 20%);
   --color-popover-highlight: rgb(var(--primitive-color-white) / 5%);
   --color-shimmer-highlight: rgb(var(--primitive-color-white));
+  --color-specular: rgb(var(--primitive-color-white) / 34%);
+
+  --glass-blur: 18px;
+  --glass-saturate: 140%;
 
   /* component: shadow */
-  --shadow-surface: 0 8px 20px rgb(var(--primitive-color-black) / 16%);
-  --shadow-overlay: 0 14px 32px rgb(var(--primitive-color-black) / 16%);
-  --shadow-popover: 0 18px 36px rgb(var(--primitive-color-black) / 24%);
-  --shadow-inset-soft: inset 0 1px 0 rgb(var(--primitive-color-white) / 2%);
-  --shadow-inset-divider: inset -1px 0 0 rgb(var(--primitive-color-white) / 2%);
+  --shadow-glass-card: 0 10px 24px rgb(var(--primitive-color-black) / 15%);
+  --shadow-glass-elevated: 0 14px 32px rgb(var(--primitive-color-black) / 19%);
+  --shadow-glass-inset:
+    inset 0 1px 0 rgb(var(--primitive-color-white) / 10%), inset 0 -1px 0 rgb(var(--primitive-color-black) / 10%);
+
+  --shadow-surface: var(--shadow-glass-card);
+  --shadow-overlay: var(--shadow-glass-elevated);
+  --shadow-popover: 0 20px 40px rgb(var(--primitive-color-black) / 20%);
+  --shadow-inset-soft: var(--shadow-glass-inset);
+  --shadow-inset-divider: inset -1px 0 0 rgb(var(--primitive-color-white) / 6%);
   --shadow-sidebar-item-active:
-    0 4px 10px rgb(var(--primitive-color-black) / 6%), inset 0 1px 0 rgb(var(--primitive-color-white) / 6%);
-  --shadow-sidebar-item-hover: 0 2px 6px rgb(var(--primitive-color-black) / 4%);
+    0 6px 14px rgb(var(--primitive-color-black) / 18%), inset 0 1px 0 rgb(var(--primitive-color-white) / 10%);
+  --shadow-sidebar-item-hover: 0 3px 10px rgb(var(--primitive-color-black) / 12%);
 
   /* semantic: radius */
   --radius-2: var(--primitive-radius-2);
@@ -137,15 +154,23 @@ html[data-theme="light"] {
   color-scheme: light;
 
   --color-bg-app: rgb(var(--primitive-color-light-50));
-  --color-bg-elevated: rgb(var(--primitive-color-light-75) / 90%);
-  --color-surface-card: rgb(var(--primitive-color-light-75) / 94%);
-  --color-surface-soft: rgb(var(--primitive-color-white) / 62%);
-  --color-surface-overlay: rgb(var(--primitive-color-light-75) / 96%);
-  --color-surface-popover: rgb(var(--primitive-color-light-75) / 98%);
-  --color-surface-scrim: rgb(var(--primitive-color-ink-dark) / 26%);
+  --color-bg-orb-1: rgb(var(--primitive-color-accent-light) / 11%);
+  --color-bg-orb-2: rgb(var(--primitive-color-white) / 82%);
+  --color-surface-glass-strong: rgb(var(--primitive-color-white) / 78%);
+  --color-surface-glass: rgb(var(--primitive-color-white) / 64%);
+  --color-surface-glass-soft: rgb(var(--primitive-color-white) / 46%);
 
-  --color-border-muted: rgb(var(--primitive-color-ink-light) / 10%);
-  --color-border-strong: rgb(var(--primitive-color-ink-light) / 14%);
+  --color-bg-elevated: var(--color-surface-glass-strong);
+  --color-surface-card: var(--color-surface-glass);
+  --color-surface-soft: var(--color-surface-glass-soft);
+  --color-surface-overlay: rgb(var(--primitive-color-white) / 86%);
+  --color-surface-popover: rgb(var(--primitive-color-white) / 92%);
+  --color-surface-scrim: rgb(var(--primitive-color-ink-dark) / 20%);
+
+  --color-border-glass: rgb(var(--primitive-color-ink-light) / 12%);
+  --color-border-glass-strong: rgb(var(--primitive-color-ink-light) / 18%);
+  --color-border-muted: var(--color-border-glass);
+  --color-border-strong: var(--color-border-glass-strong);
 
   --color-text-primary: rgb(var(--primitive-color-light-900));
   --color-text-secondary: rgb(var(--primitive-color-light-700));
@@ -159,19 +184,85 @@ html[data-theme="light"] {
   --color-sidebar-item-hover: rgb(var(--primitive-color-accent-light) / 10%);
   --color-sidebar-item-active: rgb(var(--primitive-color-accent-light) / 14%);
   --color-popover-highlight: rgb(var(--primitive-color-white) / 24%);
+  --color-specular: rgb(var(--primitive-color-white) / 88%);
 
-  --shadow-surface: 0 6px 16px rgb(var(--primitive-color-ink-light) / 5%);
-  --shadow-overlay: 0 12px 26px rgb(var(--primitive-color-ink-light) / 5%);
-  --shadow-popover: 0 16px 30px rgb(var(--primitive-color-ink-light) / 10%);
-  --shadow-inset-soft: inset 0 1px 0 rgb(var(--primitive-color-white) / 24%);
-  --shadow-inset-divider: inset -1px 0 0 rgb(var(--primitive-color-ink-light) / 8%);
+  --glass-blur: 16px;
+  --glass-saturate: 125%;
+
+  --shadow-glass-card: 0 10px 24px rgb(var(--primitive-color-ink-light) / 8%);
+  --shadow-glass-elevated: 0 14px 32px rgb(var(--primitive-color-ink-light) / 12%);
+  --shadow-glass-inset:
+    inset 0 1px 0 rgb(var(--primitive-color-white) / 72%), inset 0 -1px 0 rgb(var(--primitive-color-ink-light) / 8%);
+
+  --shadow-surface: var(--shadow-glass-card);
+  --shadow-overlay: var(--shadow-glass-elevated);
+  --shadow-popover: 0 18px 36px rgb(var(--primitive-color-ink-light) / 14%);
+  --shadow-inset-soft: var(--shadow-glass-inset);
+  --shadow-inset-divider: inset -1px 0 0 rgb(var(--primitive-color-ink-light) / 10%);
   --shadow-sidebar-item-active:
-    0 4px 10px rgb(var(--primitive-color-ink-light) / 8%), inset 0 1px 0 rgb(var(--primitive-color-white) / 32%);
-  --shadow-sidebar-item-hover: 0 2px 6px rgb(var(--primitive-color-ink-light) / 6%);
+    0 6px 14px rgb(var(--primitive-color-ink-light) / 9%), inset 0 1px 0 rgb(var(--primitive-color-white) / 48%);
+  --shadow-sidebar-item-hover: 0 3px 10px rgb(var(--primitive-color-ink-light) / 8%);
 }
 
 html[data-theme="dark"] {
   color-scheme: dark;
+}
+
+.rtool-glass-atmosphere {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.rtool-glass-atmosphere::before,
+.rtool-glass-atmosphere::after {
+  content: "";
+  position: absolute;
+  border-radius: 9999px;
+  opacity: 0.6;
+}
+
+.rtool-glass-atmosphere::before {
+  width: min(56vw, 780px);
+  height: min(56vw, 780px);
+  background: radial-gradient(circle at center, var(--color-bg-orb-1) 0%, transparent 68%);
+  transform: translate(-14%, -30%);
+}
+
+.rtool-glass-atmosphere::after {
+  width: min(48vw, 640px);
+  height: min(48vw, 640px);
+  right: -12%;
+  bottom: -24%;
+  background: radial-gradient(circle at center, var(--color-bg-orb-2) 0%, transparent 72%);
+}
+
+.rtool-glass-sheen,
+.rtool-glass-sheen-clip,
+.rtool-glass-sheen-open {
+  position: relative;
+}
+
+.rtool-glass-sheen,
+.rtool-glass-sheen-clip {
+  overflow: hidden;
+}
+
+.rtool-glass-sheen-open {
+  overflow: visible;
+}
+
+.rtool-glass-sheen::before,
+.rtool-glass-sheen-clip::before,
+.rtool-glass-sheen-open::before {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 1px 1px auto;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--color-specular), transparent);
+  opacity: 0.65;
 }
 
 @keyframes rtool-boot-ring-pulse {

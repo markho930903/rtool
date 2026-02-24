@@ -1,11 +1,19 @@
 import { Chart } from "@antv/g2";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button, Select } from "@/components/ui";
-import type { ResourceCrateStatsDto, ResourceModuleStatsDto, ResourcePointDto } from "@/contracts";
+import type {
+  ResourceCrateStatsDto,
+  ResourceModuleStatsDto,
+  ResourcePointDto,
+  ResourceSnapshotDto,
+} from "@/contracts";
 import { useResourceMonitorStore, type ResourceSortMetric } from "@/stores/resource-monitor.store";
 import { useThemeStore } from "@/theme/store";
+
+const MAX_ATTRIBUTION_SNAPSHOTS = 1800;
+const ATTRIBUTION_GROUP_LIMIT = 4;
 
 function formatBytes(bytes: number | null): string {
   if (bytes === null || !Number.isFinite(bytes) || bytes < 0) {
@@ -44,6 +52,14 @@ function readColorToken(name: string): string {
   return value || "#60a5fa";
 }
 
+function readCssToken(name: string, fallback: string): string {
+  if (typeof window === "undefined") {
+    return fallback;
+  }
+  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return value || fallback;
+}
+
 function pickSortValue(metric: ResourceSortMetric, item: ResourceModuleStatsDto | ResourceCrateStatsDto): number {
   if (metric === "cpu") {
     return item.estimatedCpuPercent ?? -1;
@@ -54,6 +70,25 @@ function pickSortValue(metric: ResourceSortMetric, item: ResourceModuleStatsDto 
   return item.calls;
 }
 
+function formatSortMetricValue(metric: ResourceSortMetric, value: number): string {
+  if (!Number.isFinite(value) || value < 0) {
+    return "--";
+  }
+  if (metric === "cpu") {
+    return `${value.toFixed(2)}%`;
+  }
+  if (metric === "memory") {
+    return formatBytes(value);
+  }
+  return `${Math.round(value)}`;
+}
+
+function appendSnapshotSeries(history: ResourceSnapshotDto[], snapshot: ResourceSnapshotDto): ResourceSnapshotDto[] {
+  const deduped = history.filter((item) => item.sampledAt !== snapshot.sampledAt);
+  const next = [...deduped, snapshot].sort((left, right) => left.sampledAt - right.sampledAt);
+  return next.slice(-MAX_ATTRIBUTION_SNAPSHOTS);
+}
+
 interface MetricCardProps {
   title: string;
   value: string;
@@ -62,7 +97,7 @@ interface MetricCardProps {
 
 function MetricCard(props: MetricCardProps) {
   return (
-    <article className="rounded-xl border border-border-muted bg-surface px-4 py-3">
+    <article className="ui-glass-panel px-4 py-3">
       <div className="font-mono ui-text-micro uppercase tracking-ui-wide text-text-muted">{props.title}</div>
       <div className="mt-2 text-lg leading-none font-semibold text-text-primary">{props.value}</div>
       <div className="mt-1.5 text-xs text-text-secondary">{props.hint}</div>
@@ -70,22 +105,176 @@ function MetricCard(props: MetricCardProps) {
   );
 }
 
-function createHistoryChart(
+interface HistoryChartDatum {
+  time: string;
+  value: number;
+  metric: string;
+  kind: "cpu" | "memory";
+}
+
+interface GroupedBarChartDatum {
+  time: string;
+  group: string;
+  value: number;
+}
+
+interface ChartController<T> {
+  update: (data: T[]) => void;
+  destroy: () => void;
+}
+
+interface TooltipItem {
+  label: string;
+  value: string;
+}
+
+interface TooltipOptions<T> {
+  series: boolean;
+  shared: boolean;
+  getTitle: (rows: T[]) => string;
+  getItems: (rows: T[]) => TooltipItem[];
+}
+
+interface TooltipController {
+  refresh: () => void;
+  destroy: () => void;
+}
+
+function createTooltipController<T extends object>(
+  chart: Chart,
   element: HTMLDivElement,
+  options: TooltipOptions<T>,
+): TooltipController {
+  if (typeof window === "undefined") {
+    return {
+      refresh() {},
+      destroy() {},
+    };
+  }
+
+  element.style.position = "relative";
+  const tooltip = document.createElement("div");
+  tooltip.style.position = "absolute";
+  tooltip.style.left = "0";
+  tooltip.style.top = "0";
+  tooltip.style.transform = "translate(-9999px, -9999px)";
+  tooltip.style.zIndex = "10";
+  tooltip.style.pointerEvents = "none";
+  tooltip.style.border = `1px solid ${readColorToken("--color-border-glass")}`;
+  tooltip.style.background = readColorToken("--color-surface-glass-strong");
+  tooltip.style.color = readColorToken("--color-text-primary");
+  tooltip.style.borderRadius = "8px";
+  tooltip.style.padding = "8px 10px";
+  tooltip.style.fontSize = "12px";
+  tooltip.style.lineHeight = "1.4";
+  tooltip.style.whiteSpace = "nowrap";
+  tooltip.style.boxShadow = readCssToken("--shadow-overlay", "var(--shadow-overlay)");
+  tooltip.style.display = "none";
+  element.appendChild(tooltip);
+
+  let lastPoint: { x: number; y: number } | null = null;
+
+  const hide = () => {
+    tooltip.style.display = "none";
+    tooltip.style.transform = "translate(-9999px, -9999px)";
+  };
+
+  const updateTooltip = () => {
+    if (!lastPoint) {
+      hide();
+      return;
+    }
+    const rows = chart.getDataByXY(
+      { x: lastPoint.x, y: lastPoint.y },
+      { series: options.series, shared: options.shared },
+    ) as T[];
+    if (!Array.isArray(rows) || rows.length === 0) {
+      hide();
+      return;
+    }
+    const items = options.getItems(rows);
+    if (items.length === 0) {
+      hide();
+      return;
+    }
+
+    tooltip.replaceChildren();
+
+    const titleEl = document.createElement("div");
+    titleEl.style.fontWeight = "600";
+    titleEl.style.marginBottom = "6px";
+    titleEl.textContent = options.getTitle(rows);
+    tooltip.appendChild(titleEl);
+
+    for (const item of items) {
+      const row = document.createElement("div");
+      row.style.display = "flex";
+      row.style.alignItems = "center";
+      row.style.justifyContent = "space-between";
+      row.style.gap = "10px";
+
+      const labelEl = document.createElement("span");
+      labelEl.style.opacity = "0.85";
+      labelEl.textContent = item.label;
+      row.appendChild(labelEl);
+
+      const valueEl = document.createElement("span");
+      valueEl.style.fontFamily = "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace";
+      valueEl.textContent = item.value;
+      row.appendChild(valueEl);
+
+      tooltip.appendChild(row);
+    }
+
+    tooltip.style.display = "block";
+    const width = tooltip.offsetWidth;
+    const height = tooltip.offsetHeight;
+    const maxX = Math.max(0, element.clientWidth - width - 6);
+    const maxY = Math.max(0, element.clientHeight - height - 6);
+    const nextX = Math.min(Math.max(6, lastPoint.x + 12), maxX);
+    const nextY = Math.min(Math.max(6, lastPoint.y + 12), maxY);
+    tooltip.style.transform = `translate(${nextX}px, ${nextY}px)`;
+  };
+
+  const onPointerMove = (event: PointerEvent) => {
+    lastPoint = { x: event.offsetX, y: event.offsetY };
+    updateTooltip();
+  };
+
+  const onPointerLeave = () => {
+    lastPoint = null;
+    hide();
+  };
+
+  element.addEventListener("pointermove", onPointerMove);
+  element.addEventListener("pointerleave", onPointerLeave);
+
+  return {
+    refresh() {
+      updateTooltip();
+    },
+    destroy() {
+      element.removeEventListener("pointermove", onPointerMove);
+      element.removeEventListener("pointerleave", onPointerLeave);
+      tooltip.remove();
+    },
+  };
+}
+
+function buildHistoryChartData(
   points: ResourcePointDto[],
   locale: string,
   seriesLabel: { cpu: string; memory: string },
-) {
-  const accent = readColorToken("--color-accent");
-  const info = readColorToken("--color-info");
-  const data = points.flatMap((point) => {
+): HistoryChartDatum[] {
+  return points.flatMap((point) => {
     const time = formatTime(point.sampledAt, locale);
-    const next = [];
+    const next: HistoryChartDatum[] = [];
     if (point.processCpuPercent !== null) {
       next.push({
         time,
         value: point.processCpuPercent,
         metric: seriesLabel.cpu,
+        kind: "cpu",
       });
     }
     if (point.processMemoryBytes !== null) {
@@ -93,18 +282,29 @@ function createHistoryChart(
         time,
         value: point.processMemoryBytes / 1024 / 1024,
         metric: seriesLabel.memory,
+        kind: "memory",
       });
     }
     return next;
   });
+}
+
+function createHistoryChart(
+  element: HTMLDivElement,
+  data: HistoryChartDatum[],
+): ChartController<HistoryChartDatum> {
+  const accent = readColorToken("--color-accent");
+  const info = readColorToken("--color-info");
 
   const chart = new Chart({
     container: element,
     autoFit: true,
     height: 280,
   });
+  chart.animate(false);
+  chart.interaction("tooltip", false);
 
-  chart
+  const line = chart
     .line()
     .data(data)
     .encode("x", "time")
@@ -113,28 +313,100 @@ function createHistoryChart(
     .scale("color", {
       range: [accent, info],
     })
-    .style("lineWidth", 2);
+    .style("lineWidth", 2)
+    .animate(false)
+    .tooltip(false);
 
   chart.render();
-  return chart;
+  const tooltip = createTooltipController<HistoryChartDatum>(chart, element, {
+    series: true,
+    shared: true,
+    getTitle(rows) {
+      return rows[0]?.time ?? "";
+    },
+    getItems(rows) {
+      return rows.map((row) => ({
+        label: row.metric,
+        value: row.kind === "cpu" ? `${row.value.toFixed(2)}%` : `${row.value.toFixed(2)} MB`,
+      }));
+    },
+  });
+
+  return {
+    update(nextData) {
+      void line.changeData(nextData).then(() => {
+        tooltip.refresh();
+      });
+    },
+    destroy() {
+      tooltip.destroy();
+      chart.destroy();
+    },
+  };
 }
 
-function createTopChart(
+function createGroupedBarChart(
   element: HTMLDivElement,
-  data: Array<{ name: string; value: number }>,
-  color: string,
+  data: GroupedBarChartDatum[],
+  valueFormatter: (value: number) => string,
   height = 280,
-) {
+): ChartController<GroupedBarChartDatum> {
+  const palette = [
+    readColorToken("--color-accent"),
+    readColorToken("--color-info"),
+    readColorToken("--color-success"),
+    readColorToken("--color-warning"),
+    readColorToken("--color-danger"),
+  ];
+
   const chart = new Chart({
     container: element,
     autoFit: true,
     height,
   });
+  chart.animate(false);
+  chart.interaction("tooltip", false);
 
-  chart.interval().data(data).encode("x", "name").encode("y", "value").style("fill", color);
+  const interval = chart
+    .interval()
+    .data(data)
+    .encode("x", "time")
+    .encode("y", "value")
+    .encode("color", "group")
+    .transform({ type: "dodgeX" })
+    .scale("color", {
+      range: palette,
+    })
+    .style("maxWidth", 32)
+    .animate(false)
+    .tooltip(false);
 
   chart.render();
-  return chart;
+  const tooltip = createTooltipController<GroupedBarChartDatum>(chart, element, {
+    series: false,
+    shared: true,
+    getTitle(rows) {
+      return rows[0]?.time ?? "";
+    },
+    getItems(rows) {
+      return rows.map((row) => ({
+        label: row.group,
+        value: valueFormatter(row.value),
+      }));
+    },
+  });
+
+  return {
+    update(nextData) {
+      void interval.changeData(nextData).then(() => {
+        tooltip.refresh();
+      });
+    },
+    destroy() {
+      tooltip.destroy();
+      chart.destroy();
+    },
+  };
 }
 
 export default function ResourceMonitorPage() {
@@ -161,6 +433,10 @@ export default function ResourceMonitorPage() {
   const historyChartRef = useRef<HTMLDivElement | null>(null);
   const moduleChartRef = useRef<HTMLDivElement | null>(null);
   const crateChartRef = useRef<HTMLDivElement | null>(null);
+  const historyControllerRef = useRef<ChartController<HistoryChartDatum> | null>(null);
+  const moduleControllerRef = useRef<ChartController<GroupedBarChartDatum> | null>(null);
+  const crateControllerRef = useRef<ChartController<GroupedBarChartDatum> | null>(null);
+  const [attributionSnapshots, setAttributionSnapshots] = useState<ResourceSnapshotDto[]>([]);
 
   useEffect(() => {
     void initialize();
@@ -175,73 +451,184 @@ export default function ResourceMonitorPage() {
     return history.filter((point) => point.sampledAt >= cutoff);
   }, [history, historyWindowMinutes]);
 
+  useEffect(() => {
+    if (!snapshot) {
+      return;
+    }
+    setAttributionSnapshots((current) => appendSnapshotSeries(current, snapshot));
+  }, [snapshot]);
+
+  const visibleAttributionSnapshots = useMemo(() => {
+    const cutoff = Date.now() - historyWindowMinutes * 60 * 1000;
+    return attributionSnapshots.filter((entry) => entry.sampledAt >= cutoff);
+  }, [attributionSnapshots, historyWindowMinutes]);
+
   const moduleStats = useMemo(() => {
     const modules = snapshot?.modules ?? [];
     return [...modules].sort((left, right) => pickSortValue(sortMetric, right) - pickSortValue(sortMetric, left));
   }, [snapshot?.modules, sortMetric]);
 
-  const crateStats = useMemo(() => {
-    const crates = snapshot?.crates ?? [];
-    return [...crates].sort((left, right) => pickSortValue(sortMetric, right) - pickSortValue(sortMetric, left));
-  }, [snapshot?.crates, sortMetric]);
+  const historyChartData = useMemo(
+    () =>
+      buildHistoryChartData(visibleHistory, locale, {
+        cpu: t("chart.series.cpu"),
+        memory: t("chart.series.memoryMb"),
+      }),
+    [locale, t, visibleHistory],
+  );
+
+  const moduleTopIds = useMemo(() => {
+    const latest = visibleAttributionSnapshots[visibleAttributionSnapshots.length - 1];
+    if (!latest) {
+      return [];
+    }
+    return [...latest.modules]
+      .filter((item) => pickSortValue(sortMetric, item) >= 0)
+      .sort((left, right) => pickSortValue(sortMetric, right) - pickSortValue(sortMetric, left))
+      .slice(0, ATTRIBUTION_GROUP_LIMIT)
+      .map((item) => item.moduleId);
+  }, [sortMetric, visibleAttributionSnapshots]);
+
+  const moduleChartData = useMemo(() => {
+    if (moduleTopIds.length === 0 || visibleAttributionSnapshots.length === 0) {
+      return [];
+    }
+    return visibleAttributionSnapshots.flatMap((entry) => {
+      const byId = new Map(entry.modules.map((item) => [item.moduleId, item]));
+      const time = formatTime(entry.sampledAt, locale);
+      return moduleTopIds
+        .map((moduleId) => {
+          const current = byId.get(moduleId);
+          const value = current ? pickSortValue(sortMetric, current) : 0;
+          return {
+            time,
+            group: t(`module.${moduleId}`),
+            value: value < 0 ? 0 : value,
+          };
+        });
+    });
+  }, [locale, moduleTopIds, sortMetric, t, visibleAttributionSnapshots]);
+
+  const crateTopIds = useMemo(() => {
+    const latest = visibleAttributionSnapshots[visibleAttributionSnapshots.length - 1];
+    if (!latest) {
+      return [];
+    }
+    return [...latest.crates]
+      .filter((item) => pickSortValue(sortMetric, item) >= 0)
+      .sort((left, right) => pickSortValue(sortMetric, right) - pickSortValue(sortMetric, left))
+      .slice(0, ATTRIBUTION_GROUP_LIMIT)
+      .map((item) => item.crateId);
+  }, [sortMetric, visibleAttributionSnapshots]);
+
+  const crateChartData = useMemo(() => {
+    if (crateTopIds.length === 0 || visibleAttributionSnapshots.length === 0) {
+      return [];
+    }
+    return visibleAttributionSnapshots.flatMap((entry) => {
+      const byId = new Map(entry.crates.map((item) => [item.crateId, item]));
+      const time = formatTime(entry.sampledAt, locale);
+      return crateTopIds
+        .map((crateId) => {
+          const current = byId.get(crateId);
+          const value = current ? pickSortValue(sortMetric, current) : 0;
+          return {
+            time,
+            group: t(`crate.${crateId}`),
+            value: value < 0 ? 0 : value,
+          };
+        });
+    });
+  }, [crateTopIds, locale, sortMetric, t, visibleAttributionSnapshots]);
+
+  useEffect(() => {
+    historyControllerRef.current?.destroy();
+    historyControllerRef.current = null;
+    moduleControllerRef.current?.destroy();
+    moduleControllerRef.current = null;
+    crateControllerRef.current?.destroy();
+    crateControllerRef.current = null;
+  }, [resolvedTheme]);
+
+  useEffect(() => {
+    moduleControllerRef.current?.destroy();
+    moduleControllerRef.current = null;
+    crateControllerRef.current?.destroy();
+    crateControllerRef.current = null;
+  }, [sortMetric]);
+
+  useEffect(
+    () => () => {
+      historyControllerRef.current?.destroy();
+      historyControllerRef.current = null;
+      moduleControllerRef.current?.destroy();
+      moduleControllerRef.current = null;
+      crateControllerRef.current?.destroy();
+      crateControllerRef.current = null;
+    },
+    [],
+  );
 
   useEffect(() => {
     const container = historyChartRef.current;
     if (!container) {
       return;
     }
-    if (visibleHistory.length === 0) {
+    if (historyChartData.length === 0) {
+      historyControllerRef.current?.destroy();
+      historyControllerRef.current = null;
       container.innerHTML = "";
       return;
     }
-    const chart = createHistoryChart(container, visibleHistory, locale, {
-      cpu: t("chart.series.cpu"),
-      memory: t("chart.series.memoryMb"),
-    });
-    return () => {
-      chart.destroy();
-    };
-  }, [locale, resolvedTheme, t, visibleHistory]);
+    if (!historyControllerRef.current) {
+      historyControllerRef.current = createHistoryChart(container, historyChartData);
+      return;
+    }
+    historyControllerRef.current.update(historyChartData);
+  }, [historyChartData]);
 
   useEffect(() => {
     const container = moduleChartRef.current;
     if (!container) {
       return;
     }
-    const data = moduleStats
-      .slice(0, 8)
-      .map((item) => ({ name: t(`module.${item.moduleId}`), value: pickSortValue(sortMetric, item) }))
-      .filter((item) => item.value >= 0);
-    if (data.length === 0) {
+    if (moduleChartData.length === 0) {
+      moduleControllerRef.current?.destroy();
+      moduleControllerRef.current = null;
       container.innerHTML = "";
       return;
     }
-    const color = readColorToken("--color-accent");
-    const chart = createTopChart(container, data, color);
-    return () => {
-      chart.destroy();
-    };
-  }, [moduleStats, resolvedTheme, sortMetric, t]);
+    if (!moduleControllerRef.current) {
+      moduleControllerRef.current = createGroupedBarChart(container, moduleChartData, (value) =>
+        formatSortMetricValue(sortMetric, value),
+      );
+      return;
+    }
+    moduleControllerRef.current.update(moduleChartData);
+  }, [moduleChartData, sortMetric]);
 
   useEffect(() => {
     const container = crateChartRef.current;
     if (!container) {
       return;
     }
-    const data = crateStats
-      .slice(0, 8)
-      .map((item) => ({ name: t(`crate.${item.crateId}`), value: pickSortValue(sortMetric, item) }))
-      .filter((item) => item.value >= 0);
-    if (data.length === 0) {
+    if (crateChartData.length === 0) {
+      crateControllerRef.current?.destroy();
+      crateControllerRef.current = null;
       container.innerHTML = "";
       return;
     }
-    const color = readColorToken("--color-info");
-    const chart = createTopChart(container, data, color, 240);
-    return () => {
-      chart.destroy();
-    };
-  }, [crateStats, resolvedTheme, sortMetric, t]);
+    if (!crateControllerRef.current) {
+      crateControllerRef.current = createGroupedBarChart(
+        container,
+        crateChartData,
+        (value) => formatSortMetricValue(sortMetric, value),
+        240,
+      );
+      return;
+    }
+    crateControllerRef.current.update(crateChartData);
+  }, [crateChartData, sortMetric]);
 
   const overview = snapshot?.overview;
   const memoryUsageHint =
@@ -252,13 +639,13 @@ export default function ResourceMonitorPage() {
 
   return (
     <div className="space-y-3 pb-2">
-      <section className="rounded-2xl border border-border-strong bg-surface p-4">
+      <section className="ui-glass-panel-strong rounded-2xl p-4">
         <div className="font-mono ui-text-micro uppercase tracking-ui-wider text-text-muted">
           rtool / resource monitor
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <h1 className="m-0 text-xl font-semibold tracking-tight text-text-primary">{t("header.title")}</h1>
-          <span className="rounded-full border border-border-muted bg-app px-2 py-0.5 font-mono ui-text-micro uppercase tracking-ui-wide text-accent">
+          <span className="ui-glass-chip px-2 py-0.5 font-mono ui-text-micro uppercase tracking-ui-wide text-accent">
             {loading && !initialized ? t("status.booting") : error ? t("status.degraded") : t("status.online")}
           </span>
         </div>
@@ -266,12 +653,19 @@ export default function ResourceMonitorPage() {
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button size="default" variant="secondary" onClick={() => void refreshAll()}>
             <span
-              className="btn-icon i-noto:anticlockwise-downwards-and-upwards-open-circle-arrows"
+              className="btn-icon i-noto:counterclockwise-arrows-button"
               aria-hidden="true"
             />
             <span>{t("action.refreshNow")}</span>
           </Button>
-          <Button size="default" variant="danger" onClick={() => void resetSession()}>
+          <Button
+            size="default"
+            variant="danger"
+            onClick={() => {
+              setAttributionSnapshots([]);
+              void resetSession();
+            }}
+          >
             <span className="btn-icon i-noto:broom" aria-hidden="true" />
             <span>{t("action.resetSession")}</span>
           </Button>
@@ -346,7 +740,7 @@ export default function ResourceMonitorPage() {
       </section>
 
       <section className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-        <article className="rounded-xl border border-border-muted bg-surface p-4">
+        <article className="ui-glass-panel p-4">
           <header className="mb-3">
             <div className="font-mono ui-text-micro uppercase tracking-ui-wide text-text-muted">
               {t("panel.timeline.title")}
@@ -360,14 +754,14 @@ export default function ResourceMonitorPage() {
           )}
         </article>
 
-        <article className="rounded-xl border border-border-muted bg-surface p-4">
+        <article className="ui-glass-panel p-4">
           <header className="mb-3">
             <div className="font-mono ui-text-micro uppercase tracking-ui-wide text-text-muted">
               {t("panel.modules.title")}
             </div>
             <h2 className="mt-1 text-sm font-semibold text-text-primary">{t("panel.modules.subtitle")}</h2>
           </header>
-          {moduleStats.length === 0 ? (
+          {moduleChartData.length === 0 ? (
             <div className="py-10 text-center text-sm text-text-muted">{t("chart.noData")}</div>
           ) : (
             <div ref={moduleChartRef} className="h-[280px] w-full" />
@@ -376,21 +770,21 @@ export default function ResourceMonitorPage() {
       </section>
 
       <section className="grid grid-cols-1 gap-3 xl:grid-cols-[1.15fr_1fr]">
-        <article className="rounded-xl border border-border-muted bg-surface p-4">
+        <article className="ui-glass-panel p-4">
           <header className="mb-3">
             <div className="font-mono ui-text-micro uppercase tracking-ui-wide text-text-muted">
               {t("panel.crates.title")}
             </div>
             <h2 className="mt-1 text-sm font-semibold text-text-primary">{t("panel.crates.subtitle")}</h2>
           </header>
-          {crateStats.length === 0 ? (
+          {crateChartData.length === 0 ? (
             <div className="py-10 text-center text-sm text-text-muted">{t("chart.noData")}</div>
           ) : (
             <div ref={crateChartRef} className="h-[240px] w-full" />
           )}
         </article>
 
-        <article className="rounded-xl border border-border-muted bg-surface p-4">
+        <article className="ui-glass-panel p-4">
           <header className="mb-3">
             <div className="font-mono ui-text-micro uppercase tracking-ui-wide text-text-muted">
               {t("panel.analysis.title")}
@@ -401,7 +795,7 @@ export default function ResourceMonitorPage() {
             {moduleStats.slice(0, 6).map((item) => (
               <div
                 key={item.moduleId}
-                className="flex items-start justify-between gap-3 rounded-lg border border-border-muted/70 bg-app/55 px-3 py-2"
+                className="flex items-start justify-between gap-3 rounded-lg border border-border-glass bg-surface-glass-soft px-3 py-2 shadow-inset-soft"
               >
                 <div>
                   <div className="text-sm font-medium text-text-primary">{t(`module.${item.moduleId}`)}</div>

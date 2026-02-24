@@ -50,22 +50,22 @@ const wrapperClassMap: Record<SelectVariant, string> = {
 
 const triggerClassMap: Record<SelectVariant, string> = {
   default:
-    "w-full rounded-md border border-border-muted bg-surface px-3 text-sm text-text-primary shadow-inset-soft outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong hover:bg-surface-soft",
-  tool: "rounded-md border border-border-muted bg-surface px-2.5 text-ui-sm leading-ui-sm text-text-primary shadow-inset-soft outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong hover:bg-surface-soft",
+    "w-full rounded-md border border-border-glass bg-surface-glass-soft px-3 text-sm text-text-primary shadow-inset-soft outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-glass-strong hover:bg-surface-glass",
+  tool: "rounded-md border border-border-glass bg-surface-glass-soft px-2.5 text-ui-sm leading-ui-sm text-text-primary shadow-inset-soft outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-glass-strong hover:bg-surface-glass",
   clipboard:
-    "rounded-md border border-border-muted bg-surface px-2.5 text-ui-sm leading-ui-sm text-text-primary shadow-inset-soft outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong hover:bg-surface-soft",
+    "rounded-md border border-border-glass bg-surface-glass-soft px-2.5 text-ui-sm leading-ui-sm text-text-primary shadow-inset-soft outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-glass-strong hover:bg-surface-glass",
   theme:
-    "h-8 rounded-lg border border-border-muted bg-surface px-2 text-xs text-text-secondary shadow-inset-soft outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-strong hover:bg-surface-soft",
+    "h-8 rounded-lg border border-border-glass bg-surface-glass-soft px-2 text-xs text-text-secondary shadow-inset-soft outline-none transition-[border-color,background-color,box-shadow] duration-150 hover:border-border-glass-strong hover:bg-surface-glass",
 };
 
 const panelClassMap: Record<SelectVariant, string> = {
   default:
-    "left-0 mt-1.5 max-h-64 w-full overflow-y-auto rounded-lg border border-border-muted bg-surface-overlay p-1 shadow-overlay backdrop-blur-md backdrop-saturate-130",
-  tool: "left-0 mt-1.5 max-h-64 min-w-full overflow-y-auto rounded-lg border border-border-muted bg-surface-overlay p-1 shadow-overlay backdrop-blur-md backdrop-saturate-130",
+    "left-0 mt-1.5 max-h-64 w-full overflow-y-auto rounded-lg border border-border-glass bg-surface-glass-strong p-1 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]",
+  tool: "left-0 mt-1.5 max-h-64 min-w-full overflow-y-auto rounded-lg border border-border-glass bg-surface-glass-strong p-1 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]",
   clipboard:
-    "left-0 mt-1.5 max-h-64 min-w-full overflow-y-auto rounded-lg border border-border-muted bg-surface-overlay p-1 shadow-overlay backdrop-blur-md backdrop-saturate-130",
+    "left-0 mt-1.5 max-h-64 min-w-full overflow-y-auto rounded-lg border border-border-glass bg-surface-glass-strong p-1 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]",
   theme:
-    "right-0 mt-1.5 max-h-64 min-w-full overflow-y-auto rounded-lg border border-border-muted bg-surface-overlay p-1 shadow-overlay backdrop-blur-md backdrop-saturate-130",
+    "right-0 mt-1.5 max-h-64 min-w-full overflow-y-auto rounded-lg border border-border-glass bg-surface-glass-strong p-1 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]",
 };
 
 const optionClassMap: Record<SelectVariant, string> = {
@@ -482,8 +482,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
                   optionClassMap[variant],
                   option.disabled
                     ? "cursor-not-allowed text-text-muted/50"
-                    : "cursor-pointer text-text-secondary hover:bg-surface-soft hover:text-text-primary",
-                  isActive && !option.disabled ? "bg-surface-soft text-text-primary" : null,
+                    : "cursor-pointer text-text-secondary hover:bg-surface-glass-soft hover:text-text-primary",
+                  isActive && !option.disabled ? "bg-surface-glass-soft text-text-primary" : null,
                   isSelected && !option.disabled ? "bg-accent-soft text-text-primary" : null,
                 )}
                 onMouseEnter={() => {

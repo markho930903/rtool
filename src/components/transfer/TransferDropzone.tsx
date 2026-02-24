@@ -60,7 +60,7 @@ export default function TransferDropzone(props: TransferDropzoneProps) {
   };
 
   return (
-    <section className="rounded-4 border border-border-muted bg-surface p-4">
+    <section className="ui-glass-panel p-4">
       <h2 className="text-sm font-semibold text-text-primary">{t("dropzone.title")}</h2>
       <p className="mt-1 text-xs text-text-secondary">{t("dropzone.desc")}</p>
 
@@ -69,7 +69,7 @@ export default function TransferDropzone(props: TransferDropzoneProps) {
           event.preventDefault();
         }}
         onDrop={onDrop}
-        className="mt-3 rounded-3 border border-dashed border-border-muted px-4 py-6 text-center text-xs text-text-secondary"
+        className="mt-3 rounded-3 border border-dashed border-border-glass px-4 py-6 text-center text-xs text-text-secondary"
       >
         {t("dropzone.hint")}
       </div>
@@ -140,7 +140,7 @@ export default function TransferDropzone(props: TransferDropzoneProps) {
         }}
       />
 
-      <div className="mt-3 max-h-44 overflow-auto rounded-2 border border-border-muted p-2">
+      <div className="mt-3 max-h-44 overflow-auto rounded-2 border border-border-glass bg-surface-glass-soft p-2 shadow-inset-soft">
         {props.pendingFiles.length === 0 ? <p className="text-xs text-text-secondary">{t("dropzone.empty")}</p> : null}
         {props.pendingFiles.map((item) => (
           <div key={item.path} className="truncate py-1 text-xs text-text-primary">

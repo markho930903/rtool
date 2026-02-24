@@ -81,7 +81,7 @@ export const Switch = forwardRef<HTMLInputElement, SwitchProps>(function Switch(
         aria-hidden="true"
         className={cx(
           "pointer-events-none absolute left-0.5 top-0.5 rounded-full bg-text-primary",
-          "shadow-[0_1px_3px_rgb(0_0_0/0.35)] transition-[transform,background-color] duration-180 ease-out",
+          "shadow-sidebar-item-hover transition-[transform,background-color] duration-180 ease-out",
           sizeClass.thumb,
           sizeClass.translate,
           "peer-checked:bg-accent-contrast",

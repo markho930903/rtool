@@ -20,7 +20,7 @@ export default function TransferHistoryPanel(props: TransferHistoryPanelProps) {
   const { t } = useTranslation("transfer");
 
   return (
-    <section className="rounded-4 border border-border-muted bg-surface p-4">
+    <section className="ui-glass-panel p-4">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-text-primary">{t("history.title")}</h2>
         <div className="flex items-center gap-1">
@@ -53,7 +53,7 @@ export default function TransferHistoryPanel(props: TransferHistoryPanelProps) {
         {props.history.length === 0 ? <p className="text-xs text-text-secondary">{t("history.empty")}</p> : null}
 
         {props.history.map((item) => (
-          <article key={item.id} className="rounded-3 border border-border-muted p-2">
+          <article key={item.id} className="rounded-3 border border-border-glass bg-surface-glass-soft p-2 shadow-inset-soft">
             <div className="text-xs font-medium text-text-primary">{item.peerName}</div>
             <div className="mt-1 text-[11px] text-text-secondary">{item.status}</div>
             <div className="mt-1 text-[11px] text-text-secondary">{formatTime(item.createdAt)}</div>

@@ -121,7 +121,7 @@ const ROUTE_CONFIG: AppRouteConfig[] = [
     windowMode: "resource-monitor",
     menu: {
       labelKey: "nav.resourceMonitor",
-      icon: "i-noto:bar-chart",
+      icon: "i-noto:satellite-antenna",
       order: 5,
     },
     homeModule: {

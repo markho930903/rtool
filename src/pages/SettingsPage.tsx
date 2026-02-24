@@ -819,7 +819,7 @@ export default function SettingsPage() {
   return (
     <div className="h-full min-h-0">
       <div className="grid h-full min-h-0 grid-cols-1 md:grid-cols-[220px_1fr]">
-        <aside className="h-full min-h-0 border-b border-border-muted bg-surface md:border-b-0 md:border-r">
+        <aside className="ui-glass-panel h-full min-h-0 border-b border-border-glass bg-surface-glass md:border-b-0 md:border-r">
           <nav className="flex h-full flex-col py-5" aria-label={t("nav.aria")}>
             {settingsNavItems.map((item) => {
               const active = item.key === activeSection;
@@ -829,10 +829,10 @@ export default function SettingsPage() {
                   key={item.key}
                   type="button"
                   className={[
-                    "w-full border-b border-border-muted/70 px-4 py-3 text-left transition-colors last:border-b-0",
+                    "w-full border-b border-border-glass px-4 py-3 text-left transition-colors last:border-b-0",
                     active
                       ? "bg-accent-soft text-text-primary"
-                      : "text-text-secondary hover:bg-surface-soft hover:text-text-primary",
+                      : "text-text-secondary hover:bg-surface-glass-soft hover:text-text-primary",
                   ].join(" ")}
                   onClick={() => setActiveSection(item.key)}
                   aria-current={active ? "page" : undefined}
@@ -889,7 +889,7 @@ export default function SettingsPage() {
                   />
                 </div>
 
-                <div className="mt-5 space-y-3 rounded-lg border border-border-muted bg-surface-soft px-3 py-3">
+                <div className="mt-5 space-y-3 rounded-lg border border-border-glass bg-surface-glass-soft shadow-inset-soft px-3 py-3">
                   <h3 className="m-0 text-sm font-semibold text-text-primary">{t("general.import.title")}</h3>
                   <p className="m-0 text-xs text-text-muted">{t("general.import.desc")}</p>
 
@@ -1010,7 +1010,7 @@ export default function SettingsPage() {
                   </p>
                 </div>
 
-                <div className="max-w-[560px] space-y-3 rounded-lg border border-border-muted bg-surface-soft px-3 py-3">
+                <div className="max-w-[560px] space-y-3 rounded-lg border border-border-glass bg-surface-glass-soft shadow-inset-soft px-3 py-3">
                   <SwitchField
                     checked={sizeCleanupEnabled}
                     label={t("clipboard.sizeCleanupEnabled")}
@@ -1115,7 +1115,7 @@ export default function SettingsPage() {
                 <h2 className="m-0 text-sm font-semibold text-text-primary">{t("transfer.title")}</h2>
                 <p className="m-0 text-xs text-text-muted">{t("transfer.desc")}</p>
 
-                <div className="max-w-[640px] space-y-3 rounded-lg border border-border-muted bg-surface-soft px-3 py-3">
+                <div className="max-w-[640px] space-y-3 rounded-lg border border-border-glass bg-surface-glass-soft shadow-inset-soft px-3 py-3">
                   <div className="space-y-1">
                     <label htmlFor="transfer-default-dir" className="text-xs text-text-secondary">
                       {t("transfer.defaultDir")}
@@ -1203,7 +1203,7 @@ export default function SettingsPage() {
                 <h2 className="m-0 text-sm font-semibold text-text-primary">{t("launcher.title")}</h2>
                 <p className="m-0 text-xs text-text-muted">{t("launcher.desc")}</p>
 
-                <div className="max-w-[760px] space-y-3 rounded-lg border border-border-muted bg-surface-soft px-3 py-3">
+                <div className="max-w-[760px] space-y-3 rounded-lg border border-border-glass bg-surface-glass-soft shadow-inset-soft px-3 py-3">
                   <div className="space-y-1">
                     <label htmlFor="launcher-roots" className="text-xs text-text-secondary">
                       {t("launcher.roots")}
@@ -1211,8 +1211,8 @@ export default function SettingsPage() {
                     <textarea
                       id="launcher-roots"
                       className={[
-                        "min-h-[88px] w-full resize-y rounded-md border bg-surface px-2.5 py-2 text-xs outline-none",
-                        launcherRootsInvalid ? "border-danger" : "border-border-muted focus:border-border-primary",
+                        "min-h-[88px] w-full resize-y rounded-md border border-border-glass bg-surface-glass-soft px-2.5 py-2 text-xs outline-none shadow-inset-soft",
+                        launcherRootsInvalid ? "border-danger" : "border-border-glass focus:border-border-glass-strong",
                       ].join(" ")}
                       value={launcherRootsInput}
                       onChange={(event) => {
@@ -1231,7 +1231,7 @@ export default function SettingsPage() {
                     </label>
                     <textarea
                       id="launcher-excludes"
-                      className="min-h-[110px] w-full resize-y rounded-md border border-border-muted bg-surface px-2.5 py-2 text-xs outline-none focus:border-border-primary"
+                      className="min-h-[110px] w-full resize-y rounded-md border border-border-glass bg-surface-glass-soft px-2.5 py-2 text-xs outline-none shadow-inset-soft focus:border-border-glass-strong"
                       value={launcherExcludeInput}
                       onChange={(event) => {
                         setLauncherExcludeInput(event.currentTarget.value);
@@ -1316,7 +1316,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <div className="max-w-[760px] rounded-lg border border-border-muted bg-surface-soft px-3 py-3 text-xs text-text-secondary">
+                <div className="max-w-[760px] rounded-lg border border-border-glass bg-surface-glass-soft shadow-inset-soft px-3 py-3 text-xs text-text-secondary">
                   <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
                     <span>
                       {t("launcher.status.ready", {
@@ -1392,7 +1392,7 @@ export default function SettingsPage() {
                 <p className="m-0 text-xs text-text-muted">{t("logging.desc")}</p>
 
                 <div className="max-w-[560px] space-y-3">
-                  <div className="rounded-lg border border-border-muted bg-surface-soft px-3 py-3">
+                  <div className="rounded-lg border border-border-glass bg-surface-glass-soft shadow-inset-soft px-3 py-3">
                     <div className="space-y-1">
                       <label className="text-xs text-text-secondary" htmlFor="logging-min-level">
                         {t("logging.minLevel")}
@@ -1415,7 +1415,7 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-lg border border-border-muted bg-surface-soft px-3 py-3">
+                  <div className="rounded-lg border border-border-glass bg-surface-glass-soft shadow-inset-soft px-3 py-3">
                     <div className="space-y-1">
                       <label className="text-xs text-text-secondary" htmlFor="logging-keep-days">
                         {t("logging.keepDays", { min: MIN_KEEP_DAYS, max: MAX_KEEP_DAYS })}
@@ -1433,7 +1433,7 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-lg border border-border-muted bg-surface-soft px-3 py-3">
+                  <div className="rounded-lg border border-border-glass bg-surface-glass-soft shadow-inset-soft px-3 py-3">
                     <div className="space-y-1">
                       <label className="text-xs text-text-secondary" htmlFor="logging-high-freq-window">
                         {t("logging.windowMs", { min: MIN_HIGH_FREQ_WINDOW_MS, max: MAX_HIGH_FREQ_WINDOW_MS })}
@@ -1451,7 +1451,7 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-lg border border-border-muted bg-surface-soft px-3 py-3">
+                  <div className="rounded-lg border border-border-glass bg-surface-glass-soft shadow-inset-soft px-3 py-3">
                     <div className="space-y-1">
                       <label className="text-xs text-text-secondary" htmlFor="logging-high-freq-max">
                         {t("logging.maxPerKey", { min: MIN_HIGH_FREQ_MAX_PER_KEY, max: MAX_HIGH_FREQ_MAX_PER_KEY })}
@@ -1469,7 +1469,7 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-lg border border-border-muted bg-surface-soft px-3 py-3">
+                  <div className="rounded-lg border border-border-glass bg-surface-glass-soft shadow-inset-soft px-3 py-3">
                     <SwitchField
                       checked={logRealtimeEnabled}
                       controlPosition="end"
@@ -1484,7 +1484,7 @@ export default function SettingsPage() {
                     />
                   </div>
 
-                  <div className="rounded-lg border border-border-muted bg-surface-soft px-3 py-3">
+                  <div className="rounded-lg border border-border-glass bg-surface-glass-soft shadow-inset-soft px-3 py-3">
                     <SwitchField
                       checked={logAllowRawView}
                       controlPosition="end"

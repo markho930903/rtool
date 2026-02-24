@@ -37,7 +37,7 @@ export default function TimestampTool() {
   }, [input]);
 
   return (
-    <article className="flex flex-col gap-2.5 rounded-lg border border-border-muted bg-surface-soft p-3">
+    <article className="flex flex-col gap-2.5 rounded-lg border border-border-glass bg-surface-glass-soft p-3 shadow-inset-soft">
       <header className="flex items-center justify-between gap-2">
         <h3 className="m-0 text-sm font-semibold text-text-primary">{t("timestamp.title")}</h3>
       </header>

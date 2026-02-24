@@ -62,7 +62,7 @@ export default function TransferPage() {
 
   return (
     <div className="space-y-4">
-      <header className="rounded-4 border border-border-muted bg-surface p-4">
+      <header className="ui-glass-panel-strong p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h1 className="ui-section-title">{t("page.title")}</h1>
@@ -110,14 +110,14 @@ export default function TransferPage() {
           <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-[minmax(0,1fr)_120px_auto]">
             <Input
               variant="tool"
-              className="bg-elevated text-ui-xs"
+              className="text-ui-xs"
               value={downloadDirInput}
               onChange={(event) => setDownloadDirInput(event.currentTarget.value)}
               placeholder={t("page.downloadDir")}
             />
             <Input
               variant="tool"
-              className="bg-elevated text-ui-xs"
+              className="text-ui-xs"
               value={autoCleanupDaysInput}
               onChange={(event) => setAutoCleanupDaysInput(event.currentTarget.value)}
               placeholder={t("page.autoCleanupDays")}

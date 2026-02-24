@@ -103,7 +103,7 @@ function MetricCard(props: MetricCardProps) {
   const valueClassName = props.tone === "accent" ? "text-accent" : "text-text-primary";
 
   return (
-    <article className="relative overflow-hidden rounded-xl border border-border-muted bg-surface px-4 py-3">
+    <article className="ui-glass-panel px-4 py-3">
       <div className="font-mono ui-text-micro uppercase tracking-ui-wide text-text-muted">{props.title}</div>
       <div className={`mt-2 font-mono text-ui-lg leading-none font-semibold ${valueClassName}`}>{props.value}</div>
       <div className="mt-1.5 text-xs text-text-secondary">{props.hint}</div>
@@ -113,7 +113,7 @@ function MetricCard(props: MetricCardProps) {
 
 function InfoRow(props: InfoRowProps) {
   return (
-    <div className="flex items-start justify-between gap-3 border-b border-border-muted/65 py-2 last:border-b-0">
+    <div className="flex items-start justify-between gap-3 border-b border-border-glass py-2 last:border-b-0">
       <span className="text-xs text-text-muted">{props.label}</span>
       <span className="text-right font-mono text-xs text-text-primary">{props.value}</span>
     </div>
@@ -122,7 +122,7 @@ function InfoRow(props: InfoRowProps) {
 
 function TerminalPanel(props: TerminalPanelProps) {
   return (
-    <section className="rounded-xl border border-border-muted bg-surface p-4">
+    <section className="ui-glass-panel p-4">
       <header className="mb-3">
         <div className="font-mono ui-text-micro uppercase tracking-ui-wide text-text-muted">{props.title}</div>
         <h2 className="mt-1 text-sm font-semibold text-text-primary">{props.subtitle}</h2>
@@ -149,7 +149,7 @@ function MemorySparkline(props: {
 
   return (
     <div>
-      <div className="grid h-24 grid-cols-[repeat(20,minmax(0,1fr))] items-end gap-1 rounded-lg border border-border-muted bg-app/65 px-2 py-2">
+      <div className="grid h-24 grid-cols-[repeat(20,minmax(0,1fr))] items-end gap-1 rounded-lg border border-border-glass bg-surface-glass-soft px-2 py-2 shadow-inset-soft">
         {props.points.map((point) => {
           const value = point.appMemoryBytes ?? 0;
           const height = values.length === 0 ? 0.1 : Math.max(value / max, 0.08);
@@ -212,14 +212,14 @@ export default function HomePage() {
 
   return (
     <div className="space-y-3 pb-2">
-      <section className="rounded-2xl border border-border-strong bg-surface p-4">
+      <section className="ui-glass-panel-strong rounded-2xl p-4">
         <div>
           <div className="font-mono ui-text-micro uppercase tracking-ui-wider text-text-muted">
             rtool / dashboard / live telemetry
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <h1 className="m-0 text-xl font-semibold tracking-tight text-text-primary">{t("header.title")}</h1>
-            <span className="rounded-full border border-border-muted bg-app px-2 py-0.5 font-mono ui-text-micro uppercase tracking-ui-wide text-accent">
+            <span className="ui-glass-chip font-mono ui-text-micro uppercase tracking-ui-wide text-accent">
               {statusLabel}
             </span>
           </div>
@@ -227,7 +227,7 @@ export default function HomePage() {
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Button size="default" variant="secondary" onClick={() => void refresh()}>
               <span
-                className="btn-icon i-noto:anticlockwise-downwards-and-upwards-open-circle-arrows"
+                className="btn-icon i-noto:counterclockwise-arrows-button"
                 aria-hidden="true"
               />
               <span>{t("action.refreshNow")}</span>
@@ -316,13 +316,13 @@ export default function HomePage() {
             {moduleStatus.map((item) => (
               <article
                 key={item.id}
-                className="flex items-start justify-between gap-3 rounded-lg border border-border-muted/70 bg-app/55 px-3 py-2"
+                className="flex items-start justify-between gap-3 rounded-lg border border-border-glass bg-surface-glass-soft px-3 py-2 shadow-inset-soft"
               >
                 <div>
                   <div className="text-sm font-medium text-text-primary">{item.name}</div>
                   <div className="mt-0.5 text-xs text-text-muted">{item.detail}</div>
                 </div>
-                <span className="rounded-full border border-accent/50 bg-accent/15 px-2 py-0.5 font-mono ui-text-micro uppercase text-accent">
+                <span className="ui-glass-chip border-accent/45 bg-accent/14 font-mono ui-text-micro uppercase text-accent">
                   {item.state}
                 </span>
               </article>

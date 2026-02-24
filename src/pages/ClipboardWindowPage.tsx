@@ -352,7 +352,7 @@ export default function ClipboardWindowPage() {
   return (
     <div className="h-screen w-screen overflow-hidden rounded-md bg-transparent p-0 text-text-primary">
       <main
-        className="flex h-full w-full overflow-hidden rounded-md border border-border-muted bg-surface-overlay p-0 shadow-overlay backdrop-blur-[24px] backdrop-saturate-140"
+        className="rtool-glass-sheen-clip flex h-full w-full overflow-hidden rounded-md border border-border-glass bg-surface-glass-strong p-0 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]"
         onMouseDown={handleDrag}
       >
         <ClipboardPanel

@@ -56,9 +56,11 @@ const iconOnlySizeClassMap: Record<UiSize, string> = {
 
 const variantClassMap: Record<ButtonVariant, string> = {
   primary: "border-transparent bg-accent text-accent-contrast hover:opacity-90",
-  secondary: "border-border-strong bg-surface text-text-primary hover:border-accent hover:bg-surface-soft",
-  danger: "border-border-strong bg-surface text-danger hover:border-danger hover:bg-surface-soft",
-  ghost: "border-transparent bg-transparent text-text-secondary hover:bg-surface-soft hover:text-text-primary",
+  secondary:
+    "border-border-glass bg-surface-glass-soft text-text-primary shadow-inset-soft hover:border-border-glass-strong hover:bg-surface-glass",
+  danger:
+    "border-border-glass bg-surface-glass-soft text-danger shadow-inset-soft hover:border-danger hover:bg-surface-glass",
+  ghost: "border-transparent bg-transparent text-text-secondary hover:bg-surface-glass-soft hover:text-text-primary",
 };
 
 function buildClassName(props: {

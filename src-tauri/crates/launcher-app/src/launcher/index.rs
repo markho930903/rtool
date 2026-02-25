@@ -32,8 +32,9 @@ const INDEX_VERSION_KEY: &str = "launcher.index.version";
 const INDEX_LAST_ERROR_KEY: &str = "launcher.index.lastError";
 const INDEX_VERSION_VALUE: &str = "2";
 const SEARCH_SETTINGS_KEY: &str = "launcher.search.settings";
-const LAUNCHER_SCOPE_POLICY_APPLIED_KEY: &str = "launcher.search.scope_policy_applied";
-const LAUNCHER_SCOPE_POLICY_APPLIED_VALUE: &str = "applied";
+const LAUNCHER_SCOPE_POLICY_VERSION_KEY: &str = "launcher.search.scope_policy_version";
+const LAUNCHER_SCOPE_POLICY_VERSION_VALUE: &str = "2";
+const LAUNCHER_SCOPE_POLICY_LEGACY_APPLIED_KEY: &str = "launcher.search.scope_policy_applied";
 
 const DEFAULT_MAX_SCAN_DEPTH: u32 = 20;
 const DEFAULT_MAX_ITEMS_PER_ROOT: u32 = 200_000;
@@ -461,6 +462,18 @@ pub async fn update_search_settings_async(
     .normalize();
 
     save_settings(db_conn, &next).await?;
+    Ok(next.to_dto())
+}
+
+pub async fn reset_search_settings_async(db_conn: &DbConn) -> AppResult<LauncherSearchSettingsDto> {
+    let next = LauncherSearchSettingsRecord::default().normalize();
+    save_settings(db_conn, &next).await?;
+    set_app_setting(
+        db_conn,
+        LAUNCHER_SCOPE_POLICY_VERSION_KEY,
+        LAUNCHER_SCOPE_POLICY_VERSION_VALUE,
+    )
+    .await?;
     Ok(next.to_dto())
 }
 
@@ -1414,35 +1427,39 @@ async fn load_or_init_settings(db_conn: &DbConn) -> AppResult<LauncherSearchSett
 
 async fn enforce_scope_policy_migration(
     db_conn: &DbConn,
-    mut settings: LauncherSearchSettingsRecord,
+    settings: LauncherSearchSettingsRecord,
 ) -> AppResult<LauncherSearchSettingsRecord> {
-    let from_state = get_app_setting(db_conn, LAUNCHER_SCOPE_POLICY_APPLIED_KEY)
+    let from_state = get_app_setting(db_conn, LAUNCHER_SCOPE_POLICY_VERSION_KEY)
         .await?
         .filter(|value| !value.trim().is_empty());
-    if from_state.as_deref() == Some(LAUNCHER_SCOPE_POLICY_APPLIED_VALUE) {
+    if from_state.as_deref() == Some(LAUNCHER_SCOPE_POLICY_VERSION_VALUE) {
         return Ok(settings);
     }
 
+    let legacy_state = get_app_setting(db_conn, LAUNCHER_SCOPE_POLICY_LEGACY_APPLIED_KEY)
+        .await?
+        .filter(|value| !value.trim().is_empty());
+    let next = LauncherSearchSettingsRecord::default().normalize();
     let old_roots_count = settings.roots.len() as u32;
-    settings.roots = default_search_roots();
-    save_settings(db_conn, &settings).await?;
+    save_settings(db_conn, &next).await?;
     set_app_setting(
         db_conn,
-        LAUNCHER_SCOPE_POLICY_APPLIED_KEY,
-        LAUNCHER_SCOPE_POLICY_APPLIED_VALUE,
+        LAUNCHER_SCOPE_POLICY_VERSION_KEY,
+        LAUNCHER_SCOPE_POLICY_VERSION_VALUE,
     )
     .await?;
 
     tracing::info!(
         event = "launcher_scope_policy_migrated",
         from_state = from_state.as_deref().unwrap_or("none"),
-        to_state = LAUNCHER_SCOPE_POLICY_APPLIED_VALUE,
+        legacy_state = legacy_state.as_deref().unwrap_or("none"),
+        to_state = LAUNCHER_SCOPE_POLICY_VERSION_VALUE,
         platform = scope_platform_name(current_scope_platform()),
         old_roots_count,
-        new_roots_count = settings.roots.len() as u32
+        new_roots_count = next.roots.len() as u32
     );
 
-    Ok(settings)
+    Ok(next)
 }
 
 async fn save_settings(db_conn: &DbConn, settings: &LauncherSearchSettingsRecord) -> AppResult<()> {
@@ -1499,20 +1516,26 @@ fn default_search_roots() -> Vec<String> {
     let home_dir = current_home_dir();
     let app_data_dir = std::env::var_os("APPDATA").map(PathBuf::from);
     let program_data_dir = std::env::var_os("ProgramData").map(PathBuf::from);
+    let local_app_data_dir = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
     let candidates = build_default_search_root_candidates(
         current_scope_platform(),
         home_dir.as_deref(),
         app_data_dir.as_deref(),
         program_data_dir.as_deref(),
+        local_app_data_dir.as_deref(),
     );
     let mut roots = collect_existing_roots(candidates);
 
     if roots.is_empty() {
+        let mut fallback_candidates = Vec::new();
         if let Some(home) = home_dir {
-            roots.push(home.to_string_lossy().to_string());
-        } else {
-            roots.push("/".to_string());
+            fallback_candidates.push(home);
         }
+        if let Ok(current_dir) = std::env::current_dir() {
+            fallback_candidates.push(current_dir);
+        }
+        fallback_candidates.push(std::env::temp_dir());
+        roots = collect_existing_roots(fallback_candidates);
     }
 
     roots
@@ -1523,46 +1546,19 @@ fn build_default_search_root_candidates(
     home_dir: Option<&Path>,
     app_data_dir: Option<&Path>,
     program_data_dir: Option<&Path>,
-) -> Vec<PathBuf> {
-    let mut roots = Vec::new();
-
-    if matches!(platform, ScopePlatform::Macos | ScopePlatform::Windows) {
-        roots.extend(collect_user_common_roots(home_dir));
-        roots.extend(collect_app_roots_for_platform(
-            platform,
-            home_dir,
-            app_data_dir,
-            program_data_dir,
-        ));
-    }
-    roots.extend(collect_system_roots_for_platform(platform));
-    roots
-}
-
-fn collect_user_common_roots(home_dir: Option<&Path>) -> Vec<PathBuf> {
-    let mut roots = Vec::new();
-    let Some(home) = home_dir else {
-        return roots;
-    };
-
-    roots.push(home.to_path_buf());
-    roots.push(home.join("Desktop"));
-    roots.push(home.join("Documents"));
-    roots.push(home.join("Downloads"));
-    roots
-}
-
-fn collect_app_roots_for_platform(
-    platform: ScopePlatform,
-    home_dir: Option<&Path>,
-    app_data_dir: Option<&Path>,
-    program_data_dir: Option<&Path>,
+    local_app_data_dir: Option<&Path>,
 ) -> Vec<PathBuf> {
     match platform {
         ScopePlatform::Macos => {
-            let mut roots = vec![PathBuf::from("/Applications")];
+            let mut roots = Vec::new();
             if let Some(home) = home_dir {
                 roots.push(home.join("Applications"));
+            }
+            roots.push(PathBuf::from("/Applications"));
+            if let Some(home) = home_dir {
+                roots.push(home.join("Desktop"));
+                roots.push(home.join("Documents"));
+                roots.push(home.join("Downloads"));
             }
             roots
         }
@@ -1574,19 +1570,30 @@ fn collect_app_roots_for_platform(
             if let Some(program_data) = program_data_dir {
                 roots.push(program_data.join("Microsoft/Windows/Start Menu/Programs"));
             }
+            if let Some(home) = home_dir {
+                roots.push(home.join("Desktop"));
+                roots.push(home.join("Documents"));
+                roots.push(home.join("Downloads"));
+            }
+            if let Some(local_app_data) = local_app_data_dir {
+                roots.push(local_app_data.join("Programs"));
+            }
             roots
         }
-        ScopePlatform::Linux => Vec::new(),
-    }
-}
-
-fn collect_system_roots_for_platform(platform: ScopePlatform) -> Vec<PathBuf> {
-    match platform {
-        ScopePlatform::Macos => vec![PathBuf::from("/")],
-        ScopePlatform::Windows => (b'A'..=b'Z')
-            .map(|letter| PathBuf::from(format!("{}:\\", letter as char)))
-            .collect(),
-        ScopePlatform::Linux => vec![PathBuf::from("/")],
+        ScopePlatform::Linux => {
+            let mut roots = Vec::new();
+            if let Some(home) = home_dir {
+                roots.push(home.join(".local/share/applications"));
+            }
+            roots.push(PathBuf::from("/usr/share/applications"));
+            roots.push(PathBuf::from("/usr/local/share/applications"));
+            if let Some(home) = home_dir {
+                roots.push(home.join("Desktop"));
+                roots.push(home.join("Documents"));
+                roots.push(home.join("Downloads"));
+            }
+            roots
+        }
     }
 }
 
@@ -1598,7 +1605,10 @@ fn collect_existing_roots(candidates: Vec<PathBuf>) -> Vec<String> {
             continue;
         }
         let normalized = normalize_path_for_match(candidate.as_path());
-        if normalized.is_empty() || !dedup.insert(normalized) {
+        if normalized.is_empty()
+            || is_system_root_normalized(normalized.as_str())
+            || !dedup.insert(normalized)
+        {
             continue;
         }
         roots.push(candidate.to_string_lossy().to_string());
@@ -1688,6 +1698,10 @@ fn is_windows_drive_root(normalized: &str) -> bool {
     bytes.len() == 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
 }
 
+fn is_system_root_normalized(normalized: &str) -> bool {
+    normalized == "/" || is_windows_drive_root(normalized)
+}
+
 fn normalize_query(value: &str) -> String {
     value.trim().to_lowercase()
 }
@@ -1709,3 +1723,7 @@ fn escape_like_pattern(value: &str) -> String {
 #[cfg(test)]
 #[path = "../../tests/launcher/launcher_index_service_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "../../tests/launcher/launcher_slo_smoke_tests.rs"]
+mod slo_smoke_tests;

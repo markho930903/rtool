@@ -296,8 +296,7 @@ export type CommandKey =
   | "launcher_update_search_settings"
   | "launcher_get_index_status"
   | "launcher_rebuild_index"
-  | "palette_search"
-  | "palette_execute"
+  | "launcher_reset_search_settings"
   | "app_get_locale"
   | "app_set_locale"
   | "app_get_user_settings"
@@ -343,11 +342,13 @@ export type DashboardSnapshotDto = { sampledAt: number; app: AppRuntimeInfoDto; 
 
 export type ResourceModuleIdDto =
   | "launcher"
+  | "launcher_index"
+  | "launcher_fallback"
+  | "launcher_cache"
   | "clipboard"
   | "app_manager"
   | "transfer"
   | "logging"
-  | "palette"
   | "locale"
   | "dashboard"
   | "system";
@@ -630,7 +631,6 @@ export type ManagedAppDto = {
   fingerprint: string;
 };
 
-export type PaletteItemDto = { id: string; title: string; subtitle: string; category: string };
 
 export type ReloadLocalesResult = {
   success: boolean;

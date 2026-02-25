@@ -5,7 +5,6 @@ pub mod i18n_import;
 pub mod launcher;
 pub mod locale;
 pub mod logging;
-pub mod palette;
 pub mod resource_monitor;
 pub mod transfer;
 pub mod user_settings;

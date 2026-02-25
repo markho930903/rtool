@@ -13,13 +13,15 @@ const DEFAULT_HISTORY_LIMIT: usize = 1800;
 const DEFAULT_SAMPLING_INTERVAL_MS: u64 = 1000;
 const DEFAULT_DURATION_SAMPLE_LIMIT: usize = 240;
 
-const ALL_MODULES: [ResourceModuleIdDto; 9] = [
+const ALL_MODULES: [ResourceModuleIdDto; 11] = [
     ResourceModuleIdDto::Launcher,
+    ResourceModuleIdDto::LauncherIndex,
+    ResourceModuleIdDto::LauncherFallback,
+    ResourceModuleIdDto::LauncherCache,
     ResourceModuleIdDto::Clipboard,
     ResourceModuleIdDto::AppManager,
     ResourceModuleIdDto::Transfer,
     ResourceModuleIdDto::Logging,
-    ResourceModuleIdDto::Palette,
     ResourceModuleIdDto::Locale,
     ResourceModuleIdDto::Dashboard,
     ResourceModuleIdDto::System,
@@ -81,6 +83,25 @@ impl ModuleAccumulator {
             self.duration_sample_sum_ms = self.duration_sample_sum_ms.saturating_sub(removed);
         }
     }
+}
+
+fn record_module_observation_internal(
+    state: &mut MonitorState,
+    module_id: ResourceModuleIdDto,
+    success: bool,
+    duration_ms: u64,
+    max_samples: usize,
+    observed_at: i64,
+) {
+    let duration_ms = duration_ms.max(1);
+    let accumulator = state.modules.entry(module_id).or_default();
+    accumulator.calls = accumulator.calls.saturating_add(1);
+    if !success {
+        accumulator.error_calls = accumulator.error_calls.saturating_add(1);
+    }
+    accumulator.duration_sum_ms = accumulator.duration_sum_ms.saturating_add(duration_ms);
+    accumulator.push_duration(duration_ms, max_samples);
+    accumulator.last_seen_at = Some(observed_at);
 }
 
 #[derive(Debug)]
@@ -217,16 +238,29 @@ pub fn record_command_end(command: &str, request_id: &str, success: bool, durati
         .remove(request_id)
         .map(|item| item.module_id)
         .unwrap_or(fallback);
-    let now = now_ms();
-    let duration_ms = duration_ms.max(1);
-    let accumulator = state.modules.entry(module_id).or_default();
-    accumulator.calls = accumulator.calls.saturating_add(1);
-    if !success {
-        accumulator.error_calls = accumulator.error_calls.saturating_add(1);
-    }
-    accumulator.duration_sum_ms = accumulator.duration_sum_ms.saturating_add(duration_ms);
-    accumulator.push_duration(duration_ms, monitor.options.duration_sample_limit);
-    accumulator.last_seen_at = Some(now);
+    record_module_observation_internal(
+        &mut state,
+        module_id,
+        success,
+        duration_ms,
+        monitor.options.duration_sample_limit,
+        now_ms(),
+    );
+}
+
+pub fn record_module_observation(module_id: ResourceModuleIdDto, success: bool, duration_ms: u64) {
+    let Some(monitor) = GLOBAL_MONITOR.get() else {
+        return;
+    };
+    let mut state = monitor.lock_state();
+    record_module_observation_internal(
+        &mut state,
+        module_id,
+        success,
+        duration_ms,
+        monitor.options.duration_sample_limit,
+        now_ms(),
+    );
 }
 
 pub fn snapshot() -> ResourceSnapshotDto {
@@ -553,9 +587,6 @@ fn command_to_module(command: &str) -> ResourceModuleIdDto {
     if command.starts_with("logging_") {
         return ResourceModuleIdDto::Logging;
     }
-    if command.starts_with("palette_") {
-        return ResourceModuleIdDto::Palette;
-    }
     if command == "dashboard_snapshot" {
         return ResourceModuleIdDto::Dashboard;
     }
@@ -568,8 +599,10 @@ fn command_to_module(command: &str) -> ResourceModuleIdDto {
 fn module_to_crate(module_id: ResourceModuleIdDto) -> ResourceCrateIdDto {
     match module_id {
         ResourceModuleIdDto::Launcher
-        | ResourceModuleIdDto::AppManager
-        | ResourceModuleIdDto::Palette => ResourceCrateIdDto::LauncherApp,
+        | ResourceModuleIdDto::LauncherIndex
+        | ResourceModuleIdDto::LauncherFallback
+        | ResourceModuleIdDto::LauncherCache
+        | ResourceModuleIdDto::AppManager => ResourceCrateIdDto::LauncherApp,
         ResourceModuleIdDto::Clipboard => ResourceCrateIdDto::Clipboard,
         ResourceModuleIdDto::Transfer => ResourceCrateIdDto::Transfer,
         ResourceModuleIdDto::Logging => ResourceCrateIdDto::Infra,

@@ -147,7 +147,14 @@ export default function LauncherSettingsSection(props: LauncherSettingsSectionPr
           <Button
             size="default"
             variant="primary"
-            disabled={props.state.loading || props.state.saving || props.state.invalid || props.state.unchanged}
+            disabled={
+              props.state.loading ||
+              props.state.saving ||
+              props.state.rebuilding ||
+              props.state.resetting ||
+              props.state.invalid ||
+              props.state.unchanged
+            }
             onClick={() => {
               void props.state.onSave();
             }}
@@ -157,7 +164,7 @@ export default function LauncherSettingsSection(props: LauncherSettingsSectionPr
           <Button
             size="default"
             variant="secondary"
-            disabled={props.state.loading || props.state.rebuilding}
+            disabled={props.state.loading || props.state.rebuilding || props.state.resetting}
             onClick={() => {
               void props.state.onRefreshStatus();
             }}
@@ -167,12 +174,22 @@ export default function LauncherSettingsSection(props: LauncherSettingsSectionPr
           <Button
             size="default"
             variant="secondary"
-            disabled={props.state.loading || props.state.rebuilding}
+            disabled={props.state.loading || props.state.rebuilding || props.state.resetting}
             onClick={() => {
               void props.state.onRebuildIndex();
             }}
           >
             {props.state.rebuilding ? t("launcher.rebuilding") : t("launcher.rebuild")}
+          </Button>
+          <Button
+            size="default"
+            variant="secondary"
+            disabled={props.state.loading || props.state.rebuilding || props.state.resetting}
+            onClick={() => {
+              void props.state.onResetRecommended();
+            }}
+          >
+            {props.state.resetting ? t("launcher.resetting") : t("launcher.resetRecommended")}
           </Button>
           {props.state.loading ? <LoadingIndicator text={t("common:status.loading")} /> : null}
           {props.state.message ? (

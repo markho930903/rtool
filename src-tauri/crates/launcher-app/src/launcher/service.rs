@@ -2,10 +2,12 @@ use crate::host::LauncherHost;
 use crate::launcher::icon::{
     resolve_application_icon, resolve_builtin_icon, resolve_file_type_icon,
 };
+use crate::launcher::index::search_indexed_items_async;
 use anyhow::Context;
 use app_core::i18n::{DEFAULT_RESOLVED_LOCALE, ResolvedAppLocale, t};
 use app_core::models::{ClipboardWindowOpenedPayload, LauncherActionDto, LauncherItemDto};
 use app_core::{AppError, AppResult, ResultExt};
+use app_infra::db::DbConn;
 use serde::Serialize;
 use serde_json::json;
 use std::collections::hash_map::DefaultHasher;
@@ -24,6 +26,8 @@ const MAX_APP_ITEMS: usize = 300;
 const MAX_FILE_ITEMS: usize = 2_000;
 const APP_SCAN_DEPTH: usize = 4;
 const FILE_SCAN_DEPTH: usize = 12;
+const FALLBACK_FILE_ITEMS_LIMIT: usize = 800;
+const FALLBACK_SCAN_DEPTH: usize = 6;
 const SCAN_WARNING_SAMPLE_LIMIT: usize = 5;
 
 #[derive(Debug, Default, Clone)]
@@ -143,36 +147,98 @@ pub fn invalidate_launcher_cache() {
     }
 }
 
-fn current_locale(_app: &dyn LauncherHost) -> ResolvedAppLocale {
-    DEFAULT_RESOLVED_LOCALE.to_string()
+fn current_locale(app: &dyn LauncherHost) -> ResolvedAppLocale {
+    app.resolved_locale()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEFAULT_RESOLVED_LOCALE.to_string())
 }
 
-pub fn search_launcher(
+#[derive(Debug, Clone, Default)]
+pub struct LauncherSearchDiagnostics {
+    pub index_used: bool,
+    pub index_failed: bool,
+    pub fallback_used: bool,
+    pub cache_refreshed: bool,
+    pub index_query_duration_ms: Option<u64>,
+    pub fallback_scan_duration_ms: Option<u64>,
+    pub cache_refresh_duration_ms: Option<u64>,
+}
+
+fn elapsed_ms(started_at: Instant) -> u64 {
+    u64::try_from(started_at.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+fn force_fallback_scan() -> bool {
+    std::env::var("RTOOL_LAUNCHER_FORCE_FALLBACK")
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
+        .unwrap_or(false)
+}
+
+pub async fn search_launcher_async(
     app: &dyn LauncherHost,
+    db_conn: &DbConn,
     query: &str,
     limit: Option<u16>,
-) -> Vec<LauncherItemDto> {
+) -> (Vec<LauncherItemDto>, LauncherSearchDiagnostics) {
     let normalized = normalize_query(query);
     let locale = current_locale(app);
     let result_limit = limit
         .map(usize::from)
         .unwrap_or(DEFAULT_RESULT_LIMIT)
         .clamp(1, MAX_RESULT_LIMIT);
+    let mut diagnostics = LauncherSearchDiagnostics::default();
     let mut items = builtin_items(&locale);
 
     if let Ok(mut cache) = launcher_cache().lock() {
         if cache.is_stale(&locale) {
+            let cache_refresh_started_at = Instant::now();
             cache.refresh(app, &locale);
+            diagnostics.cache_refreshed = true;
+            diagnostics.cache_refresh_duration_ms = Some(elapsed_ms(cache_refresh_started_at));
         }
         items.extend(cache.application_items.iter().cloned());
     }
 
-    let index_used = false;
-    tracing::debug!(event = "launcher_index_unavailable_fallback_scan");
+    if !force_fallback_scan() {
+        let index_started_at = Instant::now();
+        match search_indexed_items_async(app, db_conn, &normalized, &locale, result_limit).await {
+            Ok(index_result) => {
+                diagnostics.index_query_duration_ms = Some(elapsed_ms(index_started_at));
+                if index_result.ready {
+                    diagnostics.index_used = true;
+                    items.extend(index_result.items);
+                } else {
+                    tracing::info!(event = "launcher_index_not_ready_fallback_scan");
+                }
+            }
+            Err(error) => {
+                diagnostics.index_query_duration_ms = Some(elapsed_ms(index_started_at));
+                diagnostics.index_failed = true;
+                tracing::warn!(
+                    event = "launcher_index_query_failed_fallback_scan",
+                    error = error.to_string()
+                );
+            }
+        }
+    }
 
-    if !index_used {
+    if !diagnostics.index_used {
+        let fallback_started_at = Instant::now();
+        diagnostics.fallback_used = true;
         tracing::debug!(event = "launcher_fallback_scan_used");
-        items.extend(collect_file_items(app, &locale));
+        items.extend(collect_file_items_with_limits(
+            app,
+            &locale,
+            FALLBACK_SCAN_DEPTH,
+            FALLBACK_FILE_ITEMS_LIMIT,
+        ));
+        diagnostics.fallback_scan_duration_ms = Some(elapsed_ms(fallback_started_at));
     }
 
     let mut matched: Vec<LauncherItemDto> = items
@@ -189,7 +255,7 @@ pub fn search_launcher(
     });
 
     matched.truncate(result_limit);
-    matched
+    (matched, diagnostics)
 }
 
 fn should_hide_item_without_query(item: &LauncherItemDto) -> bool {
@@ -234,74 +300,6 @@ pub fn execute_launcher_action(
             open_path(Path::new(path)).map(|_| format!("path:{path}"))
         }
     }
-}
-
-pub fn search_palette_items(app: &dyn LauncherHost, query: &str) -> Vec<LauncherItemDto> {
-    let normalized = normalize_query(query);
-    let locale = current_locale(app);
-    let items = vec![
-        LauncherItemDto {
-            id: "action.open-tools".to_string(),
-            title: t(&locale, "launcher.legacy.tools.title"),
-            subtitle: t(&locale, "launcher.legacy.tools.subtitle"),
-            category: "action".to_string(),
-            source: Some(t(&locale, "launcher.source.builtin")),
-            shortcut: None,
-            score: 0,
-            icon_kind: "iconify".to_string(),
-            icon_value: "i-noto:hammer-and-wrench".to_string(),
-            action: LauncherActionDto::OpenBuiltinRoute {
-                route: "/tools".to_string(),
-            },
-        },
-        LauncherItemDto {
-            id: "action.open-home".to_string(),
-            title: t(&locale, "launcher.legacy.dashboard.title"),
-            subtitle: t(&locale, "launcher.legacy.dashboard.subtitle"),
-            category: "action".to_string(),
-            source: Some(t(&locale, "launcher.source.builtin")),
-            shortcut: None,
-            score: 0,
-            icon_kind: "iconify".to_string(),
-            icon_value: "i-noto:desktop-computer".to_string(),
-            action: LauncherActionDto::OpenBuiltinRoute {
-                route: "/".to_string(),
-            },
-        },
-    ];
-
-    if normalized.is_empty() {
-        return items;
-    }
-
-    items
-        .into_iter()
-        .filter(|item| {
-            let title_score = calculate_match_score(&item.title, &normalized);
-            let subtitle_score = calculate_match_score(&item.subtitle, &normalized);
-            let alias_score = calculate_alias_score(item, &normalized, &locale);
-            title_score > 0 || subtitle_score > 0 || alias_score > 0
-        })
-        .collect()
-}
-
-pub fn execute_palette_action_id(action_id: &str) -> AppResult<String> {
-    let message = match action_id {
-        "action.open-tools" => "route:/tools",
-        "action.open-transfer" => "route:/transfer",
-        "action.open-home" => "route:/",
-        "builtin.tools" => "route:/tools",
-        "builtin.transfer" => "route:/transfer",
-        "builtin.dashboard" => "route:/",
-        _ => {
-            return Err(
-                AppError::new("palette_action_unsupported", "不支持的命令动作")
-                    .with_context("actionId", action_id),
-            );
-        }
-    };
-
-    Ok(message.to_string())
 }
 
 fn open_main_with_route(app: &dyn LauncherHost, route: String) -> AppResult<()> {
@@ -695,16 +693,23 @@ fn collect_application_items(app: &dyn LauncherHost, locale: &str) -> Vec<Launch
     items
 }
 
-fn collect_file_items(app: &dyn LauncherHost, locale: &str) -> Vec<LauncherItemDto> {
+fn collect_file_items_with_limits(
+    app: &dyn LauncherHost,
+    locale: &str,
+    scan_depth: usize,
+    max_items: usize,
+) -> Vec<LauncherItemDto> {
     let mut items = Vec::new();
     let mut seen = HashSet::new();
+    let max_items = max_items.max(1).min(MAX_FILE_ITEMS);
+    let scan_depth = scan_depth.max(1).min(FILE_SCAN_DEPTH);
 
     for root in file_roots() {
-        if items.len() >= MAX_FILE_ITEMS {
+        if items.len() >= max_items {
             break;
         }
 
-        scan_root(&root, FILE_SCAN_DEPTH, MAX_FILE_ITEMS, |path, _is_dir| {
+        scan_root(&root, scan_depth, max_items, |path, _is_dir| {
             if is_hidden(path) {
                 return None;
             }
@@ -712,7 +717,7 @@ fn collect_file_items(app: &dyn LauncherHost, locale: &str) -> Vec<LauncherItemD
         })
         .into_iter()
         .for_each(|path| {
-            if items.len() >= MAX_FILE_ITEMS {
+            if items.len() >= max_items {
                 return;
             }
 

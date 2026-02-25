@@ -9,6 +9,7 @@ import { useLayoutStore } from "@/layouts/layout.store";
 import type { LayoutPreference } from "@/layouts/layout.types";
 import {
   launcherGetIndexStatus,
+  launcherResetSearchSettings,
   launcherGetSearchSettings,
   launcherRebuildIndex,
   launcherUpdateSearchSettings,
@@ -189,6 +190,7 @@ export interface LauncherSettingsSectionState {
   loading: boolean;
   saving: boolean;
   rebuilding: boolean;
+  resetting: boolean;
 
   rootsInput: string;
   excludeInput: string;
@@ -234,6 +236,7 @@ export interface LauncherSettingsSectionState {
   onSave: () => Promise<void>;
   onRefreshStatus: () => Promise<void>;
   onRebuildIndex: () => Promise<void>;
+  onResetRecommended: () => Promise<void>;
 }
 
 export interface LoggingSettingsSectionState {
@@ -405,6 +408,7 @@ export function useSettingsPageState(): UseSettingsPageStateResult {
   const [launcherLoading, setLauncherLoading] = useState(false);
   const [launcherSaving, setLauncherSaving] = useState(false);
   const [launcherRebuilding, setLauncherRebuilding] = useState(false);
+  const [launcherResetting, setLauncherResetting] = useState(false);
   const [launcherSettings, setLauncherSettings] = useState<LauncherSearchSettings | null>(null);
   const [launcherStatus, setLauncherStatus] = useState<LauncherIndexStatus | null>(null);
   const [launcherRootsInput, setLauncherRootsInput] = useState("");
@@ -918,6 +922,22 @@ export function useSettingsPageState(): UseSettingsPageStateResult {
     }
   };
 
+  const handleResetLauncherSettings = async () => {
+    setLauncherResetting(true);
+    try {
+      const settings = await launcherResetSearchSettings();
+      setLauncherSettings(settings);
+      await launcherRebuildIndex();
+      await handleRefreshLauncherStatus();
+      setLauncherMessage({ text: t("launcher.resetSuccess"), isError: false });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setLauncherMessage({ text: t("launcher.resetFailed", { message }), isError: true });
+    } finally {
+      setLauncherResetting(false);
+    }
+  };
+
   const handleSaveClipboard = async () => {
     if (parsedMaxItems === null || maxItemsInvalid) {
       setSaveMessage({
@@ -1296,6 +1316,7 @@ export function useSettingsPageState(): UseSettingsPageStateResult {
       loading: launcherLoading,
       saving: launcherSaving,
       rebuilding: launcherRebuilding,
+      resetting: launcherResetting,
       rootsInput: launcherRootsInput,
       excludeInput: launcherExcludeInput,
       depthInput: launcherDepthInput,
@@ -1333,6 +1354,7 @@ export function useSettingsPageState(): UseSettingsPageStateResult {
       onSave: handleSaveLauncher,
       onRefreshStatus: handleRefreshLauncherStatus,
       onRebuildIndex: handleRebuildLauncherIndex,
+      onResetRecommended: handleResetLauncherSettings,
     },
     logging: {
       minLevel: logMinLevel,

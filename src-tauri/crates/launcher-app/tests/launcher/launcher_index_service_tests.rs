@@ -32,12 +32,11 @@ fn normalized_path(path: &Path) -> String {
     normalize_path_for_match(path)
 }
 
-fn contains_root(candidates: &[PathBuf], expected: &Path) -> bool {
-    let expected_norm = normalized_path(expected);
+fn normalized_paths(candidates: &[PathBuf]) -> Vec<String> {
     candidates
         .iter()
         .map(|candidate| normalized_path(candidate.as_path()))
-        .any(|candidate| candidate == expected_norm)
+        .collect()
 }
 
 #[test]
@@ -125,63 +124,71 @@ fn default_root_candidates_should_cover_all_platform_profiles() {
     let home = PathBuf::from("/Users/tester");
     let app_data = PathBuf::from("C:/Users/tester/AppData/Roaming");
     let program_data = PathBuf::from("C:/ProgramData");
+    let local_app_data = PathBuf::from("C:/Users/tester/AppData/Local");
 
     let macos = build_default_search_root_candidates(
         ScopePlatform::Macos,
         Some(home.as_path()),
         None,
         None,
+        None,
     );
-    assert!(contains_root(&macos, home.as_path()));
-    assert!(contains_root(&macos, home.join("Desktop").as_path()));
-    assert!(contains_root(&macos, home.join("Documents").as_path()));
-    assert!(contains_root(&macos, home.join("Downloads").as_path()));
-    assert!(contains_root(&macos, Path::new("/Applications")));
-    assert!(contains_root(&macos, home.join("Applications").as_path()));
-    assert!(contains_root(&macos, Path::new("/")));
+    assert_eq!(
+        normalized_paths(&macos),
+        vec![
+            normalized_path(home.join("Applications").as_path()),
+            normalized_path(Path::new("/Applications")),
+            normalized_path(home.join("Desktop").as_path()),
+            normalized_path(home.join("Documents").as_path()),
+            normalized_path(home.join("Downloads").as_path()),
+        ]
+    );
 
     let windows = build_default_search_root_candidates(
         ScopePlatform::Windows,
         Some(Path::new("C:/Users/tester")),
         Some(app_data.as_path()),
         Some(program_data.as_path()),
+        Some(local_app_data.as_path()),
     );
-    assert!(contains_root(&windows, Path::new("C:/Users/tester")));
-    assert!(contains_root(
-        &windows,
-        Path::new("C:/Users/tester/Desktop")
-    ));
-    assert!(contains_root(
-        &windows,
-        Path::new("C:/Users/tester/Documents")
-    ));
-    assert!(contains_root(
-        &windows,
-        Path::new("C:/Users/tester/Downloads")
-    ));
-    assert!(contains_root(
-        &windows,
-        app_data
-            .join("Microsoft/Windows/Start Menu/Programs")
-            .as_path()
-    ));
-    assert!(contains_root(
-        &windows,
-        program_data
-            .join("Microsoft/Windows/Start Menu/Programs")
-            .as_path()
-    ));
-    assert!(contains_root(&windows, Path::new("A:\\")));
-    assert!(contains_root(&windows, Path::new("Z:\\")));
+    assert_eq!(
+        normalized_paths(&windows),
+        vec![
+            normalized_path(
+                app_data
+                    .join("Microsoft/Windows/Start Menu/Programs")
+                    .as_path()
+            ),
+            normalized_path(
+                program_data
+                    .join("Microsoft/Windows/Start Menu/Programs")
+                    .as_path()
+            ),
+            normalized_path(Path::new("C:/Users/tester/Desktop")),
+            normalized_path(Path::new("C:/Users/tester/Documents")),
+            normalized_path(Path::new("C:/Users/tester/Downloads")),
+            normalized_path(local_app_data.join("Programs").as_path()),
+        ]
+    );
 
     let linux = build_default_search_root_candidates(
         ScopePlatform::Linux,
         Some(home.as_path()),
         None,
         None,
+        None,
     );
-    assert_eq!(linux.len(), 1);
-    assert!(contains_root(&linux, Path::new("/")));
+    assert_eq!(
+        normalized_paths(&linux),
+        vec![
+            normalized_path(home.join(".local/share/applications").as_path()),
+            normalized_path(Path::new("/usr/share/applications")),
+            normalized_path(Path::new("/usr/local/share/applications")),
+            normalized_path(home.join("Desktop").as_path()),
+            normalized_path(home.join("Documents").as_path()),
+            normalized_path(home.join("Downloads").as_path()),
+        ]
+    );
 }
 
 #[tokio::test]
@@ -201,30 +208,68 @@ async fn load_or_init_settings_should_force_scope_policy_roots_migration() {
     set_app_setting(&db_conn, SEARCH_SETTINGS_KEY, serialized.as_str())
         .await
         .expect("seed settings");
-    set_app_setting(&db_conn, LAUNCHER_SCOPE_POLICY_APPLIED_KEY, "stale")
+    set_app_setting(&db_conn, LAUNCHER_SCOPE_POLICY_VERSION_KEY, "1")
         .await
         .expect("seed scope state");
 
     let migrated = load_or_init_settings(&db_conn)
         .await
         .expect("migrate settings");
-    assert_eq!(migrated.roots, default_search_roots());
-    assert_eq!(migrated.exclude_patterns, custom.exclude_patterns);
-    assert_eq!(migrated.max_scan_depth, custom.max_scan_depth);
-    assert_eq!(migrated.max_items_per_root, custom.max_items_per_root);
-    assert_eq!(migrated.max_total_items, custom.max_total_items);
-    assert_eq!(migrated.refresh_interval_secs, custom.refresh_interval_secs);
+    let expected = LauncherSearchSettingsRecord::default().normalize();
+    assert_eq!(migrated, expected);
 
-    let stored_state = get_app_setting(&db_conn, LAUNCHER_SCOPE_POLICY_APPLIED_KEY)
+    let stored_state = get_app_setting(&db_conn, LAUNCHER_SCOPE_POLICY_VERSION_KEY)
         .await
         .expect("read scope state");
     assert_eq!(
         stored_state.as_deref(),
-        Some(LAUNCHER_SCOPE_POLICY_APPLIED_VALUE)
+        Some(LAUNCHER_SCOPE_POLICY_VERSION_VALUE)
     );
 
     let second = load_or_init_settings(&db_conn).await.expect("second read");
     assert_eq!(second, migrated);
+
+    let _ = fs::remove_file(db_path);
+}
+
+#[tokio::test]
+async fn reset_search_settings_should_restore_default_profile_and_version() {
+    let (db_conn, db_path) = setup_temp_db("launcher-reset-settings").await;
+
+    let custom = LauncherSearchSettingsRecord {
+        roots: vec!["/tmp/custom-root".to_string()],
+        exclude_patterns: vec!["node_modules".to_string()],
+        max_scan_depth: 8,
+        max_items_per_root: 6_000,
+        max_total_items: 12_000,
+        refresh_interval_secs: 300,
+    }
+    .normalize();
+    save_settings(&db_conn, &custom)
+        .await
+        .expect("seed settings");
+    set_app_setting(&db_conn, LAUNCHER_SCOPE_POLICY_VERSION_KEY, "1")
+        .await
+        .expect("seed scope policy");
+
+    let reset = reset_search_settings_async(&db_conn)
+        .await
+        .expect("reset settings");
+    let expected = LauncherSearchSettingsRecord::default().normalize();
+    assert_eq!(reset.roots, expected.roots);
+    assert_eq!(reset.exclude_patterns, expected.exclude_patterns);
+    assert_eq!(reset.max_scan_depth, expected.max_scan_depth);
+    assert_eq!(reset.max_items_per_root, expected.max_items_per_root);
+    assert_eq!(reset.max_total_items, expected.max_total_items);
+    assert_eq!(reset.refresh_interval_secs, expected.refresh_interval_secs);
+
+    let stored_state = get_app_setting(&db_conn, LAUNCHER_SCOPE_POLICY_VERSION_KEY)
+        .await
+        .expect("read scope policy");
+    assert_eq!(
+        stored_state.as_deref(),
+        Some(LAUNCHER_SCOPE_POLICY_VERSION_VALUE)
+    );
 
     let _ = fs::remove_file(db_path);
 }

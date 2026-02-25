@@ -4,15 +4,6 @@ use serde_json::Value;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PaletteItemDto {
-    pub id: String,
-    pub title: String,
-    pub subtitle: String,
-    pub category: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 pub struct ActionResultDto {
     pub ok: bool,
     pub message: String,
@@ -1272,11 +1263,13 @@ pub struct DashboardSnapshotDto {
 #[serde(rename_all = "snake_case")]
 pub enum ResourceModuleIdDto {
     Launcher,
+    LauncherIndex,
+    LauncherFallback,
+    LauncherCache,
     Clipboard,
     AppManager,
     Transfer,
     Logging,
-    Palette,
     Locale,
     Dashboard,
     System,

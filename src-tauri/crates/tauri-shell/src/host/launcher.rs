@@ -68,6 +68,12 @@ impl LauncherHost for TauriLauncherHost {
         }
     }
 
+    fn resolved_locale(&self) -> Option<String> {
+        self.app
+            .try_state::<crate::app::state::AppState>()
+            .map(|state| state.resolved_locale())
+    }
+
     fn apply_clipboard_window_mode(
         &self,
         compact: bool,

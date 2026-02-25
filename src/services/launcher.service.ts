@@ -25,3 +25,7 @@ export async function launcherGetIndexStatus(): Promise<LauncherIndexStatus> {
 export async function launcherRebuildIndex(): Promise<LauncherRebuildResult> {
   return invokeWithLog<LauncherRebuildResult>("launcher_rebuild_index");
 }
+
+export async function launcherResetSearchSettings(): Promise<LauncherSearchSettings> {
+  return invokeWithLog<LauncherSearchSettings>("launcher_reset_search_settings");
+}

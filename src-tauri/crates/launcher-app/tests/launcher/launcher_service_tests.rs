@@ -1,4 +1,63 @@
 use super::*;
+use crate::host::{AppPackageInfo, LauncherHost, LauncherWindow};
+use app_core::models::ClipboardWindowModeAppliedDto;
+use serde_json::Value;
+use std::path::PathBuf;
+
+struct MockLauncherHost {
+    locale: Option<String>,
+    app_data_dir: PathBuf,
+}
+
+struct MockLauncherWindow;
+
+impl LauncherWindow for MockLauncherWindow {
+    fn show(&self) -> app_core::AppResult<()> {
+        Ok(())
+    }
+
+    fn set_focus(&self) -> app_core::AppResult<()> {
+        Ok(())
+    }
+}
+
+impl LauncherHost for MockLauncherHost {
+    fn emit(&self, _event: &str, _payload: Value) -> app_core::AppResult<()> {
+        Ok(())
+    }
+
+    fn get_webview_window(&self, _label: &str) -> Option<Box<dyn LauncherWindow>> {
+        Some(Box::new(MockLauncherWindow))
+    }
+
+    fn app_data_dir(&self) -> app_core::AppResult<PathBuf> {
+        Ok(self.app_data_dir.clone())
+    }
+
+    fn package_info(&self) -> AppPackageInfo {
+        AppPackageInfo {
+            name: "rtool-tests".to_string(),
+            version: "0.0.0".to_string(),
+        }
+    }
+
+    fn resolved_locale(&self) -> Option<String> {
+        self.locale.clone()
+    }
+
+    fn apply_clipboard_window_mode(
+        &self,
+        compact: bool,
+        _source: &str,
+    ) -> app_core::AppResult<ClipboardWindowModeAppliedDto> {
+        Ok(ClipboardWindowModeAppliedDto {
+            compact,
+            applied_width_logical: 480.0,
+            applied_height_logical: 360.0,
+            scale_factor: 1.0,
+        })
+    }
+}
 
 #[test]
 fn should_score_exact_match_higher_than_contains() {
@@ -131,16 +190,30 @@ fn should_hide_builtin_tools_when_query_empty() {
 }
 
 #[test]
-fn should_execute_palette_supported_action() {
-    let result = execute_palette_action_id("builtin.tools");
-    assert!(result.is_ok());
-    assert_eq!(result.ok(), Some("route:/tools".to_string()));
-}
+fn should_use_host_locale_and_fallback_to_default_locale() {
+    let app_data_dir = std::env::temp_dir().join("rtool-launcher-service-test");
 
-#[test]
-fn should_reject_palette_unknown_action() {
-    let result = execute_palette_action_id("unknown.action");
-    assert!(result.is_err());
-    let error = result.expect_err("palette action should return error");
-    assert_eq!(error.code, "palette_action_unsupported");
+    let host = MockLauncherHost {
+        locale: Some("en-US".to_string()),
+        app_data_dir: app_data_dir.clone(),
+    };
+    assert_eq!(current_locale(&host), "en-US");
+
+    let host_with_blank_locale = MockLauncherHost {
+        locale: Some("   ".to_string()),
+        app_data_dir: app_data_dir.clone(),
+    };
+    assert_eq!(
+        current_locale(&host_with_blank_locale),
+        DEFAULT_RESOLVED_LOCALE
+    );
+
+    let host_without_locale = MockLauncherHost {
+        locale: None,
+        app_data_dir,
+    };
+    assert_eq!(
+        current_locale(&host_without_locale),
+        DEFAULT_RESOLVED_LOCALE
+    );
 }

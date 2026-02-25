@@ -19,6 +19,7 @@ pub trait LauncherHost: Send + Sync {
     fn get_webview_window(&self, label: &str) -> Option<Box<dyn LauncherWindow>>;
     fn app_data_dir(&self) -> AppResult<PathBuf>;
     fn package_info(&self) -> AppPackageInfo;
+    fn resolved_locale(&self) -> Option<String>;
     fn apply_clipboard_window_mode(
         &self,
         compact: bool,

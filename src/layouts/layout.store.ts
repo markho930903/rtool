@@ -1,99 +1,74 @@
 import { create } from "zustand";
 
 import type { LayoutPreference, LayoutState } from "@/layouts/layout.types";
+import { logWarn } from "@/services/logger";
+import { getUserSettings, patchUserSettings } from "@/services/user-settings.service";
 
-const LAYOUT_STORAGE_KEY = "rtool.layout.preference";
 const DEFAULT_LAYOUT_PREFERENCE: LayoutPreference = "topbar";
-const ALLOWED_PREFERENCES: LayoutPreference[] = ["topbar", "sidebar"];
 
-function isLayoutPreference(value: string | null): value is LayoutPreference {
-  return value !== null && ALLOWED_PREFERENCES.includes(value as LayoutPreference);
-}
-
-function getStoredLayoutPreference(): LayoutPreference {
-  if (typeof window === "undefined") {
-    return DEFAULT_LAYOUT_PREFERENCE;
-  }
-
-  let stored: string | null = null;
-  try {
-    stored = window.localStorage.getItem(LAYOUT_STORAGE_KEY);
-  } catch {
-    stored = null;
-  }
-
-  return isLayoutPreference(stored) ? stored : DEFAULT_LAYOUT_PREFERENCE;
-}
-
-function setStoredLayoutPreference(preference: LayoutPreference) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(LAYOUT_STORAGE_KEY, preference);
-  } catch {}
+function normalizeLayoutPreference(value: string | undefined): LayoutPreference {
+  return value === "sidebar" ? "sidebar" : "topbar";
 }
 
 interface LayoutActions {
-  init: () => void;
-  syncFromStorage: () => void;
-  setPreference: (preference: LayoutPreference) => void;
+  init: () => Promise<void>;
+  syncFromStorage: () => Promise<void>;
+  setPreference: (preference: LayoutPreference) => Promise<void>;
 }
 
 type LayoutStore = LayoutState & LayoutActions;
 
-let storageListener: ((event: StorageEvent) => void) | null = null;
-
-function setupStorageListener() {
-  if (typeof window === "undefined" || storageListener) {
-    return;
-  }
-
-  storageListener = (event) => {
-    if (event.storageArea !== window.localStorage) {
-      return;
-    }
-
-    if (event.key !== null && event.key !== LAYOUT_STORAGE_KEY) {
-      return;
-    }
-
-    useLayoutStore.getState().syncFromStorage();
-  };
-
-  window.addEventListener("storage", storageListener);
-}
-
 export const useLayoutStore = create<LayoutStore>((set, get) => ({
   preference: DEFAULT_LAYOUT_PREFERENCE,
   initialized: false,
-  init() {
+  async init() {
     if (get().initialized) {
       return;
     }
-
-    get().syncFromStorage();
-    setupStorageListener();
+    await get().syncFromStorage();
   },
-  syncFromStorage() {
-    const preference = getStoredLayoutPreference();
-    const current = get();
-
-    if (current.initialized && current.preference === preference) {
-      return;
+  async syncFromStorage() {
+    try {
+      const settings = await getUserSettings();
+      const preference = normalizeLayoutPreference(settings.layout.preference);
+      set({
+        preference,
+        initialized: true,
+      });
+    } catch (error) {
+      logWarn("layout", "sync_from_backend_failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      if (!get().initialized) {
+        set({
+          preference: DEFAULT_LAYOUT_PREFERENCE,
+          initialized: true,
+        });
+      }
     }
-
-    set({
-      preference,
-      initialized: true,
-    });
   },
-  setPreference(preference) {
-    setStoredLayoutPreference(preference);
+  async setPreference(preference) {
+    const canonical = normalizeLayoutPreference(preference);
     set({
-      preference,
+      preference: canonical,
       initialized: true,
     });
+    try {
+      const settings = await patchUserSettings({
+        layout: {
+          preference: canonical,
+        },
+      });
+      set({
+        preference: normalizeLayoutPreference(settings.layout.preference),
+        initialized: true,
+      });
+    } catch (error) {
+      logWarn("layout", "set_preference_failed", {
+        preference: canonical,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      await get().syncFromStorage();
+    }
   },
 }));

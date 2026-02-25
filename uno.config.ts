@@ -218,16 +218,16 @@ textarea {
     // 约束：shortcuts 仅用于跨页面复用的通用样式与设计规范，不承载页面/模块私有布局样式。
     "ui-page": "min-h-screen bg-app text-text-primary",
     "ui-card":
-      "relative overflow-hidden rounded-2xl border border-border-glass bg-surface-glass shadow-[var(--shadow-surface)] backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]",
+      "relative overflow-hidden rounded-2xl border border-border-glass bg-surface-glass shadow-[var(--shadow-surface)] backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]",
     "ui-btn-primary":
       "inline-flex items-center gap-1.5 rounded-xl border border-transparent bg-accent px-4 py-2 text-sm font-medium text-accent-contrast transition-opacity hover:opacity-90",
     "ui-btn-secondary":
       "inline-flex items-center gap-1.5 rounded-xl border border-border-glass bg-surface-glass-soft px-4 py-2 text-sm text-text-primary shadow-[var(--shadow-inset-soft)] transition-colors hover:border-border-glass-strong hover:bg-surface-glass",
     "ui-section-title": "text-xl font-semibold text-text-primary",
     "ui-glass-panel":
-      "relative overflow-hidden rounded-xl border border-border-glass bg-surface-glass shadow-[var(--shadow-surface)] backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]",
+      "relative overflow-hidden rounded-xl border border-border-glass bg-surface-glass shadow-[var(--shadow-surface)] backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]",
     "ui-glass-panel-strong":
-      "relative overflow-hidden rounded-xl border border-border-glass-strong bg-surface-glass-strong shadow-[var(--shadow-overlay)] backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]",
+      "relative overflow-hidden rounded-xl border border-border-glass-strong bg-surface-glass-strong shadow-[var(--shadow-overlay)] backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]",
     "ui-glass-chip":
       "inline-flex items-center rounded-full border border-border-glass bg-surface-glass-soft px-2 py-0.5 shadow-[var(--shadow-inset-soft)]",
     "ui-glass-hover":

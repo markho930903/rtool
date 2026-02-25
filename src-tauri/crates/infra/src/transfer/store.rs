@@ -47,7 +47,8 @@ fn parse_u32(value: Option<String>, default: u32) -> u32 {
 }
 
 fn parse_transfer_status(raw: String, source_field: &'static str) -> AppResult<TransferStatus> {
-    TransferStatus::from_db(raw.as_str()).map_err(|error| error.with_context("sourceField", source_field))
+    TransferStatus::from_db(raw.as_str())
+        .map_err(|error| error.with_context("sourceField", source_field))
 }
 
 fn parse_transfer_direction(
@@ -66,7 +67,10 @@ fn parse_transfer_trust_level(
         .map_err(|error| error.with_context("sourceField", source_field))
 }
 
-pub async fn load_settings(conn: &DbConn, default_download_dir: String) -> AppResult<TransferSettingsDto> {
+pub async fn load_settings(
+    conn: &DbConn,
+    default_download_dir: String,
+) -> AppResult<TransferSettingsDto> {
     let mut settings = TransferSettingsDto {
         default_download_dir,
         max_parallel_files: 2,
@@ -101,47 +105,30 @@ pub async fn load_settings(conn: &DbConn, default_download_dir: String) -> AppRe
     if let Some(value) = values.get(TRANSFER_DEFAULT_DOWNLOAD_DIR_KEY) {
         settings.default_download_dir = value.to_string();
     }
-    settings.max_parallel_files = parse_u32(
-        values.get(TRANSFER_MAX_PARALLEL_FILES_KEY).cloned(),
-        2,
-    )
-    .clamp(1, 8);
-    settings.max_inflight_chunks = parse_u32(
-        values.get(TRANSFER_MAX_INFLIGHT_CHUNKS_KEY).cloned(),
-        16,
-    )
-    .clamp(1, 64);
-    settings.chunk_size_kb = parse_u32(values.get(TRANSFER_CHUNK_SIZE_KB_KEY).cloned(), 1024)
-        .clamp(64, 4096);
-    settings.auto_cleanup_days = parse_u32(
-        values.get(TRANSFER_AUTO_CLEANUP_DAYS_KEY).cloned(),
-        30,
-    )
-    .clamp(1, 365);
+    settings.max_parallel_files =
+        parse_u32(values.get(TRANSFER_MAX_PARALLEL_FILES_KEY).cloned(), 2).clamp(1, 8);
+    settings.max_inflight_chunks =
+        parse_u32(values.get(TRANSFER_MAX_INFLIGHT_CHUNKS_KEY).cloned(), 16).clamp(1, 64);
+    settings.chunk_size_kb =
+        parse_u32(values.get(TRANSFER_CHUNK_SIZE_KB_KEY).cloned(), 1024).clamp(64, 4096);
+    settings.auto_cleanup_days =
+        parse_u32(values.get(TRANSFER_AUTO_CLEANUP_DAYS_KEY).cloned(), 30).clamp(1, 365);
     settings.resume_enabled = parse_bool(values.get(TRANSFER_RESUME_ENABLED_KEY).cloned(), true);
-    settings.discovery_enabled = parse_bool(
-        values.get(TRANSFER_DISCOVERY_ENABLED_KEY).cloned(),
-        true,
-    );
+    settings.discovery_enabled =
+        parse_bool(values.get(TRANSFER_DISCOVERY_ENABLED_KEY).cloned(), true);
     settings.pairing_required =
         parse_bool(values.get(TRANSFER_PAIRING_REQUIRED_KEY).cloned(), true);
-    settings.db_flush_interval_ms = parse_u32(
-        values.get(TRANSFER_DB_FLUSH_INTERVAL_MS_KEY).cloned(),
-        400,
-    )
-    .clamp(100, 5000);
+    settings.db_flush_interval_ms =
+        parse_u32(values.get(TRANSFER_DB_FLUSH_INTERVAL_MS_KEY).cloned(), 400).clamp(100, 5000);
     settings.event_emit_interval_ms = parse_u32(
         values.get(TRANSFER_EVENT_EMIT_INTERVAL_MS_KEY).cloned(),
         250,
     )
     .clamp(100, 2000);
-    settings.ack_batch_size = parse_u32(values.get(TRANSFER_ACK_BATCH_SIZE_KEY).cloned(), 64)
-        .clamp(1, 512);
-    settings.ack_flush_interval_ms = parse_u32(
-        values.get(TRANSFER_ACK_FLUSH_INTERVAL_MS_KEY).cloned(),
-        20,
-    )
-    .clamp(5, 2000);
+    settings.ack_batch_size =
+        parse_u32(values.get(TRANSFER_ACK_BATCH_SIZE_KEY).cloned(), 64).clamp(1, 512);
+    settings.ack_flush_interval_ms =
+        parse_u32(values.get(TRANSFER_ACK_FLUSH_INTERVAL_MS_KEY).cloned(), 20).clamp(5, 2000);
 
     save_settings(conn, &settings).await?;
     Ok(settings)
@@ -226,7 +213,10 @@ pub async fn upsert_peer(conn: &DbConn, peer: &TransferPeerDto) -> AppResult<()>
     Ok(())
 }
 
-pub async fn get_peer_by_device_id(conn: &DbConn, device_id: &str) -> AppResult<Option<TransferPeerDto>> {
+pub async fn get_peer_by_device_id(
+    conn: &DbConn,
+    device_id: &str,
+) -> AppResult<Option<TransferPeerDto>> {
     let mut rows = conn
         .query(
             "SELECT device_id, display_name, last_seen_at, paired_at, trust_level, failed_attempts, blocked_until
@@ -259,7 +249,11 @@ pub async fn get_peer_by_device_id(conn: &DbConn, device_id: &str) -> AppResult<
     }))
 }
 
-pub async fn mark_peer_pair_success(conn: &DbConn, device_id: &str, paired_at: i64) -> AppResult<()> {
+pub async fn mark_peer_pair_success(
+    conn: &DbConn,
+    device_id: &str,
+    paired_at: i64,
+) -> AppResult<()> {
     conn.execute(
         "UPDATE transfer_peers
          SET paired_at = ?2,
@@ -503,7 +497,11 @@ pub async fn upsert_session_progress(conn: &DbConn, session: &TransferSessionDto
     Ok(())
 }
 
-pub async fn get_file_bitmap(conn: &DbConn, session_id: &str, file_id: &str) -> AppResult<Option<Vec<u8>>> {
+pub async fn get_file_bitmap(
+    conn: &DbConn,
+    session_id: &str,
+    file_id: &str,
+) -> AppResult<Option<Vec<u8>>> {
     let mut rows = conn
         .query(
             "SELECT completed_bitmap FROM transfer_files WHERE session_id = ?1 AND id = ?2 LIMIT 1",
@@ -556,7 +554,10 @@ pub async fn get_session(conn: &DbConn, session_id: &str) -> AppResult<Option<Tr
     Ok(Some(session))
 }
 
-pub async fn list_session_files(conn: &DbConn, session_id: &str) -> AppResult<Vec<TransferFileDto>> {
+pub async fn list_session_files(
+    conn: &DbConn,
+    session_id: &str,
+) -> AppResult<Vec<TransferFileDto>> {
     let mut rows = conn
         .query(
             "SELECT id, session_id, relative_path, source_path, target_path, size_bytes, transferred_bytes, chunk_size, chunk_count,
@@ -688,7 +689,10 @@ pub async fn list_history(
     while let Some(row) = rows.next().await? {
         items.push(TransferSessionDto {
             id: row.get::<String>(0)?,
-            direction: parse_transfer_direction(row.get::<String>(1)?, "transfer_sessions.direction")?,
+            direction: parse_transfer_direction(
+                row.get::<String>(1)?,
+                "transfer_sessions.direction",
+            )?,
             peer_device_id: row.get::<String>(2)?,
             peer_name: row.get::<String>(3)?,
             status: parse_transfer_status(row.get::<String>(4)?, "transfer_sessions.status")?,
@@ -709,7 +713,9 @@ pub async fn list_history(
     let session_ids = items.iter().map(|item| item.id.clone()).collect::<Vec<_>>();
     let mut files_by_session = list_files_for_sessions(conn, session_ids.as_slice()).await?;
     for item in &mut items {
-        item.files = files_by_session.remove(item.id.as_str()).unwrap_or_default();
+        item.files = files_by_session
+            .remove(item.id.as_str())
+            .unwrap_or_default();
     }
 
     let next_cursor = items
@@ -807,7 +813,10 @@ pub fn merge_online_peers(
     peers
 }
 
-pub async fn ensure_session_exists(conn: &DbConn, session_id: &str) -> AppResult<TransferSessionDto> {
+pub async fn ensure_session_exists(
+    conn: &DbConn,
+    session_id: &str,
+) -> AppResult<TransferSessionDto> {
     get_session(conn, session_id).await?.ok_or_else(|| {
         AppError::new("transfer_session_not_found", "未找到对应传输会话")
             .with_context("sessionId", session_id.to_string())

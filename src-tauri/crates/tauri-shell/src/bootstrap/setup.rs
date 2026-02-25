@@ -5,10 +5,7 @@ use crate::platform::native_ui::{apply_locale_to_native_ui, tray};
 use app_clipboard::service::ClipboardService;
 use app_core::{
     AppResult,
-    i18n::{
-        APP_LOCALE_PREFERENCE_KEY, AppLocaleState, init_i18n_catalog, normalize_locale_preference,
-        resolve_locale, t,
-    },
+    i18n::{AppLocaleState, init_i18n_catalog, normalize_locale_preference, resolve_locale, t},
 };
 use app_infra::{db, logging};
 use app_launcher_app::launcher::index::start_background_indexer;
@@ -34,11 +31,9 @@ impl TransferTaskSpawner for TauriTransferTaskSpawner {
     }
 }
 
-async fn read_initial_locale_state(db_conn: &db::DbConn) -> Result<AppLocaleState, Box<dyn Error>> {
-    let preference = db::get_app_setting(db_conn, APP_LOCALE_PREFERENCE_KEY)
-        .await?
-        .as_deref()
-        .and_then(normalize_locale_preference)
+fn read_initial_locale_state() -> Result<AppLocaleState, Box<dyn Error>> {
+    let settings = crate::features::user_settings::store::load_or_init_user_settings()?;
+    let preference = normalize_locale_preference(settings.locale.preference.as_str())
         .unwrap_or_else(|| "system".to_string());
     Ok(AppLocaleState::new(
         preference.clone(),
@@ -127,7 +122,7 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn Error>> {
     let (db_path, db_conn) = db_result?;
 
     let locale_stage_started_at = Instant::now();
-    let locale_result = tauri::async_runtime::block_on(read_initial_locale_state(&db_conn));
+    let locale_result = read_initial_locale_state();
     log_setup_stage(
         "locale_read",
         locale_stage_started_at,

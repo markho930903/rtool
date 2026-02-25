@@ -193,7 +193,7 @@ export default function LauncherWindowPage() {
     enabled,
     shouldSkipHide,
     onFocus: () => {
-      syncFromStorage();
+      void syncFromStorage();
       void syncLocaleFromBackend();
     },
   });
@@ -260,7 +260,7 @@ export default function LauncherWindowPage() {
         setSearchSeed((value) => value + 1);
         setHasSearchedOnce(false);
         reset();
-        syncFromStorage();
+        void syncFromStorage();
         void syncLocaleFromBackend();
 
         window.setTimeout(() => {
@@ -356,7 +356,7 @@ export default function LauncherWindowPage() {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden rounded-md bg-transparent p-0">
-      <section className="rtool-glass-sheen-clip flex h-full w-full overflow-hidden rounded-md border border-border-glass bg-surface-glass-strong shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]">
+      <section className="rtool-glass-sheen-clip flex h-full w-full overflow-hidden rounded-md border border-border-glass bg-surface-glass-strong shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]">
         <div className="flex min-w-0 flex-[1.4] flex-col border-r border-border-glass">
           <PaletteInput
             query={query}

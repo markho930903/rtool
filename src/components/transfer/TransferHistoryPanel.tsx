@@ -53,7 +53,10 @@ export default function TransferHistoryPanel(props: TransferHistoryPanelProps) {
         {props.history.length === 0 ? <p className="text-xs text-text-secondary">{t("history.empty")}</p> : null}
 
         {props.history.map((item) => (
-          <article key={item.id} className="rounded-3 border border-border-glass bg-surface-glass-soft p-2 shadow-inset-soft">
+          <article
+            key={item.id}
+            className="rounded-3 border border-border-glass bg-surface-glass-soft p-2 shadow-inset-soft"
+          >
             <div className="text-xs font-medium text-text-primary">{item.peerName}</div>
             <div className="mt-1 text-[11px] text-text-secondary">{item.status}</div>
             <div className="mt-1 text-[11px] text-text-secondary">{formatTime(item.createdAt)}</div>

@@ -37,6 +37,9 @@ const SIDEBAR_ITEM_IDLE_CLASS =
 const TITLEBAR_ICON_BUTTON_CLASS =
   "ui-glass-hover inline-flex h-9 w-9 select-none items-center justify-center rounded-3 border border-transparent text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 active:scale-[0.97]";
 
+const TITLEBAR_MENU_TRIGGER_BUTTON_CLASS =
+  "ui-glass-hover inline-flex h-9 max-w-[12rem] select-none items-center gap-1.5 rounded-3 border border-transparent px-2.5 text-text-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/45 active:scale-[0.97]";
+
 const TITLEBAR_MENU_ITEM_BASE_CLASS =
   "ui-glass-hover flex items-center gap-2.5 rounded-md px-2.5 py-2.25 text-left text-text-secondary transition-colors duration-[140ms]";
 
@@ -93,7 +96,7 @@ function ThemeToggleButton() {
       unstyled
       type="button"
       className={[SIDEBAR_ITEM_BASE_CLASS, SIDEBAR_ITEM_IDLE_CLASS].join(" ")}
-      onClick={() => setPreference(nextPreference)}
+      onClick={() => void setPreference(nextPreference)}
       title={title}
       aria-label={title}
     >
@@ -120,7 +123,7 @@ function ThemeToggleIconButton() {
       unstyled
       type="button"
       className={TITLEBAR_ICON_BUTTON_CLASS}
-      onClick={() => setPreference(nextPreference)}
+      onClick={() => void setPreference(nextPreference)}
       title={title}
       aria-label={title}
     >
@@ -310,7 +313,7 @@ export default function AppLayout() {
         <div className="fixed inset-0 z-[70]" onPointerDown={closeMenu}>
           <div
             ref={menuRef}
-            className="fixed z-[80] overflow-hidden rounded-md border border-border-glass bg-surface-glass-strong p-1.5 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]"
+            className="fixed z-[80] overflow-hidden rounded-md border border-border-glass bg-surface-glass-strong p-1.5 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]"
             style={{
               top: `${menuPosition.top}px`,
               left: `${menuPosition.left}px`,
@@ -368,7 +371,8 @@ export default function AppLayout() {
                         setMenuOpenedByKeyboard(false);
                       }}
                       className={({ isActive }) => {
-                        const focusClass = "w-full focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/35";
+                        const focusClass =
+                          "w-full focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-accent/35";
                         return [
                           TITLEBAR_MENU_ITEM_BASE_CLASS,
                           focusClass,
@@ -392,7 +396,7 @@ export default function AppLayout() {
   if (layoutPreference === "sidebar") {
     return (
       <div className="relative h-screen w-screen overflow-hidden rounded-md bg-transparent p-0 text-text-primary">
-        <section className="rtool-glass-sheen-clip relative z-10 flex h-full w-full overflow-hidden rounded-md border border-border-glass bg-surface-glass-strong shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]">
+        <section className="rtool-glass-sheen-clip relative z-10 flex h-full w-full overflow-hidden rounded-md border border-border-glass bg-surface-glass-strong shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]">
           <div aria-hidden className="rtool-glass-atmosphere" />
           <SideBar />
           <MainContent isFullHeightRoute={isFullHeightRoute} />
@@ -404,7 +408,7 @@ export default function AppLayout() {
 
   return (
     <div className="relative h-screen w-screen overflow-hidden rounded-md bg-transparent p-0 text-text-primary">
-      <section className="rtool-glass-sheen-clip relative z-10 flex h-full w-full flex-col overflow-hidden rounded-md border border-border-glass bg-surface-glass-strong shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]">
+      <section className="rtool-glass-sheen-clip relative z-10 flex h-full w-full flex-col overflow-hidden rounded-md border border-border-glass bg-surface-glass-strong shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]">
         <div aria-hidden className="rtool-glass-atmosphere" />
         <header className="rtool-glass-sheen-open relative z-20 flex h-12 shrink-0 items-center border-b border-border-glass bg-surface-glass-soft shadow-inset-soft">
           <div className="relative flex h-full items-center pl-[4.75rem] pr-2">
@@ -413,7 +417,7 @@ export default function AppLayout() {
                 unstyled
                 ref={triggerRef}
                 type="button"
-                className={TITLEBAR_ICON_BUTTON_CLASS}
+                className={TITLEBAR_MENU_TRIGGER_BUTTON_CLASS}
                 title={switchMenuLabel}
                 aria-label={switchMenuLabel}
                 aria-expanded={menuOpen}
@@ -432,7 +436,8 @@ export default function AppLayout() {
                   }
                 }}
               >
-                <span className={`btn-icon text-[1.05rem] ${currentNavItem.icon}`} aria-hidden="true" />
+                <span className={`btn-icon shrink-0 text-[1.05rem] ${currentNavItem.icon}`} aria-hidden="true" />
+                <span className="truncate text-xs font-medium">{currentLabel}</span>
               </Button>
             </div>
           </div>

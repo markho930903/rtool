@@ -125,7 +125,7 @@ export default function CommandPalette() {
       onClick={() => close()}
     >
       <section
-        className="w-[min(880px,92vw)] overflow-hidden rounded-xl border border-border-muted bg-surface-overlay shadow-overlay backdrop-blur-[20px]"
+        className="w-[min(880px,92vw)] overflow-hidden rounded-xl border border-border-muted bg-surface-overlay shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]"
         onClick={(event) => event.stopPropagation()}
       >
         <PaletteInput query={query} loading={loading} onQueryChange={setQuery} inputRef={inputRef} />

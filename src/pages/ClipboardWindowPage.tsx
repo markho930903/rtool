@@ -100,7 +100,7 @@ export default function ClipboardWindowPage() {
     enabled,
     shouldSkipHide: () => alwaysOnTopRef.current,
     onFocus: () => {
-      syncFromStorage();
+      void syncFromStorage();
       void syncLocaleFromBackend();
     },
   });
@@ -284,7 +284,7 @@ export default function ClipboardWindowPage() {
             modeResizeTimerRef.current = null;
           }, 80);
 
-          syncFromStorage();
+          void syncFromStorage();
           void syncLocaleFromBackend();
           window.setTimeout(() => {
             searchInputRef.current?.focus();
@@ -352,7 +352,7 @@ export default function ClipboardWindowPage() {
   return (
     <div className="h-screen w-screen overflow-hidden rounded-md bg-transparent p-0 text-text-primary">
       <main
-        className="rtool-glass-sheen-clip flex h-full w-full overflow-hidden rounded-md border border-border-glass bg-surface-glass-strong p-0 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]"
+        className="rtool-glass-sheen-clip flex h-full w-full overflow-hidden rounded-md border border-border-glass bg-surface-glass-strong p-0 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]"
         onMouseDown={handleDrag}
       >
         <ClipboardPanel

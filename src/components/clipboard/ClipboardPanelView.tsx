@@ -278,7 +278,7 @@ export default function ClipboardPanelView(props: ClipboardPanelViewProps) {
         open={props.showClearConfirm}
         onClose={props.onCloseClearConfirm}
         zIndexClassName="z-[72] flex items-center justify-center"
-        className="w-[min(460px,92vw)] rounded-xl border border-border-muted bg-surface-overlay p-4 shadow-overlay backdrop-blur-[16px]"
+        className="w-[min(460px,92vw)] rounded-xl border border-border-muted bg-surface-overlay p-4 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]"
         ariaLabel={t("confirm.clearAllTitle")}
         closeOnBackdrop
         closeOnEscape

@@ -3,12 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { Button, Select } from "@/components/ui";
-import type {
-  ResourceCrateStatsDto,
-  ResourceModuleStatsDto,
-  ResourcePointDto,
-  ResourceSnapshotDto,
-} from "@/contracts";
+import type { ResourceCrateStatsDto, ResourceModuleStatsDto, ResourcePointDto, ResourceSnapshotDto } from "@/contracts";
 import { useResourceMonitorStore, type ResourceSortMetric } from "@/stores/resource-monitor.store";
 import { useThemeStore } from "@/theme/store";
 
@@ -289,10 +284,7 @@ function buildHistoryChartData(
   });
 }
 
-function createHistoryChart(
-  element: HTMLDivElement,
-  data: HistoryChartDatum[],
-): ChartController<HistoryChartDatum> {
+function createHistoryChart(element: HTMLDivElement, data: HistoryChartDatum[]): ChartController<HistoryChartDatum> {
   const accent = readColorToken("--color-accent");
   const info = readColorToken("--color-info");
 
@@ -496,16 +488,15 @@ export default function ResourceMonitorPage() {
     return visibleAttributionSnapshots.flatMap((entry) => {
       const byId = new Map(entry.modules.map((item) => [item.moduleId, item]));
       const time = formatTime(entry.sampledAt, locale);
-      return moduleTopIds
-        .map((moduleId) => {
-          const current = byId.get(moduleId);
-          const value = current ? pickSortValue(sortMetric, current) : 0;
-          return {
-            time,
-            group: t(`module.${moduleId}`),
-            value: value < 0 ? 0 : value,
-          };
-        });
+      return moduleTopIds.map((moduleId) => {
+        const current = byId.get(moduleId);
+        const value = current ? pickSortValue(sortMetric, current) : 0;
+        return {
+          time,
+          group: t(`module.${moduleId}`),
+          value: value < 0 ? 0 : value,
+        };
+      });
     });
   }, [locale, moduleTopIds, sortMetric, t, visibleAttributionSnapshots]);
 
@@ -528,16 +519,15 @@ export default function ResourceMonitorPage() {
     return visibleAttributionSnapshots.flatMap((entry) => {
       const byId = new Map(entry.crates.map((item) => [item.crateId, item]));
       const time = formatTime(entry.sampledAt, locale);
-      return crateTopIds
-        .map((crateId) => {
-          const current = byId.get(crateId);
-          const value = current ? pickSortValue(sortMetric, current) : 0;
-          return {
-            time,
-            group: t(`crate.${crateId}`),
-            value: value < 0 ? 0 : value,
-          };
-        });
+      return crateTopIds.map((crateId) => {
+        const current = byId.get(crateId);
+        const value = current ? pickSortValue(sortMetric, current) : 0;
+        return {
+          time,
+          group: t(`crate.${crateId}`),
+          value: value < 0 ? 0 : value,
+        };
+      });
     });
   }, [crateTopIds, locale, sortMetric, t, visibleAttributionSnapshots]);
 
@@ -652,10 +642,7 @@ export default function ResourceMonitorPage() {
         <p className="mt-2 text-sm text-text-secondary">{t("header.subtitle")}</p>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Button size="default" variant="secondary" onClick={() => void refreshAll()}>
-            <span
-              className="btn-icon i-noto:counterclockwise-arrows-button"
-              aria-hidden="true"
-            />
+            <span className="btn-icon i-noto:counterclockwise-arrows-button" aria-hidden="true" />
             <span>{t("action.refreshNow")}</span>
           </Button>
           <Button

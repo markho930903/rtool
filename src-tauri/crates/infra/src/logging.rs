@@ -1,7 +1,7 @@
-use app_core::models::{LogConfigDto, LogEntryDto, LogPageDto, LogQueryDto};
-use app_core::{AppError, ResultExt};
 use crate::db::{self, DbConn};
 use anyhow::Context;
+use app_core::models::{LogConfigDto, LogEntryDto, LogPageDto, LogQueryDto};
+use app_core::{AppError, ResultExt};
 use libsql::{Row, Value as LibsqlValue, params, params_from_iter};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -381,16 +381,27 @@ async fn persist_log_config(conn: &DbConn, config: &LogConfigDto) -> Result<(), 
         (SETTING_KEY_KEEP_DAYS, keep_days.as_str()),
         (
             SETTING_KEY_REALTIME_ENABLED,
-            if config.realtime_enabled { "true" } else { "false" },
+            if config.realtime_enabled {
+                "true"
+            } else {
+                "false"
+            },
         ),
-        (SETTING_KEY_HIGH_FREQ_WINDOW_MS, high_freq_window_ms.as_str()),
+        (
+            SETTING_KEY_HIGH_FREQ_WINDOW_MS,
+            high_freq_window_ms.as_str(),
+        ),
         (
             SETTING_KEY_HIGH_FREQ_MAX_PER_KEY,
             high_freq_max_per_key.as_str(),
         ),
         (
             SETTING_KEY_ALLOW_RAW_VIEW,
-            if config.allow_raw_view { "true" } else { "false" },
+            if config.allow_raw_view {
+                "true"
+            } else {
+                "false"
+            },
         ),
     ];
     db::set_app_settings_batch(conn, entries.as_slice()).await?;
@@ -534,10 +545,7 @@ async fn save_log_entry(
         return Ok(row_to_log_entry(&row)?);
     }
 
-    Err(AppError::new(
-        "log_insert_missing",
-        "写入日志后未返回记录",
-    ))
+    Err(AppError::new("log_insert_missing", "写入日志后未返回记录"))
 }
 
 async fn upsert_aggregated_log(
@@ -958,7 +966,9 @@ pub async fn query_log_entries(query: LogQueryDto) -> Result<LogPageDto, AppErro
         .filter(|value| !value.trim().is_empty())
     {
         if let Some(fts_query) = build_log_fts_query(keyword) {
-            sql.push_str(" AND id IN (SELECT rowid FROM log_entries_fts WHERE log_entries_fts MATCH ?)");
+            sql.push_str(
+                " AND id IN (SELECT rowid FROM log_entries_fts WHERE log_entries_fts MATCH ?)",
+            );
             params.push(LibsqlValue::Text(fts_query));
         } else {
             sql.push_str(" AND (message LIKE ? OR metadata LIKE ? OR event LIKE ?)");
@@ -993,7 +1003,10 @@ pub async fn query_log_entries(query: LogQueryDto) -> Result<LogPageDto, AppErro
 
     let page_size = usize::try_from(limit).unwrap_or(QUERY_LIMIT_DEFAULT as usize);
     let next_cursor = if items.len() > page_size {
-        let marker = items.get(page_size).map(|value| value.id).unwrap_or_default();
+        let marker = items
+            .get(page_size)
+            .map(|value| value.id)
+            .unwrap_or_default();
         items.truncate(page_size);
         Some(marker.to_string())
     } else {

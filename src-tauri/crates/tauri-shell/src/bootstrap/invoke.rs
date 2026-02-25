@@ -28,6 +28,8 @@ pub(crate) fn with_invoke_handler(
         crate::features::i18n_import::commands::app_list_locales,
         crate::features::i18n_import::commands::app_reload_locales,
         crate::features::i18n_import::commands::app_import_locale_file,
+        crate::features::user_settings::commands::app_get_user_settings,
+        crate::features::user_settings::commands::app_update_user_settings,
         crate::features::launcher::commands::launcher_search,
         crate::features::launcher::commands::launcher_execute,
         crate::features::launcher::commands::launcher_get_search_settings,

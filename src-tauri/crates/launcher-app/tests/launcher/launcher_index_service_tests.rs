@@ -223,9 +223,7 @@ async fn load_or_init_settings_should_force_scope_policy_roots_migration() {
         Some(LAUNCHER_SCOPE_POLICY_APPLIED_VALUE)
     );
 
-    let second = load_or_init_settings(&db_conn)
-        .await
-        .expect("second read");
+    let second = load_or_init_settings(&db_conn).await.expect("second read");
     assert_eq!(second, migrated);
 
     let _ = fs::remove_file(db_path);

@@ -64,7 +64,9 @@ async fn upsert_files_batch_should_persist_multi_rows() {
         cleanup_after_at: None,
         files: Vec::new(),
     };
-    insert_session(&conn, &session).await.expect("insert session");
+    insert_session(&conn, &session)
+        .await
+        .expect("insert session");
 
     let file_a = TransferFileDto {
         id: "file-a".to_string(),

@@ -17,13 +17,7 @@ async fn setup_temp_db(prefix: &str) -> (DbConn, std::path::PathBuf) {
     (conn, path)
 }
 
-async fn insert_raw_item(
-    conn: &DbConn,
-    id: &str,
-    plain_text: &str,
-    created_at: i64,
-    pinned: bool,
-) {
+async fn insert_raw_item(conn: &DbConn, id: &str, plain_text: &str, created_at: i64, pinned: bool) {
     conn.execute(
         "INSERT INTO clipboard_items (id, content_key, item_type, plain_text, source_app, preview_path, preview_data_url, created_at, pinned)
              VALUES (?1, ?2, 'text', ?3, NULL, NULL, NULL, ?4, ?5)",

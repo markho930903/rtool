@@ -8,8 +8,8 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use wincode::{SchemaRead, SchemaWrite};
 
-use app_core::{AppError, AppResult, ResultExt};
 use anyhow::Context;
+use app_core::{AppError, AppResult, ResultExt};
 
 pub const PROTOCOL_VERSION: u16 = 2;
 pub const CAPABILITY_CODEC_BIN: &str = "codec-bin";

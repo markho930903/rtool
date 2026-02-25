@@ -3,7 +3,7 @@ import ICU from "i18next-icu";
 import { initReactI18next } from "react-i18next";
 
 import { FALLBACK_LOCALE } from "@/i18n/constants";
-import { applyLocaleToDocument, getStoredLocalePreference, resolveLocale } from "@/i18n/runtime";
+import { applyLocaleToDocument, resolveLocale } from "@/i18n/runtime";
 
 import appManagerEnUS from "../../i18n/source/en-US/app_manager.json";
 import clipboardEnUS from "../../i18n/source/en-US/clipboard.json";
@@ -61,7 +61,7 @@ const resources = {
   },
 } as const;
 
-const initialLocale = resolveLocale(getStoredLocalePreference());
+const initialLocale = resolveLocale("system");
 
 const i18n = createInstance();
 

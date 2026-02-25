@@ -19,10 +19,22 @@ export type { RadioGroupProps, RadioOption, RadioProps } from "@/components/ui/r
 export { Switch, SwitchField } from "@/components/ui/switch";
 export type { SwitchFieldProps, SwitchProps } from "@/components/ui/switch";
 
+export { Slider } from "@/components/ui/slider";
+export type { SliderMark, SliderProps } from "@/components/ui/slider";
+
 export { Dialog } from "@/components/ui/dialog";
 export type { DialogProps } from "@/components/ui/dialog";
 
 export { Tooltip } from "@/components/ui/tooltip";
 export type { TooltipProps } from "@/components/ui/tooltip";
 
-export type { ChoiceOrientation, InputVariant, SelectVariant, TextareaVariant, UiSize } from "@/components/ui/types";
+export type {
+  ChoiceOrientation,
+  InputVariant,
+  SelectVariant,
+  SliderSize,
+  SliderTooltipMode,
+  SliderVariant,
+  TextareaVariant,
+  UiSize,
+} from "@/components/ui/types";

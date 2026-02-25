@@ -246,7 +246,10 @@ pub fn history(limit: Option<usize>) -> ResourceHistoryDto {
     let skip = state.history.len().saturating_sub(requested);
     let points: Vec<ResourcePointDto> = state.history.iter().skip(skip).cloned().collect();
     ResourceHistoryDto {
-        window_ms: monitor.options.sampling_interval_ms.saturating_mul(points.len() as u64),
+        window_ms: monitor
+            .options
+            .sampling_interval_ms
+            .saturating_mul(points.len() as u64),
         step_ms: monitor.options.sampling_interval_ms,
         points,
     }
@@ -281,7 +284,10 @@ fn collect_point(system: &mut System, pid: Pid) -> ResourcePointDto {
 }
 
 fn build_snapshot(state: &MonitorState) -> ResourceSnapshotDto {
-    let base_point = state.last_point.clone().unwrap_or_else(|| empty_point(now_ms()));
+    let base_point = state
+        .last_point
+        .clone()
+        .unwrap_or_else(|| empty_point(now_ms()));
     let total_duration: u64 = state
         .modules
         .values()
@@ -295,22 +301,29 @@ fn build_snapshot(state: &MonitorState) -> ResourceSnapshotDto {
             let acc = state.modules.get(&module_id);
             let calls = acc.map(|item| item.calls).unwrap_or_default();
             let error_calls = acc.map(|item| item.error_calls).unwrap_or_default();
-            let avg_duration_ms = acc.and_then(|item| average_duration(item.calls, item.duration_sum_ms));
+            let avg_duration_ms =
+                acc.and_then(|item| average_duration(item.calls, item.duration_sum_ms));
             let p95_duration_ms = acc.and_then(|item| percentile95(&item.duration_samples));
             let active_share_percent = acc.and_then(|item| {
                 if total_duration == 0 {
                     return None;
                 }
-                Some(round2((item.duration_sample_sum_ms as f64 / total_duration as f64) * 100.0))
+                Some(round2(
+                    (item.duration_sample_sum_ms as f64 / total_duration as f64) * 100.0,
+                ))
             });
-            let estimated_cpu_percent = match (active_share_percent, base_point.process_cpu_percent) {
+            let estimated_cpu_percent = match (active_share_percent, base_point.process_cpu_percent)
+            {
                 (Some(share), Some(cpu)) => Some(round2(cpu * share / 100.0)),
                 _ => None,
             };
-            let estimated_memory_bytes = match (active_share_percent, base_point.process_memory_bytes) {
-                (Some(share), Some(memory)) => Some(((memory as f64) * (share / 100.0)).round() as u64),
-                _ => None,
-            };
+            let estimated_memory_bytes =
+                match (active_share_percent, base_point.process_memory_bytes) {
+                    (Some(share), Some(memory)) => {
+                        Some(((memory as f64) * (share / 100.0)).round() as u64)
+                    }
+                    _ => None,
+                };
             ResourceModuleStatsDto {
                 module_id,
                 calls,
@@ -561,6 +574,8 @@ fn module_to_crate(module_id: ResourceModuleIdDto) -> ResourceCrateIdDto {
         ResourceModuleIdDto::Transfer => ResourceCrateIdDto::Transfer,
         ResourceModuleIdDto::Logging => ResourceCrateIdDto::Infra,
         ResourceModuleIdDto::Locale => ResourceCrateIdDto::Core,
-        ResourceModuleIdDto::Dashboard | ResourceModuleIdDto::System => ResourceCrateIdDto::TauriShell,
+        ResourceModuleIdDto::Dashboard | ResourceModuleIdDto::System => {
+            ResourceCrateIdDto::TauriShell
+        }
     }
 }

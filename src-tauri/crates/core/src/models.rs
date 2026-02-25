@@ -18,6 +18,156 @@ pub struct ActionResultDto {
     pub message: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserSettingsDto {
+    pub theme: UserThemeSettingsDto,
+    pub layout: UserLayoutSettingsDto,
+    pub locale: UserLocaleSettingsDto,
+}
+
+impl Default for UserSettingsDto {
+    fn default() -> Self {
+        Self {
+            theme: UserThemeSettingsDto::default(),
+            layout: UserLayoutSettingsDto::default(),
+            locale: UserLocaleSettingsDto::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserThemeSettingsDto {
+    pub preference: String,
+    pub glass: UserThemeGlassSettingsDto,
+}
+
+impl Default for UserThemeSettingsDto {
+    fn default() -> Self {
+        Self {
+            preference: "system".to_string(),
+            glass: UserThemeGlassSettingsDto::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserThemeGlassSettingsDto {
+    pub light: UserGlassProfileDto,
+    pub dark: UserGlassProfileDto,
+}
+
+impl Default for UserThemeGlassSettingsDto {
+    fn default() -> Self {
+        Self {
+            light: UserGlassProfileDto::light_default(),
+            dark: UserGlassProfileDto::dark_default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserGlassProfileDto {
+    pub opacity: u32,
+    pub blur: u32,
+    pub saturate: u32,
+    pub brightness: u32,
+}
+
+impl UserGlassProfileDto {
+    pub fn light_default() -> Self {
+        Self {
+            opacity: 100,
+            blur: 20,
+            saturate: 135,
+            brightness: 100,
+        }
+    }
+
+    pub fn dark_default() -> Self {
+        Self {
+            opacity: 100,
+            blur: 24,
+            saturate: 150,
+            brightness: 100,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserLayoutSettingsDto {
+    pub preference: String,
+}
+
+impl Default for UserLayoutSettingsDto {
+    fn default() -> Self {
+        Self {
+            preference: "topbar".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserLocaleSettingsDto {
+    pub preference: String,
+}
+
+impl Default for UserLocaleSettingsDto {
+    fn default() -> Self {
+        Self {
+            preference: "system".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct UserSettingsUpdateInputDto {
+    pub theme: Option<UserThemeSettingsUpdateInputDto>,
+    pub layout: Option<UserLayoutSettingsUpdateInputDto>,
+    pub locale: Option<UserLocaleSettingsUpdateInputDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct UserThemeSettingsUpdateInputDto {
+    pub preference: Option<String>,
+    pub glass: Option<UserThemeGlassSettingsUpdateInputDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct UserThemeGlassSettingsUpdateInputDto {
+    pub light: Option<UserGlassProfileUpdateInputDto>,
+    pub dark: Option<UserGlassProfileUpdateInputDto>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct UserGlassProfileUpdateInputDto {
+    pub opacity: Option<u32>,
+    pub blur: Option<u32>,
+    pub saturate: Option<u32>,
+    pub brightness: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct UserLayoutSettingsUpdateInputDto {
+    pub preference: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct UserLocaleSettingsUpdateInputDto {
+    pub preference: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 #[allow(clippy::enum_variant_names)]

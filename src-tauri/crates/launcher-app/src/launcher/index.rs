@@ -402,7 +402,10 @@ pub fn start_background_indexer(db_conn: DbConn) {
             let error_text = error.to_string();
             let _ = write_meta(&db_conn, INDEX_READY_KEY, "0").await;
             let _ = write_meta(&db_conn, INDEX_LAST_ERROR_KEY, error_text.as_str()).await;
-            tracing::warn!(event = "launcher_index_initial_build_failed", error = error_text);
+            tracing::warn!(
+                event = "launcher_index_initial_build_failed",
+                error = error_text
+            );
         }
 
         loop {
@@ -813,12 +816,12 @@ async fn delete_stale_entries_for_root(
 ) -> AppResult<()> {
     db_conn
         .execute(
-        "DELETE FROM launcher_index_entries
+            "DELETE FROM launcher_index_entries
          WHERE source_root = ?1
            AND COALESCE(scan_token, '') <> ?2",
-        (root, scan_token),
-    )
-    .await?;
+            (root, scan_token),
+        )
+        .await?;
     Ok(())
 }
 
@@ -867,7 +870,7 @@ async fn query_index_rows_default(
 ) -> AppResult<Vec<(String, String, String, String)>> {
     let mut rows = db_conn
         .query(
-        r#"
+            r#"
         SELECT path, kind, name, parent
         FROM launcher_index_entries
         ORDER BY
@@ -880,9 +883,9 @@ async fn query_index_rows_default(
             path COLLATE NOCASE ASC
         LIMIT ?1
         "#,
-        [limit],
-    )
-    .await?;
+            [limit],
+        )
+        .await?;
     let mut values = Vec::new();
     while let Some(row) = rows.next().await? {
         values.push((
@@ -902,7 +905,7 @@ async fn query_index_rows_fts(
 ) -> AppResult<Vec<(String, String, String, String)>> {
     let mut rows = db_conn
         .query(
-        r#"
+            r#"
         SELECT e.path, e.kind, e.name, e.parent
         FROM launcher_index_entries_fts f
         JOIN launcher_index_entries e ON e.rowid = f.rowid
@@ -918,9 +921,9 @@ async fn query_index_rows_fts(
             e.path COLLATE NOCASE ASC
         LIMIT ?2
         "#,
-        (fts_query, limit),
-    )
-    .await?;
+            (fts_query, limit),
+        )
+        .await?;
     let mut values = Vec::new();
     while let Some(row) = rows.next().await? {
         values.push((
@@ -941,7 +944,7 @@ async fn query_index_rows_like(
     let pattern = format!("%{}%", escape_like_pattern(normalized_query));
     let mut rows = db_conn
         .query(
-        r#"
+            r#"
         SELECT path, kind, name, parent
         FROM launcher_index_entries
         WHERE searchable_text LIKE ?1 ESCAPE '\'
@@ -955,9 +958,9 @@ async fn query_index_rows_like(
             path COLLATE NOCASE ASC
         LIMIT ?2
         "#,
-        (pattern.as_str(), limit),
-    )
-    .await?;
+            (pattern.as_str(), limit),
+        )
+        .await?;
     let mut values = Vec::new();
     while let Some(row) = rows.next().await? {
         values.push((

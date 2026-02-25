@@ -58,7 +58,7 @@ export default function BootOverlay(props: BootOverlayProps) {
       <div
         className={[
           "relative border border-border-muted bg-surface-overlay/96 p-5 shadow-overlay",
-          "backdrop-blur-[20px] backdrop-saturate-140",
+          "backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]",
           config.panelClassName,
           config.radiusClassName,
         ].join(" ")}

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { LoadingIndicator } from "@/components/loading";
-import { Button, Input, Select, SwitchField } from "@/components/ui";
+import { Button, Input, RadioGroup, Select, Slider, SwitchField } from "@/components/ui";
 import type { SelectOptionInput } from "@/components/ui";
 import { SUPPORTED_LOCALES } from "@/i18n/constants";
 import { localeActions, useLocaleStore } from "@/i18n/store";
@@ -26,6 +26,9 @@ import {
 import { transferGetSettings, transferUpdateSettings } from "@/services/transfer.service";
 import { useLoggingStore } from "@/stores/logging.store";
 import { useSettingsStore } from "@/stores/settings.store";
+import { GLASS_RANGES } from "@/theme/constants";
+import { useThemeStore } from "@/theme/store";
+import type { ResolvedTheme } from "@/theme/types";
 
 const MIN_MAX_ITEMS = 100;
 const MAX_MAX_ITEMS = 10_000;
@@ -143,6 +146,13 @@ export default function SettingsPage() {
   const setLocalePreference = useLocaleStore((state) => state.setPreference);
   const layoutPreference = useLayoutStore((state) => state.preference);
   const setLayoutPreference = useLayoutStore((state) => state.setPreference);
+  const themePreference = useThemeStore((state) => state.preference);
+  const setThemePreference = useThemeStore((state) => state.setPreference);
+  const themeResolved = useThemeStore((state) => state.resolved);
+  const glassSettings = useThemeStore((state) => state.glassSettings);
+  const previewGlassProfile = useThemeStore((state) => state.previewGlassProfile);
+  const commitGlassProfile = useThemeStore((state) => state.commitGlassProfile);
+  const resetGlassProfile = useThemeStore((state) => state.resetGlassProfile);
 
   const clipboardSettings = useSettingsStore((state) => state.clipboardSettings);
   const clipboardLoading = useSettingsStore((state) => state.loading);
@@ -172,6 +182,7 @@ export default function SettingsPage() {
   const customSizeInputRef = useRef<HTMLInputElement>(null);
   const [saveMessage, setSaveMessage] = useState<MessageState | null>(null);
   const [activeSection, setActiveSection] = useState<SettingsSection>("general");
+  const [glassTargetTheme, setGlassTargetTheme] = useState<ResolvedTheme>(themeResolved);
   const [transferLoading, setTransferLoading] = useState(false);
   const [transferSaving, setTransferSaving] = useState(false);
   const [transferDefaultDirInput, setTransferDefaultDirInput] = useState("");
@@ -302,6 +313,10 @@ export default function SettingsPage() {
   useEffect(() => {
     void refreshLocaleCatalog();
   }, [refreshLocaleCatalog]);
+
+  useEffect(() => {
+    setGlassTargetTheme(themeResolved);
+  }, [themeResolved]);
 
   useEffect(() => {
     if (clipboardSettings) {
@@ -528,6 +543,24 @@ export default function SettingsPage() {
     ],
     [t],
   );
+  const glassThemeOptions = useMemo(
+    () => [
+      {
+        value: "light",
+        label: t("general.glass.theme.light"),
+      },
+      {
+        value: "dark",
+        label: t("general.glass.theme.dark"),
+      },
+    ],
+    [t],
+  );
+  const activeGlassProfile = useMemo(
+    () => (glassTargetTheme === "light" ? glassSettings.light : glassSettings.dark),
+    [glassSettings.dark, glassSettings.light, glassTargetTheme],
+  );
+  const effectiveThemeLabel = themeResolved === "dark" ? t("general.glass.theme.dark") : t("general.glass.theme.light");
 
   useEffect(() => {
     if (!importLocaleOptions.some((item) => item.value === importLocale)) {
@@ -571,6 +604,26 @@ export default function SettingsPage() {
       ? t("launcher.durationValue", { value: launcherStatus.lastDurationMs })
       : t("launcher.statusUnknown");
   const launcherTruncatedHintText = launcherStatus?.truncated ? t("launcher.status.truncatedHint") : null;
+
+  const previewGlassField = (field: "opacity" | "blur" | "saturate" | "brightness", value: number) => {
+    previewGlassProfile(glassTargetTheme, { [field]: value });
+  };
+
+  const commitGlassField = (field: "opacity" | "blur" | "saturate" | "brightness", value: number) => {
+    void commitGlassProfile(glassTargetTheme, { [field]: value });
+  };
+
+  const handleResetGlassTheme = () => {
+    void resetGlassProfile(glassTargetTheme);
+  };
+
+  const handleGlassThemeChange = (value: string) => {
+    const nextTheme: ResolvedTheme = value === "dark" ? "dark" : "light";
+    setGlassTargetTheme(nextTheme);
+    if (themePreference !== nextTheme) {
+      void setThemePreference(nextTheme);
+    }
+  };
 
   const handleSaveTransfer = async () => {
     if (transferDirInvalid || transferCleanupInvalid) {
@@ -868,7 +921,7 @@ export default function SettingsPage() {
                     id="locale-preference"
                     value={localePreference}
                     options={localePreferenceOptions}
-                    onChange={(event) => setLocalePreference(event.currentTarget.value as LocalePreference)}
+                    onChange={(event) => void setLocalePreference(event.currentTarget.value as LocalePreference)}
                   />
                   <p className="m-0 text-xs text-text-muted">
                     {t("general.effective", {
@@ -885,8 +938,97 @@ export default function SettingsPage() {
                     id="layout-preference"
                     value={layoutPreference}
                     options={layoutPreferenceOptions}
-                    onChange={(event) => setLayoutPreference(event.currentTarget.value as LayoutPreference)}
+                    onChange={(event) => void setLayoutPreference(event.currentTarget.value as LayoutPreference)}
                   />
+                </div>
+
+                <div className="mt-5 max-w-[640px] space-y-3 rounded-lg border border-border-glass bg-surface-glass-soft shadow-inset-soft px-3 py-3">
+                  <h3 className="m-0 text-sm font-semibold text-text-primary">{t("general.glass.title")}</h3>
+                  <p className="m-0 text-xs text-text-muted">{t("general.glass.desc")}</p>
+                  <p className="m-0 text-xs text-text-secondary">
+                    {t("general.glass.currentTheme", {
+                      theme: effectiveThemeLabel,
+                    })}
+                  </p>
+
+                  <div className="grid max-w-[420px] gap-1.5">
+                    <div className="text-xs text-text-secondary">{t("general.glass.targetTheme")}</div>
+                    <RadioGroup
+                      name="glass-target-theme"
+                      value={glassTargetTheme}
+                      options={glassThemeOptions}
+                      orientation="horizontal"
+                      size="md"
+                      onValueChange={handleGlassThemeChange}
+                      className="w-full flex-nowrap items-stretch gap-2"
+                      optionClassName="w-fit min-h-10 shrink-0 items-center overflow-visible rounded-lg border border-border-glass bg-surface-glass-soft px-3 py-2 text-xs text-text-secondary shadow-inset-soft transition-colors duration-150 hover:border-border-glass-strong hover:bg-surface-glass"
+                    />
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <div className="text-xs text-text-secondary">{t("general.glass.opacity")}</div>
+                      <Slider
+                        min={GLASS_RANGES.opacity.min}
+                        max={GLASS_RANGES.opacity.max}
+                        step={1}
+                        value={activeGlassProfile.opacity}
+                        variant="theme"
+                        showValue
+                        formatValue={(value) => `${value}%`}
+                        onValueChange={(value) => previewGlassField("opacity", value)}
+                        onValueCommit={(value) => commitGlassField("opacity", value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-xs text-text-secondary">{t("general.glass.blur")}</div>
+                      <Slider
+                        min={GLASS_RANGES.blur.min}
+                        max={GLASS_RANGES.blur.max}
+                        step={1}
+                        value={activeGlassProfile.blur}
+                        variant="theme"
+                        showValue
+                        formatValue={(value) => `${value}px`}
+                        onValueChange={(value) => previewGlassField("blur", value)}
+                        onValueCommit={(value) => commitGlassField("blur", value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-xs text-text-secondary">{t("general.glass.saturate")}</div>
+                      <Slider
+                        min={GLASS_RANGES.saturate.min}
+                        max={GLASS_RANGES.saturate.max}
+                        step={5}
+                        value={activeGlassProfile.saturate}
+                        variant="theme"
+                        showValue
+                        formatValue={(value) => `${value}%`}
+                        onValueChange={(value) => previewGlassField("saturate", value)}
+                        onValueCommit={(value) => commitGlassField("saturate", value)}
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <div className="text-xs text-text-secondary">{t("general.glass.brightness")}</div>
+                      <Slider
+                        min={GLASS_RANGES.brightness.min}
+                        max={GLASS_RANGES.brightness.max}
+                        step={1}
+                        value={activeGlassProfile.brightness}
+                        variant="theme"
+                        showValue
+                        formatValue={(value) => `${value}%`}
+                        onValueChange={(value) => previewGlassField("brightness", value)}
+                        onValueCommit={(value) => commitGlassField("brightness", value)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Button size="default" variant="secondary" onClick={handleResetGlassTheme}>
+                      {t("general.glass.resetCurrent")}
+                    </Button>
+                  </div>
                 </div>
 
                 <div className="mt-5 space-y-3 rounded-lg border border-border-glass bg-surface-glass-soft shadow-inset-soft px-3 py-3">

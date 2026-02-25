@@ -168,7 +168,9 @@ const AppListItem = memo(function AppListItem({
     <button
       type="button"
       className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
-        selected ? "border-accent/70 bg-accent/10" : "border-border-glass bg-surface-glass-soft shadow-inset-soft hover:border-accent/45"
+        selected
+          ? "border-accent/70 bg-accent/10"
+          : "border-border-glass bg-surface-glass-soft shadow-inset-soft hover:border-accent/45"
       }`}
       onClick={() => onSelect(app.id)}
     >
@@ -711,9 +713,7 @@ export default function AppManagerPage() {
         <div className="h-full min-h-0 overflow-y-auto pr-1">
           <div className="space-y-3 pb-2">
             {!selectedApp ? (
-              <div className="ui-glass-panel px-4 py-8 text-center text-sm text-text-muted">
-                {t("detail.empty")}
-              </div>
+              <div className="ui-glass-panel px-4 py-8 text-center text-sm text-text-muted">{t("detail.empty")}</div>
             ) : (
               <>
                 <section className="ui-glass-panel px-4 py-4">

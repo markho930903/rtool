@@ -8,3 +8,4 @@ pub mod logging;
 pub mod palette;
 pub mod resource_monitor;
 pub mod transfer;
+pub mod user_settings;

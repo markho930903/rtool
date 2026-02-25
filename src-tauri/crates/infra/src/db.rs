@@ -545,21 +545,30 @@ pub async fn init_db(conn: &DbConn) -> AppResult<()> {
         .await?;
 
     if let Err(error) = conn
-        .execute("ALTER TABLE clipboard_items ADD COLUMN preview_path TEXT", ())
+        .execute(
+            "ALTER TABLE clipboard_items ADD COLUMN preview_path TEXT",
+            (),
+        )
         .await
     {
         is_duplicate_column_error(error)?;
     }
 
     if let Err(error) = conn
-        .execute("ALTER TABLE clipboard_items ADD COLUMN preview_data_url TEXT", ())
+        .execute(
+            "ALTER TABLE clipboard_items ADD COLUMN preview_data_url TEXT",
+            (),
+        )
         .await
     {
         is_duplicate_column_error(error)?;
     }
 
     if let Err(error) = conn
-        .execute("ALTER TABLE clipboard_items ADD COLUMN content_key TEXT", ())
+        .execute(
+            "ALTER TABLE clipboard_items ADD COLUMN content_key TEXT",
+            (),
+        )
         .await
     {
         is_duplicate_column_error(error)?;
@@ -581,7 +590,10 @@ pub async fn init_db(conn: &DbConn) -> AppResult<()> {
     Ok(())
 }
 
-pub async fn insert_clipboard_item(conn: &DbConn, item: &ClipboardItemDto) -> AppResult<ClipboardItemDto> {
+pub async fn insert_clipboard_item(
+    conn: &DbConn,
+    item: &ClipboardItemDto,
+) -> AppResult<ClipboardItemDto> {
     conn.execute(
         "INSERT INTO clipboard_items (id, content_key, item_type, plain_text, source_app, preview_path, preview_data_url, created_at, pinned)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
@@ -626,8 +638,14 @@ pub async fn insert_clipboard_item(conn: &DbConn, item: &ClipboardItemDto) -> Ap
     ))
 }
 
-pub async fn list_clipboard_items(conn: &DbConn, filter: &ClipboardFilterDto) -> AppResult<Vec<ClipboardItemDto>> {
-    let limit = filter.limit.unwrap_or(100).clamp(1, CLIPBOARD_LIST_LIMIT_MAX) as i64;
+pub async fn list_clipboard_items(
+    conn: &DbConn,
+    filter: &ClipboardFilterDto,
+) -> AppResult<Vec<ClipboardItemDto>> {
+    let limit = filter
+        .limit
+        .unwrap_or(100)
+        .clamp(1, CLIPBOARD_LIST_LIMIT_MAX) as i64;
     let query = filter.query.clone().unwrap_or_default();
 
     let mut rows = conn
@@ -717,7 +735,9 @@ pub async fn delete_clipboard_item(conn: &DbConn, id: &str) -> AppResult<Option<
 }
 
 pub async fn clear_all_clipboard_items(conn: &DbConn) -> AppResult<Vec<String>> {
-    let mut rows = conn.query("SELECT preview_path FROM clipboard_items", ()).await?;
+    let mut rows = conn
+        .query("SELECT preview_path FROM clipboard_items", ())
+        .await?;
     let mut preview_paths = Vec::new();
     while let Some(row) = rows.next().await? {
         if let Some(path) = row.get::<Option<String>>(0)? {
@@ -763,7 +783,10 @@ fn clipboard_row_size_bytes(
     preview_data_url: Option<&str>,
     preview_path: Option<&str>,
 ) -> u64 {
-    plain_text.len() as u64 + preview_data_url.map(|value| value.len() as u64).unwrap_or(0)
+    plain_text.len() as u64
+        + preview_data_url
+            .map(|value| value.len() as u64)
+            .unwrap_or(0)
         + preview_file_size_bytes(preview_path)
 }
 
@@ -950,7 +973,10 @@ pub async fn set_app_setting(conn: &DbConn, key: &str, value: &str) -> AppResult
     Ok(())
 }
 
-pub async fn get_app_settings_batch(conn: &DbConn, keys: &[&str]) -> AppResult<HashMap<String, String>> {
+pub async fn get_app_settings_batch(
+    conn: &DbConn,
+    keys: &[&str],
+) -> AppResult<HashMap<String, String>> {
     if keys.is_empty() {
         return Ok(HashMap::new());
     }

@@ -1,52 +1,33 @@
 import { create } from "zustand";
 
 import i18n from "@/i18n";
-import { LOCALE_STORAGE_KEY } from "@/i18n/constants";
-import {
-  applyLocaleToDocument,
-  getStoredLocalePreference,
-  resolveLocale,
-  setStoredLocalePreference,
-} from "@/i18n/runtime";
+import { resolveLocale } from "@/i18n/runtime";
 import type { AppLocale, LocalePreference, LocaleState } from "@/i18n/types";
 import { fetchBackendLocaleState, saveBackendLocalePreference } from "@/services/locale.service";
 import { logWarn } from "@/services/logger";
 
 interface LocaleActions {
-  init: () => void;
-  syncFromStorage: () => void;
+  init: () => Promise<void>;
+  syncFromStorage: () => Promise<void>;
   syncFromBackend: () => Promise<void>;
-  setPreference: (preference: LocalePreference) => void;
-  setLocale: (locale: AppLocale) => void;
+  setPreference: (preference: LocalePreference) => Promise<void>;
+  setLocale: (locale: AppLocale) => Promise<void>;
 }
 
 type LocaleStore = LocaleState & LocaleActions;
 
-let storageListener: ((event: StorageEvent) => void) | null = null;
+function applyLocaleToDocument(locale: AppLocale) {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  document.documentElement.lang = locale;
+  document.documentElement.setAttribute("data-locale", locale);
+}
 
 function applyLanguage(locale: AppLocale) {
   applyLocaleToDocument(locale);
   void i18n.changeLanguage(locale);
-}
-
-function setupStorageListener() {
-  if (typeof window === "undefined" || storageListener) {
-    return;
-  }
-
-  storageListener = (event) => {
-    if (event.storageArea !== window.localStorage) {
-      return;
-    }
-
-    if (event.key !== null && event.key !== LOCALE_STORAGE_KEY) {
-      return;
-    }
-
-    useLocaleStore.getState().syncFromStorage();
-  };
-
-  window.addEventListener("storage", storageListener);
 }
 
 function applyLocaleState(
@@ -66,30 +47,19 @@ export const useLocaleStore = create<LocaleStore>((set, get) => ({
   preference: "system",
   resolved: resolveLocale("system"),
   initialized: false,
-  init() {
+  async init() {
     if (get().initialized) {
       return;
     }
 
-    get().syncFromStorage();
-    setupStorageListener();
-    void get().syncFromBackend();
+    await get().syncFromBackend();
   },
-  syncFromStorage() {
-    const preference = getStoredLocalePreference();
-    const resolved = resolveLocale(preference);
-    const current = get();
-
-    if (current.initialized && current.preference === preference && current.resolved === resolved) {
-      return;
-    }
-
-    applyLocaleState(set, preference, resolved);
+  async syncFromStorage() {
+    await get().syncFromBackend();
   },
   async syncFromBackend() {
     try {
       const state = await fetchBackendLocaleState();
-      setStoredLocalePreference(state.preference);
       const current = get();
       if (current.initialized && current.preference === state.preference && current.resolved === state.resolved) {
         return;
@@ -100,34 +70,34 @@ export const useLocaleStore = create<LocaleStore>((set, get) => ({
       logWarn("locale", "backend_sync_failed", {
         error: error instanceof Error ? error.message : String(error),
       });
+      if (!get().initialized) {
+        const fallbackPreference: LocalePreference = "system";
+        applyLocaleState(set, fallbackPreference, resolveLocale(fallbackPreference));
+      }
     }
   },
-  setPreference(preference) {
-    setStoredLocalePreference(preference);
-    const resolved = resolveLocale(preference);
-    applyLocaleState(set, preference, resolved);
+  async setPreference(preference) {
+    const optimisticResolved = resolveLocale(preference);
+    applyLocaleState(set, preference, optimisticResolved);
 
-    void (async () => {
-      try {
-        const backendState = await saveBackendLocalePreference(preference);
-        setStoredLocalePreference(backendState.preference);
-
-        const current = get();
-        if (current.preference === backendState.preference && current.resolved === backendState.resolved) {
-          return;
-        }
-
-        applyLocaleState(set, backendState.preference, backendState.resolved);
-      } catch (error) {
-        logWarn("locale", "backend_set_failed", {
-          preference,
-          error: error instanceof Error ? error.message : String(error),
-        });
+    try {
+      const backendState = await saveBackendLocalePreference(preference);
+      const current = get();
+      if (current.preference === backendState.preference && current.resolved === backendState.resolved) {
+        return;
       }
-    })();
+
+      applyLocaleState(set, backendState.preference, backendState.resolved);
+    } catch (error) {
+      logWarn("locale", "backend_set_failed", {
+        preference,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      await get().syncFromBackend();
+    }
   },
-  setLocale(locale) {
-    get().setPreference(locale);
+  async setLocale(locale) {
+    await get().setPreference(locale);
   },
 }));
 

@@ -300,6 +300,8 @@ export type CommandKey =
   | "palette_execute"
   | "app_get_locale"
   | "app_set_locale"
+  | "app_get_user_settings"
+  | "app_update_user_settings"
   | "app_list_locales"
   | "app_reload_locales"
   | "app_import_locale_file"
@@ -495,6 +497,68 @@ export type LocaleCatalogList = {
 export type LocaleNamespaces = { locale: string; namespaces: Array<string> };
 
 export type LocaleStateDto = { preference: string; resolved: string };
+
+export type UserGlassProfileDto = {
+  opacity: number;
+  blur: number;
+  saturate: number;
+  brightness: number;
+};
+
+export type UserThemeGlassSettingsDto = {
+  light: UserGlassProfileDto;
+  dark: UserGlassProfileDto;
+};
+
+export type UserThemeSettingsDto = {
+  preference: string;
+  glass: UserThemeGlassSettingsDto;
+};
+
+export type UserLayoutSettingsDto = {
+  preference: string;
+};
+
+export type UserLocaleSettingsDto = {
+  preference: string;
+};
+
+export type UserSettingsDto = {
+  theme: UserThemeSettingsDto;
+  layout: UserLayoutSettingsDto;
+  locale: UserLocaleSettingsDto;
+};
+
+export type UserGlassProfileUpdateInputDto = {
+  opacity: number | null;
+  blur: number | null;
+  saturate: number | null;
+  brightness: number | null;
+};
+
+export type UserThemeGlassSettingsUpdateInputDto = {
+  light: UserGlassProfileUpdateInputDto | null;
+  dark: UserGlassProfileUpdateInputDto | null;
+};
+
+export type UserThemeSettingsUpdateInputDto = {
+  preference: string | null;
+  glass: UserThemeGlassSettingsUpdateInputDto | null;
+};
+
+export type UserLayoutSettingsUpdateInputDto = {
+  preference: string | null;
+};
+
+export type UserLocaleSettingsUpdateInputDto = {
+  preference: string | null;
+};
+
+export type UserSettingsUpdateInputDto = {
+  theme: UserThemeSettingsUpdateInputDto | null;
+  layout: UserLayoutSettingsUpdateInputDto | null;
+  locale: UserLocaleSettingsUpdateInputDto | null;
+};
 
 export type LogConfigDto = {
   minLevel: string;

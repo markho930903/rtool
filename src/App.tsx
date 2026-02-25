@@ -171,7 +171,7 @@ function ThemeBootstrap() {
   const initTheme = useThemeStore((state) => state.init);
 
   useEffect(() => {
-    initTheme();
+    void initTheme();
   }, [initTheme]);
 
   return null;
@@ -181,7 +181,7 @@ function LocaleBootstrap() {
   const initLocale = useLocaleStore((state) => state.init);
 
   useEffect(() => {
-    initLocale();
+    void initLocale();
   }, [initLocale]);
 
   return null;
@@ -191,7 +191,7 @@ function LayoutBootstrap() {
   const initLayout = useLayoutStore((state) => state.init);
 
   useEffect(() => {
-    initLayout();
+    void initLayout();
   }, [initLayout]);
 
   return null;

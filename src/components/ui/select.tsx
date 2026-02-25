@@ -60,12 +60,12 @@ const triggerClassMap: Record<SelectVariant, string> = {
 
 const panelClassMap: Record<SelectVariant, string> = {
   default:
-    "left-0 mt-1.5 max-h-64 w-full overflow-y-auto rounded-lg border border-border-glass bg-surface-glass-strong p-1 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]",
-  tool: "left-0 mt-1.5 max-h-64 min-w-full overflow-y-auto rounded-lg border border-border-glass bg-surface-glass-strong p-1 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]",
+    "left-0 mt-1.5 max-h-64 w-full overflow-y-auto rounded-lg border border-border-glass bg-surface-glass-strong p-1 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]",
+  tool: "left-0 mt-1.5 max-h-64 min-w-full overflow-y-auto rounded-lg border border-border-glass bg-surface-glass-strong p-1 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]",
   clipboard:
-    "left-0 mt-1.5 max-h-64 min-w-full overflow-y-auto rounded-lg border border-border-glass bg-surface-glass-strong p-1 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]",
+    "left-0 mt-1.5 max-h-64 min-w-full overflow-y-auto rounded-lg border border-border-glass bg-surface-glass-strong p-1 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]",
   theme:
-    "right-0 mt-1.5 max-h-64 min-w-full overflow-y-auto rounded-lg border border-border-glass bg-surface-glass-strong p-1 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]",
+    "right-0 mt-1.5 max-h-64 min-w-full overflow-y-auto rounded-lg border border-border-glass bg-surface-glass-strong p-1 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]",
 };
 
 const optionClassMap: Record<SelectVariant, string> = {

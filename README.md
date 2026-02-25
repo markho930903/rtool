@@ -36,16 +36,16 @@
 
 ## 技术栈
 
-| 层级     | 技术                  |
-| -------- | --------------------- |
-| 前端框架 | React 19 + TypeScript |
-| 构建工具 | Vite 7                |
-| 样式方案 | UnoCSS                |
-| 状态管理 | Zustand               |
-| 路由     | React Router 7        |
-| 国际化   | i18next               |
-| 后端框架 | Tauri 2.x             |
-| 后端语言 | Rust                  |
+| 层级     | 技术                    |
+| -------- | ----------------------- |
+| 前端框架 | React 19 + TypeScript   |
+| 构建工具 | Vite 7                  |
+| 样式方案 | UnoCSS                  |
+| 状态管理 | Zustand                 |
+| 路由     | React Router 7          |
+| 国际化   | i18next                 |
+| 后端框架 | Tauri 2.x               |
+| 后端语言 | Rust                    |
 | 数据库   | Turso (libsql 本地模式) |
 
 ## 快速开始

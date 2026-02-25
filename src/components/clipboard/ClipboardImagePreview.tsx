@@ -54,7 +54,7 @@ export default function ClipboardImagePreview(props: ClipboardImagePreviewProps)
       open
       onClose={onClose}
       zIndexClassName="z-[70] flex items-center justify-center"
-      className="flex max-h-[88vh] w-[min(900px,92vw)] flex-col rounded-xl border border-border-muted bg-surface-overlay shadow-overlay backdrop-blur-[16px]"
+      className="flex max-h-[88vh] w-[min(900px,92vw)] flex-col rounded-xl border border-border-muted bg-surface-overlay shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]"
       ariaLabel={t("preview.title")}
       closeOnBackdrop
       closeOnEscape

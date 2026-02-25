@@ -55,7 +55,10 @@ export default function TransferSessionList(props: TransferSessionListProps) {
           const canRetry = isTransferRetryableStatus(session.status);
 
           return (
-            <article key={session.id} className="rounded-3 border border-border-glass bg-surface-glass-soft p-3 shadow-inset-soft">
+            <article
+              key={session.id}
+              className="rounded-3 border border-border-glass bg-surface-glass-soft p-3 shadow-inset-soft"
+            >
               <div className="flex items-center justify-between gap-2">
                 <div className="truncate text-xs font-semibold text-text-primary">{session.peerName}</div>
                 <div className="text-[10px] uppercase tracking-wide text-text-secondary">{session.status}</div>

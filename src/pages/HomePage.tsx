@@ -226,7 +226,7 @@ export default function HomePage() {
           <p className="mt-2 max-w-3xl text-sm text-text-secondary">{t("header.subtitle")}</p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <Button size="default" variant="secondary" onClick={() => void refresh()}>
-              <span className="btn-icon i-noto:counterclockwise-arrows-button" aria-hidden="true" />
+              <span className="btn-icon i-lucide:refresh-cw" aria-hidden="true" />
               <span>{t("action.refreshNow")}</span>
             </Button>
             <Button size="default" as="link" to={TOOLS_ROUTE_PATH} variant="primary">

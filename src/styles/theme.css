@@ -98,6 +98,23 @@
   --color-shimmer-highlight: rgb(var(--primitive-color-white));
   --color-specular: rgb(var(--primitive-color-white) / 34%);
 
+  /* semantic: chart */
+  --color-chart-axis-label: rgb(var(--primitive-color-dark-300) / 84%);
+  --color-chart-axis-title: rgb(var(--primitive-color-dark-200) / 92%);
+  --color-chart-axis-line: rgb(var(--primitive-color-white) / 22%);
+  --color-chart-grid-line: rgb(var(--primitive-color-white) / 10%);
+  --color-chart-legend-label: rgb(var(--primitive-color-dark-200) / 90%);
+  --color-chart-legend-value: rgb(var(--primitive-color-dark-300) / 82%);
+  --color-chart-legend-nav: rgb(var(--primitive-color-dark-300) / 78%);
+  --color-chart-series-1: rgb(var(--primitive-color-accent-dark));
+  --color-chart-series-2: rgb(var(--primitive-color-accent-dark) / 78%);
+  --color-chart-series-3: rgb(var(--primitive-color-dark-200) / 74%);
+  --color-chart-series-4: rgb(var(--primitive-color-danger-dark));
+  --color-chart-series-5: rgb(var(--primitive-color-danger-dark) / 74%);
+  --color-chart-tooltip-border: var(--color-border-glass-strong);
+  --color-chart-tooltip-bg: var(--color-surface-overlay);
+  --color-chart-tooltip-text: var(--color-text-primary);
+
   --glass-blur: 24px;
   --glass-saturate: 150%;
   --glass-brightness: 100%;
@@ -194,6 +211,23 @@ html[data-theme="light"] {
   --color-sidebar-item-active: rgb(var(--primitive-color-accent-light) / 14%);
   --color-popover-highlight: rgb(var(--primitive-color-white) / 24%);
   --color-specular: rgb(var(--primitive-color-white) / 88%);
+
+  /* semantic: chart */
+  --color-chart-axis-label: rgb(var(--primitive-color-light-700) / 82%);
+  --color-chart-axis-title: rgb(var(--primitive-color-light-900) / 88%);
+  --color-chart-axis-line: rgb(var(--primitive-color-ink-light) / 18%);
+  --color-chart-grid-line: rgb(var(--primitive-color-ink-light) / 10%);
+  --color-chart-legend-label: rgb(var(--primitive-color-light-900) / 88%);
+  --color-chart-legend-value: rgb(var(--primitive-color-light-700) / 82%);
+  --color-chart-legend-nav: rgb(var(--primitive-color-light-700) / 76%);
+  --color-chart-series-1: rgb(var(--primitive-color-accent-light));
+  --color-chart-series-2: rgb(var(--primitive-color-accent-light) / 78%);
+  --color-chart-series-3: rgb(var(--primitive-color-light-700) / 72%);
+  --color-chart-series-4: rgb(var(--primitive-color-danger-light));
+  --color-chart-series-5: rgb(var(--primitive-color-danger-light) / 76%);
+  --color-chart-tooltip-border: var(--color-border-glass-strong);
+  --color-chart-tooltip-bg: var(--color-surface-overlay);
+  --color-chart-tooltip-text: var(--color-text-primary);
 
   --glass-blur: 20px;
   --glass-saturate: 135%;

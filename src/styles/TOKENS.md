@@ -21,6 +21,7 @@
 
 1. 颜色语义：
    `color-bg-*`、`color-surface-*`、`color-text-*`、`color-border-*`、`color-accent`、`color-danger`。
+   图表语义使用 `color-chart-*` 前缀（轴线、网格、图例、系列、tooltip）。
 2. 尺寸语义：
    `font-size-ui-*`、`line-height-ui-*`、`space-*`、`radius-*`。
 3. 状态语义：
@@ -34,6 +35,7 @@
    `rgb(...)`、`rgba(...)`、`hsl(...)`、`hsla(...)`。
 3. 禁止在业务组件中使用 `[...]` 直接读取 `var(--color-*)` / `var(--shadow-*)` / `var(--radius-*)`。
 4. 禁止在 `shadow-[...]` 中直接拼接颜色函数。
+5. AntV/G2 图表禁止在页面业务文件直接读取任意 `--color-*`；统一经 `src/theme/chartTheme.ts` 输出主题配置。
 
 说明：`theme.css` 是 token 定义源，允许包含原始颜色函数。
 

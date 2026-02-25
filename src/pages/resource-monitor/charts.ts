@@ -1,5 +1,7 @@
 import { Chart } from "@antv/g2";
 
+import { getChartThemeConfig, type ChartTooltipTheme } from "@/theme/chartTheme";
+
 export interface HistoryChartDatum {
   time: string;
   value: number;
@@ -26,6 +28,7 @@ interface TooltipItem {
 interface TooltipOptions<T> {
   series: boolean;
   shared: boolean;
+  tooltipTheme: ChartTooltipTheme;
   getTitle: (rows: T[]) => string;
   getItems: (rows: T[]) => TooltipItem[];
 }
@@ -33,22 +36,6 @@ interface TooltipOptions<T> {
 interface TooltipController {
   refresh: () => void;
   destroy: () => void;
-}
-
-function readColorToken(name: string): string {
-  if (typeof window === "undefined") {
-    return "#60a5fa";
-  }
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return value || "#60a5fa";
-}
-
-function readCssToken(name: string, fallback: string): string {
-  if (typeof window === "undefined") {
-    return fallback;
-  }
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return value || fallback;
 }
 
 export function createTooltipController<T extends object>(
@@ -71,15 +58,15 @@ export function createTooltipController<T extends object>(
   tooltip.style.transform = "translate(-9999px, -9999px)";
   tooltip.style.zIndex = "10";
   tooltip.style.pointerEvents = "none";
-  tooltip.style.border = `1px solid ${readColorToken("--color-border-glass")}`;
-  tooltip.style.background = readColorToken("--color-surface-glass-strong");
-  tooltip.style.color = readColorToken("--color-text-primary");
+  tooltip.style.border = `1px solid ${options.tooltipTheme.border}`;
+  tooltip.style.background = options.tooltipTheme.background;
+  tooltip.style.color = options.tooltipTheme.text;
   tooltip.style.borderRadius = "8px";
   tooltip.style.padding = "8px 10px";
   tooltip.style.fontSize = "12px";
   tooltip.style.lineHeight = "1.4";
   tooltip.style.whiteSpace = "nowrap";
-  tooltip.style.boxShadow = readCssToken("--shadow-overlay", "var(--shadow-overlay)");
+  tooltip.style.boxShadow = options.tooltipTheme.shadow;
   tooltip.style.display = "none";
   element.appendChild(tooltip);
 
@@ -179,14 +166,14 @@ export function createHistoryChart(
   element: HTMLDivElement,
   data: HistoryChartDatum[],
 ): ChartController<HistoryChartDatum> {
-  const accent = readColorToken("--color-accent");
-  const info = readColorToken("--color-info");
+  const themeConfig = getChartThemeConfig();
 
   const chart = new Chart({
     container: element,
     autoFit: true,
     height: 280,
   });
+  chart.theme(themeConfig.g2Theme);
   chart.animate(false);
   chart.interaction("tooltip", false);
 
@@ -196,8 +183,13 @@ export function createHistoryChart(
     .encode("x", "time")
     .encode("y", "value")
     .encode("color", "metric")
+    .legend("color", false)
     .scale("color", {
-      range: [accent, info],
+      range: themeConfig.seriesPalette.slice(0, 2),
+    })
+    .axis({
+      x: { title: false },
+      y: { title: false },
     })
     .style("lineWidth", 2)
     .animate(false)
@@ -208,6 +200,7 @@ export function createHistoryChart(
   const tooltip = createTooltipController<HistoryChartDatum>(chart, element, {
     series: true,
     shared: true,
+    tooltipTheme: themeConfig.tooltip,
     getTitle(rows) {
       return rows[0]?.time ?? "";
     },
@@ -238,19 +231,14 @@ export function createGroupedBarChart(
   valueFormatter: (value: number) => string,
   height = 280,
 ): ChartController<GroupedBarChartDatum> {
-  const palette = [
-    readColorToken("--color-accent"),
-    readColorToken("--color-info"),
-    readColorToken("--color-success"),
-    readColorToken("--color-warning"),
-    readColorToken("--color-danger"),
-  ];
+  const themeConfig = getChartThemeConfig();
 
   const chart = new Chart({
     container: element,
     autoFit: true,
     height,
   });
+  chart.theme(themeConfig.g2Theme);
   chart.animate(false);
   chart.interaction("tooltip", false);
 
@@ -262,7 +250,11 @@ export function createGroupedBarChart(
     .encode("color", "group")
     .transform({ type: "dodgeX" })
     .scale("color", {
-      range: palette,
+      range: themeConfig.seriesPalette,
+    })
+    .axis({
+      x: { title: false },
+      y: { title: false },
     })
     .style("maxWidth", 32)
     .animate(false)
@@ -273,6 +265,7 @@ export function createGroupedBarChart(
   const tooltip = createTooltipController<GroupedBarChartDatum>(chart, element, {
     series: false,
     shared: true,
+    tooltipTheme: themeConfig.tooltip,
     getTitle(rows) {
       return rows[0]?.time ?? "";
     },

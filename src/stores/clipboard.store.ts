@@ -3,6 +3,7 @@ import { create } from "zustand";
 import type { ClipboardFilter, ClipboardItem, ClipboardSyncPayload } from "@/components/clipboard/types";
 import { invokeWithLog } from "@/services/invoke";
 import { runRecoverable } from "@/services/recoverable";
+import { getUserSettings } from "@/services/user-settings.service";
 
 interface ClipboardState {
   items: ClipboardItem[];
@@ -32,12 +33,6 @@ interface ClipboardActions {
 }
 
 type ClipboardStore = ClipboardState & ClipboardActions;
-
-interface ClipboardSettings {
-  maxItems: number;
-  sizeCleanupEnabled: boolean;
-  maxTotalSizeMb: number;
-}
 
 function compareClipboardItems(left: ClipboardItem, right: ClipboardItem): number {
   if (left.pinned !== right.pinned) {
@@ -95,9 +90,9 @@ export const useClipboardStore = create<ClipboardStore>((set, get) => ({
     set({ loading: true, initializing: true, initError: null, error: null });
     const result = await runRecoverable(
       async () => {
-        const settings = await invokeWithLog<ClipboardSettings>("clipboard_get_settings");
+        const settings = await getUserSettings();
         const filter: ClipboardFilter = {
-          limit: Math.max(1, settings.maxItems || 1),
+          limit: Math.max(1, settings.clipboard.maxItems || 1),
           onlyPinned: false,
         };
         const items = await invokeWithLog<ClipboardItem[]>("clipboard_list", { filter });

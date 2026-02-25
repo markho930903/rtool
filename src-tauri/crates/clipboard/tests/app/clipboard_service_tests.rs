@@ -1,4 +1,5 @@
 use super::*;
+use app_core::models::UserClipboardSettingsDto;
 use app_infra::db;
 
 fn unique_temp_db_path(prefix: &str) -> PathBuf {
@@ -14,7 +15,11 @@ async fn should_load_default_clipboard_settings() {
     let db_path = unique_temp_db_path("clipboard-settings-default");
     let db_conn = db::open_db(db_path.as_path()).await.expect("open db");
     db::init_db(&db_conn).await.expect("init db");
-    let service = ClipboardService::new(db_conn, db_path.clone())
+    let service = ClipboardService::new(
+        db_conn,
+        db_path.clone(),
+        UserClipboardSettingsDto::default(),
+    )
         .await
         .expect("new clipboard service");
 

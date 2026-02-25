@@ -2,7 +2,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use app_core::models::{ClipboardFilterDto, ClipboardItemDto, ClipboardSettingsDto};
+use app_core::models::{
+    ClipboardFilterDto, ClipboardItemDto, ClipboardSettingsDto, UserClipboardSettingsDto,
+};
 use app_core::{AppError, AppResult, ResultExt};
 use app_infra::clipboard::build_clipboard_item;
 use app_infra::db::{self, DbConn};
@@ -30,6 +32,20 @@ impl Default for ClipboardRuntimeSettings {
             max_items: CLIPBOARD_MAX_ITEMS_DEFAULT,
             size_cleanup_enabled: CLIPBOARD_SIZE_CLEANUP_ENABLED_DEFAULT,
             max_total_size_mb: CLIPBOARD_MAX_TOTAL_SIZE_MB_DEFAULT,
+        }
+    }
+}
+
+impl ClipboardRuntimeSettings {
+    fn from_user_settings(value: &UserClipboardSettingsDto) -> Self {
+        Self {
+            max_items: value
+                .max_items
+                .clamp(CLIPBOARD_MAX_ITEMS_MIN, CLIPBOARD_MAX_ITEMS_MAX),
+            size_cleanup_enabled: value.size_cleanup_enabled,
+            max_total_size_mb: value
+                .max_total_size_mb
+                .clamp(CLIPBOARD_MAX_TOTAL_SIZE_MB_MIN, CLIPBOARD_MAX_TOTAL_SIZE_MB_MAX),
         }
     }
 }
@@ -166,34 +182,17 @@ pub struct ClipboardSettingsUpdateResult {
 }
 
 impl ClipboardService {
-    pub async fn new(db_conn: DbConn, db_path: PathBuf) -> AppResult<Self> {
-        let stored = db::get_clipboard_max_items(&db_conn)
-            .await?
-            .unwrap_or(CLIPBOARD_MAX_ITEMS_DEFAULT);
-        let max_items = stored.clamp(CLIPBOARD_MAX_ITEMS_MIN, CLIPBOARD_MAX_ITEMS_MAX);
-        let size_cleanup_enabled = db::get_clipboard_size_cleanup_enabled(&db_conn)
-            .await?
-            .unwrap_or(CLIPBOARD_SIZE_CLEANUP_ENABLED_DEFAULT);
-        let stored_max_total_size_mb = db::get_clipboard_max_total_size_mb(&db_conn)
-            .await?
-            .unwrap_or(CLIPBOARD_MAX_TOTAL_SIZE_MB_DEFAULT);
-        let max_total_size_mb = stored_max_total_size_mb.clamp(
-            CLIPBOARD_MAX_TOTAL_SIZE_MB_MIN,
-            CLIPBOARD_MAX_TOTAL_SIZE_MB_MAX,
-        );
-
-        db::set_clipboard_max_items(&db_conn, max_items).await?;
-        db::set_clipboard_size_cleanup_enabled(&db_conn, size_cleanup_enabled).await?;
-        db::set_clipboard_max_total_size_mb(&db_conn, max_total_size_mb).await?;
+    pub async fn new(
+        db_conn: DbConn,
+        db_path: PathBuf,
+        initial_settings: UserClipboardSettingsDto,
+    ) -> AppResult<Self> {
+        let runtime_settings = ClipboardRuntimeSettings::from_user_settings(&initial_settings);
 
         let service = Self {
             db_conn,
             db_path,
-            settings: Arc::new(RwLock::new(ClipboardRuntimeSettings {
-                max_items,
-                size_cleanup_enabled,
-                max_total_size_mb,
-            })),
+            settings: Arc::new(RwLock::new(runtime_settings)),
         };
         let _ = service.enforce_capacity().await?;
         Ok(service)
@@ -318,9 +317,6 @@ impl ClipboardService {
         let max_total_size_mb =
             validate_max_total_size_mb(max_total_size_mb.unwrap_or(current.max_total_size_mb))?;
 
-        db::set_clipboard_max_items(&self.db_conn, max_items).await?;
-        db::set_clipboard_size_cleanup_enabled(&self.db_conn, size_cleanup_enabled).await?;
-        db::set_clipboard_max_total_size_mb(&self.db_conn, max_total_size_mb).await?;
         self.set_cached_settings(ClipboardRuntimeSettings {
             max_items,
             size_cleanup_enabled,
@@ -332,6 +328,38 @@ impl ClipboardService {
                 max_items,
                 size_cleanup_enabled,
                 max_total_size_mb,
+            },
+            removed_ids,
+        })
+    }
+
+    pub async fn apply_user_settings(
+        &self,
+        settings: &UserClipboardSettingsDto,
+    ) -> AppResult<ClipboardSettingsUpdateResult> {
+        let normalized = ClipboardRuntimeSettings::from_user_settings(settings);
+        let current = self.current_settings();
+        if current.max_items == normalized.max_items
+            && current.size_cleanup_enabled == normalized.size_cleanup_enabled
+            && current.max_total_size_mb == normalized.max_total_size_mb
+        {
+            return Ok(ClipboardSettingsUpdateResult {
+                settings: ClipboardSettingsDto {
+                    max_items: current.max_items,
+                    size_cleanup_enabled: current.size_cleanup_enabled,
+                    max_total_size_mb: current.max_total_size_mb,
+                },
+                removed_ids: Vec::new(),
+            });
+        }
+
+        self.set_cached_settings(normalized.clone())?;
+        let removed_ids = self.enforce_capacity().await?;
+        Ok(ClipboardSettingsUpdateResult {
+            settings: ClipboardSettingsDto {
+                max_items: normalized.max_items,
+                size_cleanup_enabled: normalized.size_cleanup_enabled,
+                max_total_size_mb: normalized.max_total_size_mb,
             },
             removed_ids,
         })

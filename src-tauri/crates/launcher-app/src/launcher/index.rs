@@ -391,11 +391,23 @@ pub fn start_background_indexer(db_conn: DbConn) {
     let started = indexer_started_flag();
     let stopped = indexer_stopped_flag();
     if started.swap(true, Ordering::SeqCst) {
+        tracing::info!(event = "launcher_indexer_start_skipped_running");
         return;
     }
-    stopped.store(false, Ordering::SeqCst);
 
+    stopped.store(false, Ordering::SeqCst);
     tauri::async_runtime::spawn(async move {
+        struct StartedFlagReset<'a> {
+            flag: &'a AtomicBool,
+        }
+
+        impl Drop for StartedFlagReset<'_> {
+            fn drop(&mut self) {
+                self.flag.store(false, Ordering::SeqCst);
+            }
+        }
+
+        let _started_flag_reset = StartedFlagReset { flag: started };
         index_building_flag().store(true, Ordering::SeqCst);
         let initial_result = refresh_index(&db_conn, RefreshReason::Startup).await;
         index_building_flag().store(false, Ordering::SeqCst);
@@ -428,13 +440,12 @@ pub fn start_background_indexer(db_conn: DbConn) {
 }
 
 pub fn stop_background_indexer() {
-    let started = indexer_started_flag();
     let stopped = indexer_stopped_flag();
+    let started = indexer_started_flag();
     if !started.load(Ordering::SeqCst) {
         return;
     }
     stopped.store(true, Ordering::SeqCst);
-    started.store(false, Ordering::SeqCst);
 }
 
 pub async fn get_search_settings_async(db_conn: &DbConn) -> AppResult<LauncherSearchSettingsDto> {
@@ -693,15 +704,26 @@ async fn refresh_index_inner(
             .min(remaining_total.max(1));
 
         indexed_roots += 1;
-        let outcome = scan_index_root_with_rules(
-            root_path.as_path(),
-            settings.max_scan_depth as usize,
-            effective_max_items_per_root,
-            remaining_total,
-            exclusion_rules.as_slice(),
-            root,
-            reason,
-        );
+        let scan_root_path = root_path.clone();
+        let scan_root = root.clone();
+        let scan_rules = exclusion_rules.clone();
+        let scan_max_depth = settings.max_scan_depth as usize;
+        let outcome = tauri::async_runtime::spawn_blocking(move || {
+            scan_index_root_with_rules(
+                scan_root_path.as_path(),
+                scan_max_depth,
+                effective_max_items_per_root,
+                remaining_total,
+                scan_rules.as_slice(),
+                scan_root.as_str(),
+                reason,
+            )
+        })
+        .await
+        .map_err(|error| {
+            AppError::new("launcher_index_scan_join_failed", "启动器索引扫描任务失败")
+                .with_source(error)
+        })?;
 
         indexed_items = indexed_items.saturating_add(outcome.entries.len());
         remaining_total = remaining_total.saturating_sub(outcome.entries.len());
@@ -1187,14 +1209,18 @@ fn build_index_entry(
         None
     };
 
-    let metadata = match fs::metadata(path) {
-        Ok(metadata) => Some(metadata),
-        Err(_error) => {
-            if let Some(aggregator) = warning_aggregator {
-                aggregator.record(ScanWarningKind::Metadata, path);
+    let metadata = if matches!(kind, IndexedEntryKind::File) {
+        match fs::metadata(path) {
+            Ok(metadata) => Some(metadata),
+            Err(_error) => {
+                if let Some(aggregator) = warning_aggregator {
+                    aggregator.record(ScanWarningKind::Metadata, path);
+                }
+                None
             }
-            None
         }
+    } else {
+        None
     };
     let mtime = metadata
         .as_ref()
@@ -1206,14 +1232,7 @@ fn build_index_entry(
         .and_then(|value| i64::try_from(value).ok());
 
     let searchable_text = normalize_query(
-        format!(
-            "{} {} {} {} {}",
-            name,
-            parent,
-            path_value,
-            ext.clone().unwrap_or_default(),
-            kind.as_str()
-        )
+        format!("{} {} {}", name, path_value, ext.clone().unwrap_or_default())
         .as_str(),
     );
 

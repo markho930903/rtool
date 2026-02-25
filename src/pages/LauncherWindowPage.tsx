@@ -33,7 +33,12 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-function renderHighlightedText(text: string, query: string): ReactNode {
+interface HighlightContext {
+  matcher: RegExp | null;
+  tokenSet: Set<string>;
+}
+
+function createHighlightContext(query: string): HighlightContext {
   const tokens = query
     .trim()
     .split(/\s+/)
@@ -41,16 +46,28 @@ function renderHighlightedText(text: string, query: string): ReactNode {
     .filter(Boolean);
 
   if (tokens.length === 0) {
+    return {
+      matcher: null,
+      tokenSet: new Set(),
+    };
+  }
+
+  return {
+    matcher: new RegExp(`(${tokens.map(escapeRegExp).join("|")})`, "ig"),
+    tokenSet: new Set(tokens.map((token) => token.toLowerCase())),
+  };
+}
+
+function renderHighlightedText(text: string, context: HighlightContext): ReactNode {
+  if (!context.matcher || context.tokenSet.size === 0) {
     return text;
   }
 
-  const matcher = new RegExp(`(${tokens.map(escapeRegExp).join("|")})`, "ig");
-  const tokenSet = new Set(tokens.map((token) => token.toLowerCase()));
-  const parts = text.split(matcher);
+  const parts = text.split(context.matcher);
 
   return parts.map((part, index) => {
     const lower = part.toLowerCase();
-    if (tokenSet.has(lower)) {
+    if (context.tokenSet.has(lower)) {
       return (
         <mark key={`${lower}-${index}`} className="rounded bg-accent-soft px-[1px] font-semibold text-accent">
           {part}
@@ -162,6 +179,7 @@ export default function LauncherWindowPage() {
 
   const selectedItem = useMemo(() => items[selectedIndex] ?? null, [items, selectedIndex]);
   const groupedItems = useMemo(() => groupItems(items, t), [items, t]);
+  const highlightContext = useMemo(() => createHighlightContext(query), [query]);
   const enabled = appWindow.label === LAUNCHER_WINDOW_LABEL;
   const resolveLayoutBounds = useCallback(async () => {
     const monitor = await currentMonitor();
@@ -461,8 +479,16 @@ export default function LauncherWindowPage() {
                                   ? "w-full rounded-md border border-border-glass-strong bg-surface-glass-soft px-2.5 py-2.25 text-left text-text-primary shadow-inset-soft transition-colors duration-[140ms] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                                   : "w-full rounded-md border border-transparent px-2.5 py-2.25 text-left text-text-secondary transition-colors duration-[140ms] hover:bg-surface-glass-soft hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                               }
-                              onMouseEnter={() => setSelectedIndex(index)}
-                              onFocus={() => setSelectedIndex(index)}
+                              onMouseEnter={() => {
+                                if (selectedIndex !== index) {
+                                  setSelectedIndex(index);
+                                }
+                              }}
+                              onFocus={() => {
+                                if (selectedIndex !== index) {
+                                  setSelectedIndex(index);
+                                }
+                              }}
                               onClick={() => {
                                 setSelectedIndex(index);
                                 void executeSelected().then((result) => {
@@ -477,10 +503,10 @@ export default function LauncherWindowPage() {
                                 <LauncherItemIcon item={item} />
                                 <div className="min-w-0">
                                   <div className="truncate text-sm font-semibold text-text-primary">
-                                    {renderHighlightedText(item.title, query)}
+                                    {renderHighlightedText(item.title, highlightContext)}
                                   </div>
                                   <div className="mt-[3px] truncate text-xs text-text-secondary">
-                                    {renderHighlightedText(item.subtitle, query)}
+                                    {renderHighlightedText(item.subtitle, highlightContext)}
                                   </div>
                                   {item.shortcut ? (
                                     <div className="mt-1 text-[11px] text-text-muted">

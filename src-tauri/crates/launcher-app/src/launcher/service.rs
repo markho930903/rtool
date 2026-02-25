@@ -20,6 +20,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 const CACHE_TTL: Duration = Duration::from_secs(30);
+const FALLBACK_CACHE_TTL: Duration = Duration::from_secs(15);
 const DEFAULT_RESULT_LIMIT: usize = 60;
 const MAX_RESULT_LIMIT: usize = 120;
 const MAX_APP_ITEMS: usize = 300;
@@ -96,35 +97,73 @@ fn push_scan_warning_sample(samples: &mut Vec<String>, path: &Path) {
 }
 
 struct LauncherCache {
-    refreshed_at: Option<Instant>,
-    locale: Option<String>,
+    app_refreshed_at: Option<Instant>,
+    app_locale: Option<String>,
     application_items: Vec<LauncherItemDto>,
+    fallback_refreshed_at: Option<Instant>,
+    fallback_locale: Option<String>,
+    fallback_scan_depth: usize,
+    fallback_max_items: usize,
+    fallback_items: Vec<LauncherItemDto>,
 }
 
 impl LauncherCache {
     fn new() -> Self {
         Self {
-            refreshed_at: None,
-            locale: None,
+            app_refreshed_at: None,
+            app_locale: None,
             application_items: Vec::new(),
+            fallback_refreshed_at: None,
+            fallback_locale: None,
+            fallback_scan_depth: 0,
+            fallback_max_items: 0,
+            fallback_items: Vec::new(),
         }
     }
 
-    fn is_stale(&self, locale: &str) -> bool {
-        if self.locale.as_deref() != Some(locale) {
+    fn is_application_stale(&self, locale: &str) -> bool {
+        if self.app_locale.as_deref() != Some(locale) {
             return true;
         }
 
-        match self.refreshed_at {
+        match self.app_refreshed_at {
             None => true,
             Some(instant) => instant.elapsed() >= CACHE_TTL,
         }
     }
 
-    fn refresh(&mut self, app: &dyn LauncherHost, locale: &str) {
+    fn refresh_application_items(&mut self, app: &dyn LauncherHost, locale: &str) {
         self.application_items = collect_application_items(app, locale);
-        self.refreshed_at = Some(Instant::now());
-        self.locale = Some(locale.to_string());
+        self.app_refreshed_at = Some(Instant::now());
+        self.app_locale = Some(locale.to_string());
+    }
+
+    fn is_fallback_stale(&self, locale: &str, scan_depth: usize, max_items: usize) -> bool {
+        if self.fallback_locale.as_deref() != Some(locale) {
+            return true;
+        }
+        if self.fallback_scan_depth != scan_depth || self.fallback_max_items != max_items {
+            return true;
+        }
+
+        match self.fallback_refreshed_at {
+            None => true,
+            Some(instant) => instant.elapsed() >= FALLBACK_CACHE_TTL,
+        }
+    }
+
+    fn refresh_fallback_items(
+        &mut self,
+        app: &dyn LauncherHost,
+        locale: &str,
+        scan_depth: usize,
+        max_items: usize,
+    ) {
+        self.fallback_items = collect_file_items_with_limits(app, locale, scan_depth, max_items);
+        self.fallback_refreshed_at = Some(Instant::now());
+        self.fallback_locale = Some(locale.to_string());
+        self.fallback_scan_depth = scan_depth;
+        self.fallback_max_items = max_items;
     }
 }
 
@@ -141,9 +180,14 @@ fn launcher_cache() -> &'static Mutex<LauncherCache> {
 
 pub fn invalidate_launcher_cache() {
     if let Ok(mut cache) = launcher_cache().lock() {
-        cache.refreshed_at = None;
-        cache.locale = None;
+        cache.app_refreshed_at = None;
+        cache.app_locale = None;
         cache.application_items.clear();
+        cache.fallback_refreshed_at = None;
+        cache.fallback_locale = None;
+        cache.fallback_scan_depth = 0;
+        cache.fallback_max_items = 0;
+        cache.fallback_items.clear();
     }
 }
 
@@ -159,6 +203,7 @@ pub struct LauncherSearchDiagnostics {
     pub index_used: bool,
     pub index_failed: bool,
     pub fallback_used: bool,
+    pub fallback_cache_hit: bool,
     pub cache_refreshed: bool,
     pub index_query_duration_ms: Option<u64>,
     pub fallback_scan_duration_ms: Option<u64>,
@@ -196,9 +241,9 @@ pub async fn search_launcher_async(
     let mut items = builtin_items(&locale);
 
     if let Ok(mut cache) = launcher_cache().lock() {
-        if cache.is_stale(&locale) {
+        if cache.is_application_stale(&locale) {
             let cache_refresh_started_at = Instant::now();
-            cache.refresh(app, &locale);
+            cache.refresh_application_items(app, &locale);
             diagnostics.cache_refreshed = true;
             diagnostics.cache_refresh_duration_ms = Some(elapsed_ms(cache_refresh_started_at));
         }
@@ -229,16 +274,30 @@ pub async fn search_launcher_async(
     }
 
     if !diagnostics.index_used {
-        let fallback_started_at = Instant::now();
         diagnostics.fallback_used = true;
+        let fallback_scan_depth = FALLBACK_SCAN_DEPTH;
+        let fallback_max_items = FALLBACK_FILE_ITEMS_LIMIT;
         tracing::debug!(event = "launcher_fallback_scan_used");
-        items.extend(collect_file_items_with_limits(
-            app,
-            &locale,
-            FALLBACK_SCAN_DEPTH,
-            FALLBACK_FILE_ITEMS_LIMIT,
-        ));
-        diagnostics.fallback_scan_duration_ms = Some(elapsed_ms(fallback_started_at));
+
+        if let Ok(mut cache) = launcher_cache().lock() {
+            if cache.is_fallback_stale(&locale, fallback_scan_depth, fallback_max_items) {
+                let fallback_started_at = Instant::now();
+                cache.refresh_fallback_items(app, &locale, fallback_scan_depth, fallback_max_items);
+                diagnostics.fallback_scan_duration_ms = Some(elapsed_ms(fallback_started_at));
+            } else {
+                diagnostics.fallback_cache_hit = true;
+            }
+            items.extend(cache.fallback_items.iter().cloned());
+        } else {
+            let fallback_started_at = Instant::now();
+            items.extend(collect_file_items_with_limits(
+                app,
+                &locale,
+                fallback_scan_depth,
+                fallback_max_items,
+            ));
+            diagnostics.fallback_scan_duration_ms = Some(elapsed_ms(fallback_started_at));
+        }
     }
 
     let mut matched: Vec<LauncherItemDto> = items

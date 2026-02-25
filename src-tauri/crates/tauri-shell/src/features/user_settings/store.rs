@@ -1,10 +1,20 @@
+use app_clipboard::service::{
+    CLIPBOARD_MAX_ITEMS_MAX, CLIPBOARD_MAX_ITEMS_MIN, CLIPBOARD_MAX_TOTAL_SIZE_MB_MAX,
+    CLIPBOARD_MAX_TOTAL_SIZE_MB_MIN,
+};
 use app_core::i18n::{SYSTEM_LOCALE_PREFERENCE, normalize_locale_preference};
 use app_core::models::{
-    UserGlassProfileDto, UserGlassProfileUpdateInputDto, UserLayoutSettingsUpdateInputDto,
-    UserLocaleSettingsUpdateInputDto, UserSettingsDto, UserSettingsUpdateInputDto,
-    UserThemeGlassSettingsUpdateInputDto, UserThemeSettingsUpdateInputDto,
+    UserClipboardSettingsDto, UserClipboardSettingsUpdateInputDto, UserGlassProfileDto,
+    UserGlassProfileUpdateInputDto, UserLayoutSettingsUpdateInputDto, UserLocaleSettingsUpdateInputDto,
+    UserSettingsDto, UserSettingsUpdateInputDto, UserThemeGlassSettingsUpdateInputDto,
+    UserThemeSettingsUpdateInputDto,
 };
 use app_core::{AppError, AppResult};
+use app_infra::db::{
+    self, CLIPBOARD_MAX_ITEMS_KEY, CLIPBOARD_MAX_TOTAL_SIZE_MB_KEY,
+    CLIPBOARD_SIZE_CLEANUP_ENABLED_KEY, DbConn,
+};
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -94,6 +104,20 @@ fn clamp_profile(profile: &mut UserGlassProfileDto) {
         .clamp(GLASS_BRIGHTNESS_MIN, GLASS_BRIGHTNESS_MAX);
 }
 
+fn normalize_clipboard_settings(
+    settings: UserClipboardSettingsDto,
+) -> UserClipboardSettingsDto {
+    UserClipboardSettingsDto {
+        max_items: settings
+            .max_items
+            .clamp(CLIPBOARD_MAX_ITEMS_MIN, CLIPBOARD_MAX_ITEMS_MAX),
+        size_cleanup_enabled: settings.size_cleanup_enabled,
+        max_total_size_mb: settings
+            .max_total_size_mb
+            .clamp(CLIPBOARD_MAX_TOTAL_SIZE_MB_MIN, CLIPBOARD_MAX_TOTAL_SIZE_MB_MAX),
+    }
+}
+
 fn normalize_settings(mut settings: UserSettingsDto) -> UserSettingsDto {
     settings.theme.preference = normalize_theme_preference(settings.theme.preference.as_str())
         .unwrap_or(DEFAULT_THEME_PREFERENCE)
@@ -106,6 +130,7 @@ fn normalize_settings(mut settings: UserSettingsDto) -> UserSettingsDto {
 
     clamp_profile(&mut settings.theme.glass.light);
     clamp_profile(&mut settings.theme.glass.dark);
+    settings.clipboard = normalize_clipboard_settings(settings.clipboard);
     settings
 }
 
@@ -320,6 +345,21 @@ fn apply_locale_patch(
     Ok(())
 }
 
+fn apply_clipboard_patch(
+    clipboard: &mut UserClipboardSettingsDto,
+    input: &UserClipboardSettingsUpdateInputDto,
+) {
+    if let Some(max_items) = input.max_items {
+        clipboard.max_items = max_items;
+    }
+    if let Some(size_cleanup_enabled) = input.size_cleanup_enabled {
+        clipboard.size_cleanup_enabled = size_cleanup_enabled;
+    }
+    if let Some(max_total_size_mb) = input.max_total_size_mb {
+        clipboard.max_total_size_mb = max_total_size_mb;
+    }
+}
+
 fn apply_update(
     settings: &mut UserSettingsDto,
     input: &UserSettingsUpdateInputDto,
@@ -333,8 +373,105 @@ fn apply_update(
     if let Some(locale) = &input.locale {
         apply_locale_patch(&mut settings.locale, locale)?;
     }
+    if let Some(clipboard) = &input.clipboard {
+        apply_clipboard_patch(&mut settings.clipboard, clipboard);
+    }
     *settings = normalize_settings(settings.clone());
     Ok(())
+}
+
+fn parse_legacy_bool(value: &str) -> Option<bool> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "true" | "1" => Some(true),
+        "false" | "0" => Some(false),
+        _ => None,
+    }
+}
+
+fn merge_legacy_clipboard_settings(
+    current: &UserClipboardSettingsDto,
+    legacy_values: &HashMap<String, String>,
+) -> Option<UserClipboardSettingsDto> {
+    let mut next = current.clone();
+    let mut touched = false;
+
+    if let Some(raw) = legacy_values.get(CLIPBOARD_MAX_ITEMS_KEY)
+        && let Ok(value) = raw.parse::<u32>()
+    {
+        next.max_items = value;
+        touched = true;
+    }
+
+    if let Some(raw) = legacy_values.get(CLIPBOARD_SIZE_CLEANUP_ENABLED_KEY)
+        && let Some(value) = parse_legacy_bool(raw)
+    {
+        next.size_cleanup_enabled = value;
+        touched = true;
+    }
+
+    if let Some(raw) = legacy_values.get(CLIPBOARD_MAX_TOTAL_SIZE_MB_KEY)
+        && let Ok(value) = raw.parse::<u32>()
+    {
+        next.max_total_size_mb = value;
+        touched = true;
+    }
+
+    if !touched {
+        return None;
+    }
+
+    Some(normalize_clipboard_settings(next))
+}
+
+pub(crate) async fn migrate_legacy_clipboard_settings_from_db(
+    db_conn: &DbConn,
+) -> AppResult<UserSettingsDto> {
+    let legacy_keys = [
+        CLIPBOARD_MAX_ITEMS_KEY,
+        CLIPBOARD_SIZE_CLEANUP_ENABLED_KEY,
+        CLIPBOARD_MAX_TOTAL_SIZE_MB_KEY,
+    ];
+    let legacy_values = db::get_app_settings_batch(db_conn, &legacy_keys).await?;
+    if legacy_values.is_empty() {
+        return load_or_init_user_settings();
+    }
+
+    let mut migrated = false;
+    let settings = {
+        let guard = settings_lock().lock();
+        let _guard = match guard {
+            Ok(value) => value,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+
+        let path = settings_file_path()?;
+        let mut settings = load_or_init_unlocked(path.as_path())?;
+        if let Some(next_clipboard) =
+            merge_legacy_clipboard_settings(&settings.clipboard, &legacy_values)
+        {
+            settings.clipboard = next_clipboard;
+            settings = normalize_settings(settings);
+            write_settings_file(path.as_path(), &settings)?;
+            migrated = true;
+        }
+        settings
+    };
+
+    db::delete_app_settings(db_conn, &legacy_keys).await?;
+
+    if migrated {
+        tracing::info!(
+            event = "clipboard_settings_migrated_to_user_settings",
+            migrated_key_count = legacy_values.len() as u32
+        );
+    } else {
+        tracing::info!(
+            event = "clipboard_settings_legacy_keys_cleared_without_migration",
+            legacy_key_count = legacy_values.len() as u32
+        );
+    }
+
+    Ok(settings)
 }
 
 pub(crate) fn load_or_init_user_settings() -> AppResult<UserSettingsDto> {
@@ -372,4 +509,56 @@ pub(crate) fn update_locale_preference(preference: &str) -> AppResult<UserSettin
         ..Default::default()
     };
     update_user_settings(update)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn legacy_map(entries: &[(&str, &str)]) -> HashMap<String, String> {
+        entries
+            .iter()
+            .map(|(key, value)| (key.to_string(), value.to_string()))
+            .collect()
+    }
+
+    #[test]
+    fn should_merge_legacy_clipboard_settings_with_normalization() {
+        let current = UserClipboardSettingsDto::default();
+        let legacy_values = legacy_map(&[
+            (CLIPBOARD_MAX_ITEMS_KEY, "999999"),
+            (CLIPBOARD_SIZE_CLEANUP_ENABLED_KEY, "0"),
+            (CLIPBOARD_MAX_TOTAL_SIZE_MB_KEY, "1"),
+        ]);
+
+        let merged =
+            merge_legacy_clipboard_settings(&current, &legacy_values).expect("should merge values");
+
+        assert_eq!(merged.max_items, CLIPBOARD_MAX_ITEMS_MAX);
+        assert!(!merged.size_cleanup_enabled);
+        assert_eq!(merged.max_total_size_mb, CLIPBOARD_MAX_TOTAL_SIZE_MB_MIN);
+    }
+
+    #[test]
+    fn should_ignore_invalid_legacy_clipboard_values() {
+        let current = UserClipboardSettingsDto::default();
+        let legacy_values = legacy_map(&[
+            (CLIPBOARD_MAX_ITEMS_KEY, "abc"),
+            (CLIPBOARD_SIZE_CLEANUP_ENABLED_KEY, "maybe"),
+            (CLIPBOARD_MAX_TOTAL_SIZE_MB_KEY, "xyz"),
+        ]);
+
+        assert!(merge_legacy_clipboard_settings(&current, &legacy_values).is_none());
+    }
+
+    #[test]
+    fn should_parse_legacy_bool_variants() {
+        assert_eq!(parse_legacy_bool("true"), Some(true));
+        assert_eq!(parse_legacy_bool("TRUE"), Some(true));
+        assert_eq!(parse_legacy_bool("1"), Some(true));
+        assert_eq!(parse_legacy_bool("false"), Some(false));
+        assert_eq!(parse_legacy_bool("False"), Some(false));
+        assert_eq!(parse_legacy_bool("0"), Some(false));
+        assert_eq!(parse_legacy_bool("unknown"), None);
+    }
 }

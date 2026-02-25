@@ -20,6 +20,7 @@ interface UseWindowLayoutPersistenceOptions {
   scope: string;
   enabled?: boolean;
   persistOnInit?: boolean;
+  persistThrottleMs?: number;
   resolveBounds: (stored: StoredWindowLayout) => Promise<WindowLayoutBounds | null>;
   onRestored?: (layout: StoredWindowLayout, bounds: WindowLayoutBounds) => void;
   onPersisted?: (layout: StoredWindowLayout) => void;
@@ -32,6 +33,7 @@ export function useWindowLayoutPersistence(options: UseWindowLayoutPersistenceOp
     scope,
     enabled = true,
     persistOnInit = false,
+    persistThrottleMs = 200,
     resolveBounds,
     onRestored,
     onPersisted,
@@ -41,6 +43,8 @@ export function useWindowLayoutPersistence(options: UseWindowLayoutPersistenceOp
     if (!enabled) {
       return;
     }
+
+    let persistTimer: number | null = null;
 
     const persistLayout = async () => {
       const result = await runRecoverable(
@@ -68,6 +72,17 @@ export function useWindowLayoutPersistence(options: UseWindowLayoutPersistenceOp
       }
 
       onPersisted?.(result.data);
+    };
+
+    const schedulePersistLayout = () => {
+      if (persistTimer !== null) {
+        window.clearTimeout(persistTimer);
+      }
+
+      persistTimer = window.setTimeout(() => {
+        persistTimer = null;
+        void persistLayout();
+      }, persistThrottleMs);
     };
 
     const restoreLayout = async () => {
@@ -113,11 +128,11 @@ export function useWindowLayoutPersistence(options: UseWindowLayoutPersistenceOp
       await restoreLayout();
 
       const unlistenMoved = await appWindow.onMoved(() => {
-        void persistLayout();
+        schedulePersistLayout();
       });
 
       const unlistenResized = await appWindow.onResized(() => {
-        void persistLayout();
+        schedulePersistLayout();
       });
 
       if (persistOnInit) {
@@ -125,6 +140,10 @@ export function useWindowLayoutPersistence(options: UseWindowLayoutPersistenceOp
       }
 
       return () => {
+        if (persistTimer !== null) {
+          window.clearTimeout(persistTimer);
+          persistTimer = null;
+        }
         unlistenMoved();
         unlistenResized();
       };
@@ -144,5 +163,15 @@ export function useWindowLayoutPersistence(options: UseWindowLayoutPersistenceOp
       disposed = true;
       cleanup?.();
     };
-  }, [appWindow, enabled, onPersisted, onRestored, persistOnInit, resolveBounds, scope, storageKey]);
+  }, [
+    appWindow,
+    enabled,
+    onPersisted,
+    onRestored,
+    persistOnInit,
+    persistThrottleMs,
+    resolveBounds,
+    scope,
+    storageKey,
+  ]);
 }

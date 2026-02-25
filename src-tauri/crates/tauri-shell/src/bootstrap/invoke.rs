@@ -17,8 +17,6 @@ pub(crate) fn with_invoke_handler(
         crate::features::clipboard::commands::clipboard_delete,
         crate::features::clipboard::commands::clipboard_clear_all,
         crate::features::clipboard::commands::clipboard_save_text,
-        crate::features::clipboard::commands::clipboard_get_settings,
-        crate::features::clipboard::commands::clipboard_update_settings,
         crate::features::clipboard::commands::clipboard_window_set_mode,
         crate::features::clipboard::commands::clipboard_window_apply_mode,
         crate::features::clipboard::commands::clipboard_copy_back,

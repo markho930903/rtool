@@ -22,6 +22,7 @@ interface LauncherActions {
 }
 
 type LauncherStore = LauncherState & LauncherActions;
+let latestSearchRequestVersion = 0;
 
 export const useLauncherStore = create<LauncherStore>((set, get) => ({
   query: "",
@@ -31,6 +32,7 @@ export const useLauncherStore = create<LauncherStore>((set, get) => ({
   error: null,
   lastAction: null,
   reset() {
+    latestSearchRequestVersion += 1;
     set({
       query: "",
       items: [],
@@ -59,6 +61,7 @@ export const useLauncherStore = create<LauncherStore>((set, get) => ({
     set({ selectedIndex: index });
   },
   async search(limit?: number) {
+    const requestVersion = ++latestSearchRequestVersion;
     const query = get().query;
     set({ loading: true, error: null });
 
@@ -68,7 +71,7 @@ export const useLauncherStore = create<LauncherStore>((set, get) => ({
         limit,
       });
 
-      if (query !== get().query) {
+      if (requestVersion !== latestSearchRequestVersion || query !== get().query) {
         return;
       }
 
@@ -78,6 +81,9 @@ export const useLauncherStore = create<LauncherStore>((set, get) => ({
         loading: false,
       }));
     } catch (error) {
+      if (requestVersion !== latestSearchRequestVersion) {
+        return;
+      }
       const message = error instanceof Error ? error.message : String(error);
       set({ loading: false, error: message });
     }

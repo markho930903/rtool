@@ -540,6 +540,7 @@ pub async fn init_db(conn: &DbConn) -> AppResult<()> {
             CREATE INDEX IF NOT EXISTS idx_launcher_index_kind_name ON launcher_index_entries(kind, name COLLATE NOCASE);
             CREATE INDEX IF NOT EXISTS idx_launcher_index_source_root_name ON launcher_index_entries(source_root, name COLLATE NOCASE);
             CREATE INDEX IF NOT EXISTS idx_launcher_index_scan_token ON launcher_index_entries(scan_token);
+            CREATE INDEX IF NOT EXISTS idx_launcher_index_source_root_scan_token ON launcher_index_entries(source_root, scan_token);
             "#,
         )
         .await?;
@@ -902,52 +903,6 @@ pub async fn prune_clipboard_items(
     Ok(to_remove)
 }
 
-pub async fn get_clipboard_max_items(conn: &DbConn) -> AppResult<Option<u32>> {
-    let value = get_app_setting(conn, CLIPBOARD_MAX_ITEMS_KEY).await?;
-    Ok(value.and_then(|raw| raw.parse::<u32>().ok()))
-}
-
-pub async fn set_clipboard_max_items(conn: &DbConn, max_items: u32) -> AppResult<()> {
-    conn.execute(
-        "INSERT INTO app_settings (key, value) VALUES (?1, ?2)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        params![CLIPBOARD_MAX_ITEMS_KEY, max_items.to_string()],
-    )
-    .await?;
-    Ok(())
-}
-
-pub async fn get_clipboard_size_cleanup_enabled(conn: &DbConn) -> AppResult<Option<bool>> {
-    let value = get_app_setting(conn, CLIPBOARD_SIZE_CLEANUP_ENABLED_KEY).await?;
-    Ok(value.and_then(|raw| raw.parse::<bool>().ok()))
-}
-
-pub async fn set_clipboard_size_cleanup_enabled(conn: &DbConn, enabled: bool) -> AppResult<()> {
-    set_app_setting(
-        conn,
-        CLIPBOARD_SIZE_CLEANUP_ENABLED_KEY,
-        if enabled { "true" } else { "false" },
-    )
-    .await
-}
-
-pub async fn get_clipboard_max_total_size_mb(conn: &DbConn) -> AppResult<Option<u32>> {
-    let value = get_app_setting(conn, CLIPBOARD_MAX_TOTAL_SIZE_MB_KEY).await?;
-    Ok(value.and_then(|raw| raw.parse::<u32>().ok()))
-}
-
-pub async fn set_clipboard_max_total_size_mb(
-    conn: &DbConn,
-    max_total_size_mb: u32,
-) -> AppResult<()> {
-    set_app_setting(
-        conn,
-        CLIPBOARD_MAX_TOTAL_SIZE_MB_KEY,
-        &max_total_size_mb.to_string(),
-    )
-    .await
-}
-
 pub async fn get_app_setting(conn: &DbConn, key: &str) -> AppResult<Option<String>> {
     let mut rows = conn
         .query(
@@ -1014,6 +969,21 @@ pub async fn set_app_settings_batch(conn: &DbConn, entries: &[(&str, &str)]) -> 
         .await?;
     }
     tx.commit().await?;
+    Ok(())
+}
+
+pub async fn delete_app_settings(conn: &DbConn, keys: &[&str]) -> AppResult<()> {
+    if keys.is_empty() {
+        return Ok(());
+    }
+
+    let placeholders = (1..=keys.len())
+        .map(|index| format!("?{index}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sql = format!("DELETE FROM app_settings WHERE key IN ({placeholders})");
+    conn.execute(sql.as_str(), params_from_iter(keys.iter().copied()))
+        .await?;
     Ok(())
 }
 

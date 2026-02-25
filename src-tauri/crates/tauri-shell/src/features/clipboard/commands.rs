@@ -4,8 +4,7 @@ use crate::features::clipboard::events::emit_clipboard_sync;
 use anyhow::Context;
 use app_clipboard::service::ClipboardService;
 use app_core::models::{
-    ClipboardFilterDto, ClipboardItemDto, ClipboardSettingsDto, ClipboardSyncPayload,
-    ClipboardWindowModeAppliedDto,
+    ClipboardFilterDto, ClipboardItemDto, ClipboardSyncPayload, ClipboardWindowModeAppliedDto,
 };
 use app_core::{AppError, AppResult, InvokeError, ResultExt};
 use app_infra::db;
@@ -420,58 +419,6 @@ pub async fn clipboard_save_text(
                 },
             );
             Ok::<ClipboardItemDto, AppError>(saved.item)
-        },
-    )
-    .await
-}
-
-#[tauri::command]
-pub async fn clipboard_get_settings(
-    state: State<'_, AppState>,
-    request_id: Option<String>,
-    window_label: Option<String>,
-) -> Result<ClipboardSettingsDto, InvokeError> {
-    let service = state.clipboard_service.clone();
-    run_command_async(
-        "clipboard_get_settings",
-        request_id,
-        window_label,
-        move || async move { Ok::<ClipboardSettingsDto, AppError>(service.get_settings()) },
-    )
-    .await
-}
-
-#[tauri::command]
-pub async fn clipboard_update_settings(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    max_items: u32,
-    size_cleanup_enabled: Option<bool>,
-    max_total_size_mb: Option<u32>,
-    request_id: Option<String>,
-    window_label: Option<String>,
-) -> Result<ClipboardSettingsDto, InvokeError> {
-    run_command_async(
-        "clipboard_update_settings",
-        request_id,
-        window_label,
-        move || async move {
-            let service = state.clipboard_service.clone();
-            let updated = service
-                .update_settings(max_items, size_cleanup_enabled, max_total_size_mb)
-                .await?;
-            if !updated.removed_ids.is_empty() {
-                emit_clipboard_sync(
-                    &app,
-                    ClipboardSyncPayload {
-                        upsert: Vec::new(),
-                        removed_ids: updated.removed_ids.clone(),
-                        clear_all: false,
-                        reason: Some("update_settings_prune".to_string()),
-                    },
-                );
-            }
-            Ok::<ClipboardSettingsDto, AppError>(updated.settings)
         },
     )
     .await

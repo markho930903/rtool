@@ -10,11 +10,12 @@ pub struct ActionResultDto {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", default)]
 pub struct UserSettingsDto {
     pub theme: UserThemeSettingsDto,
     pub layout: UserLayoutSettingsDto,
     pub locale: UserLocaleSettingsDto,
+    pub clipboard: UserClipboardSettingsDto,
 }
 
 impl Default for UserSettingsDto {
@@ -23,6 +24,7 @@ impl Default for UserSettingsDto {
             theme: UserThemeSettingsDto::default(),
             layout: UserLayoutSettingsDto::default(),
             locale: UserLocaleSettingsDto::default(),
+            clipboard: UserClipboardSettingsDto::default(),
         }
     }
 }
@@ -122,6 +124,7 @@ pub struct UserSettingsUpdateInputDto {
     pub theme: Option<UserThemeSettingsUpdateInputDto>,
     pub layout: Option<UserLayoutSettingsUpdateInputDto>,
     pub locale: Option<UserLocaleSettingsUpdateInputDto>,
+    pub clipboard: Option<UserClipboardSettingsUpdateInputDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -157,6 +160,32 @@ pub struct UserLayoutSettingsUpdateInputDto {
 #[serde(rename_all = "camelCase", default)]
 pub struct UserLocaleSettingsUpdateInputDto {
     pub preference: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UserClipboardSettingsDto {
+    pub max_items: u32,
+    pub size_cleanup_enabled: bool,
+    pub max_total_size_mb: u32,
+}
+
+impl Default for UserClipboardSettingsDto {
+    fn default() -> Self {
+        Self {
+            max_items: 1000,
+            size_cleanup_enabled: true,
+            max_total_size_mb: 500,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+pub struct UserClipboardSettingsUpdateInputDto {
+    pub max_items: Option<u32>,
+    pub size_cleanup_enabled: Option<bool>,
+    pub max_total_size_mb: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

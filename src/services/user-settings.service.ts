@@ -17,6 +17,11 @@ export interface UserSettingsPatchInput {
   locale?: {
     preference?: string;
   };
+  clipboard?: {
+    maxItems?: number;
+    sizeCleanupEnabled?: boolean;
+    maxTotalSizeMb?: number;
+  };
 }
 
 export async function getUserSettings(): Promise<UserSettingsDto> {

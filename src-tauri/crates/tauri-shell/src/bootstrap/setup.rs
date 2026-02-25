@@ -6,6 +6,7 @@ use app_clipboard::service::ClipboardService;
 use app_core::{
     AppResult,
     i18n::{AppLocaleState, init_i18n_catalog, normalize_locale_preference, resolve_locale, t},
+    models::UserSettingsDto,
 };
 use app_infra::{db, logging};
 use app_launcher_app::launcher::index::start_background_indexer;
@@ -31,14 +32,13 @@ impl TransferTaskSpawner for TauriTransferTaskSpawner {
     }
 }
 
-fn read_initial_locale_state() -> Result<AppLocaleState, Box<dyn Error>> {
-    let settings = crate::features::user_settings::store::load_or_init_user_settings()?;
+fn locale_state_from_settings(settings: &UserSettingsDto) -> AppLocaleState {
     let preference = normalize_locale_preference(settings.locale.preference.as_str())
         .unwrap_or_else(|| "system".to_string());
-    Ok(AppLocaleState::new(
+    AppLocaleState::new(
         preference.clone(),
         resolve_locale(&preference),
-    ))
+    )
 }
 
 fn cleanup_legacy_db_files(legacy_db_path: &Path) {
@@ -121,14 +121,26 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn Error>> {
     log_setup_stage("db_init", db_stage_started_at, db_result.is_ok());
     let (db_path, db_conn) = db_result?;
 
-    let locale_stage_started_at = Instant::now();
-    let locale_result = read_initial_locale_state();
-    log_setup_stage(
-        "locale_read",
-        locale_stage_started_at,
-        locale_result.is_ok(),
+    let settings_stage_started_at = Instant::now();
+    let settings_result: Result<UserSettingsDto, Box<dyn Error>> = tauri::async_runtime::block_on(
+        async {
+            crate::features::user_settings::store::migrate_legacy_clipboard_settings_from_db(
+                &db_conn,
+            )
+            .await
+            .map_err(Into::into)
+        },
     );
-    let initial_locale_state = locale_result?;
+    log_setup_stage(
+        "user_settings_ready",
+        settings_stage_started_at,
+        settings_result.is_ok(),
+    );
+    let user_settings = settings_result?;
+
+    let locale_stage_started_at = Instant::now();
+    let initial_locale_state = locale_state_from_settings(&user_settings);
+    log_setup_stage("locale_read", locale_stage_started_at, true);
     let app_handle = app.handle().clone();
 
     let tray_stage_started_at = Instant::now();
@@ -181,8 +193,11 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn Error>> {
     );
 
     let clipboard_stage_started_at = Instant::now();
-    let clipboard_result =
-        tauri::async_runtime::block_on(ClipboardService::new(db_conn.clone(), db_path.clone()));
+    let clipboard_result = tauri::async_runtime::block_on(ClipboardService::new(
+        db_conn.clone(),
+        db_path.clone(),
+        user_settings.clipboard.clone(),
+    ));
     log_setup_stage(
         "clipboard_init",
         clipboard_stage_started_at,

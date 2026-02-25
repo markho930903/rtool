@@ -286,8 +286,6 @@ export type CommandKey =
   | "clipboard_copy_back"
   | "clipboard_copy_file_paths"
   | "clipboard_copy_image_back"
-  | "clipboard_get_settings"
-  | "clipboard_update_settings"
   | "clipboard_window_set_mode"
   | "clipboard_window_apply_mode"
   | "launcher_search"
@@ -524,10 +522,17 @@ export type UserLocaleSettingsDto = {
   preference: string;
 };
 
+export type UserClipboardSettingsDto = {
+  maxItems: number;
+  sizeCleanupEnabled: boolean;
+  maxTotalSizeMb: number;
+};
+
 export type UserSettingsDto = {
   theme: UserThemeSettingsDto;
   layout: UserLayoutSettingsDto;
   locale: UserLocaleSettingsDto;
+  clipboard: UserClipboardSettingsDto;
 };
 
 export type UserGlassProfileUpdateInputDto = {
@@ -555,10 +560,17 @@ export type UserLocaleSettingsUpdateInputDto = {
   preference: string | null;
 };
 
+export type UserClipboardSettingsUpdateInputDto = {
+  maxItems: number | null;
+  sizeCleanupEnabled: boolean | null;
+  maxTotalSizeMb: number | null;
+};
+
 export type UserSettingsUpdateInputDto = {
   theme: UserThemeSettingsUpdateInputDto | null;
   layout: UserLayoutSettingsUpdateInputDto | null;
   locale: UserLocaleSettingsUpdateInputDto | null;
+  clipboard: UserClipboardSettingsUpdateInputDto | null;
 };
 
 export type LogConfigDto = {

@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-import { invokeWithLog } from "@/services/invoke";
+import { getUserSettings, patchUserSettings } from "@/services/user-settings.service";
 
 interface ClipboardSettings {
   maxItems: number;
@@ -37,8 +37,8 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
   async fetchClipboardSettings() {
     set({ loading: true, error: null });
     try {
-      const settings = await invokeWithLog<ClipboardSettings>("clipboard_get_settings");
-      set({ clipboardSettings: settings, loading: false });
+      const settings = await getUserSettings();
+      set({ clipboardSettings: settings.clipboard, loading: false });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       set({ loading: false, error: message });
@@ -48,12 +48,14 @@ export const useSettingsStore = create<SettingsStore>((set) => ({
   async updateClipboardSettings(input) {
     set({ saving: true, error: null });
     try {
-      const settings = await invokeWithLog<ClipboardSettings>("clipboard_update_settings", {
-        maxItems: input.maxItems,
-        sizeCleanupEnabled: input.sizeCleanupEnabled,
-        maxTotalSizeMb: input.maxTotalSizeMb,
+      const settings = await patchUserSettings({
+        clipboard: {
+          maxItems: input.maxItems,
+          sizeCleanupEnabled: input.sizeCleanupEnabled,
+          maxTotalSizeMb: input.maxTotalSizeMb,
+        },
       });
-      set({ clipboardSettings: settings, saving: false });
+      set({ clipboardSettings: settings.clipboard, saving: false });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       set({ saving: false, error: message });

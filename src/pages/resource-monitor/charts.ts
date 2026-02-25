@@ -2,6 +2,16 @@ import { Chart } from "@antv/g2";
 
 import { getChartThemeConfig, type ChartTooltipTheme } from "@/theme/chartTheme";
 
+const HISTORY_PIXELS_PER_POINT = 8;
+const HISTORY_MIN_VISIBLE_POINTS = 20;
+const HISTORY_MAX_VISIBLE_POINTS = 120;
+const GROUPED_PIXELS_PER_BUCKET = 24;
+const GROUPED_MIN_VISIBLE_BUCKETS = 4;
+const GROUPED_MAX_VISIBLE_BUCKETS = 40;
+const MIN_SLIDER_SPAN = 0.01;
+const SLIDER_FILTER_EVENT = "sliderX:filter";
+const DEFAULT_MIN_WIDTH = 320;
+
 export interface HistoryChartDatum {
   time: string;
   value: number;
@@ -36,6 +46,105 @@ interface TooltipOptions<T> {
 interface TooltipController {
   refresh: () => void;
   destroy: () => void;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+function buildTimeDomain<T extends { time: string }>(data: T[]): string[] {
+  return [...new Set(data.map((item) => item.time))];
+}
+
+function countUniqueXLabels<T extends { time: string }>(data: T[]): number {
+  return buildTimeDomain(data).length;
+}
+
+function normalizeRange(value: [number, number]): [number, number] {
+  const start = clamp(value[0], 0, 1);
+  const end = clamp(value[1], 0, 1);
+  return start <= end ? [start, end] : [end, start];
+}
+
+function clampRangeWidth(range: [number, number], maxSpan: number): [number, number] {
+  const [start, end] = normalizeRange(range);
+  const span = end - start;
+  if (span <= maxSpan) {
+    return [start, end];
+  }
+
+  const center = (start + end) / 2;
+  let nextStart = center - maxSpan / 2;
+  let nextEnd = center + maxSpan / 2;
+  if (nextStart < 0) {
+    nextEnd -= nextStart;
+    nextStart = 0;
+  }
+  if (nextEnd > 1) {
+    nextStart -= nextEnd - 1;
+    nextEnd = 1;
+  }
+
+  return normalizeRange([nextStart, nextEnd]);
+}
+
+function resolveVisibleCount(
+  width: number,
+  pixelsPerUnit: number,
+  minCount: number,
+  maxCount: number,
+): number {
+  return clamp(Math.floor(width / pixelsPerUnit), minCount, maxCount);
+}
+
+function resolveMaxSpan(
+  totalCount: number,
+  width: number,
+  pixelsPerUnit: number,
+  minCount: number,
+  maxCount: number,
+): number {
+  if (totalCount <= 0) {
+    return 1;
+  }
+  const visibleCount = resolveVisibleCount(width, pixelsPerUnit, minCount, maxCount);
+  return clamp(visibleCount / totalCount, MIN_SLIDER_SPAN, 1);
+}
+
+function ratioFromDomainSelection(selection: unknown, domain: string[]): [number, number] | null {
+  if (!Array.isArray(selection) || selection.length < 2 || domain.length <= 1) {
+    return null;
+  }
+  const [startDomain, endDomain] = selection;
+  const startIndex = domain.indexOf(String(startDomain));
+  const endIndex = domain.indexOf(String(endDomain));
+  if (startIndex < 0 || endIndex < 0) {
+    return null;
+  }
+
+  const divisor = domain.length - 1;
+  return normalizeRange([startIndex / divisor, endIndex / divisor]);
+}
+
+function buildSliderConfig(values: [number, number]) {
+  return {
+    x: {
+      showHandle: true,
+      showLabel: false,
+      showLabelOnInteraction: true,
+      values,
+    },
+  };
+}
+
+function resolveLatestRange(maxSpan: number): [number, number] {
+  return normalizeRange([Math.max(0, 1 - maxSpan), 1]);
+}
+
+function alignRangeToLatest(range: [number, number], maxSpan: number): [number, number] {
+  const normalized = normalizeRange(range);
+  const span = clamp(normalized[1] - normalized[0], MIN_SLIDER_SPAN, maxSpan);
+  return resolveLatestRange(span);
 }
 
 export function createTooltipController<T extends object>(
@@ -167,6 +276,17 @@ export function createHistoryChart(
   data: HistoryChartDatum[],
 ): ChartController<HistoryChartDatum> {
   const themeConfig = getChartThemeConfig();
+  const getMaxSpan = (nextData: HistoryChartDatum[]) =>
+    resolveMaxSpan(
+      countUniqueXLabels(nextData),
+      Math.max(element.clientWidth, DEFAULT_MIN_WIDTH),
+      HISTORY_PIXELS_PER_POINT,
+      HISTORY_MIN_VISIBLE_POINTS,
+      HISTORY_MAX_VISIBLE_POINTS,
+    );
+  let domain = buildTimeDomain(data);
+  let maxSpan = getMaxSpan(data);
+  let currentRange = resolveLatestRange(maxSpan);
 
   const chart = new Chart({
     container: element,
@@ -187,14 +307,30 @@ export function createHistoryChart(
     .scale("color", {
       range: themeConfig.seriesPalette.slice(0, 2),
     })
+    .slider(buildSliderConfig(currentRange))
     .axis({
-      x: { title: false },
+      x: {
+        title: false,
+        labelAutoRotate: false,
+        labelAutoHide: true,
+        labelAutoEllipsis: true,
+      },
       y: { title: false },
     })
     .style("lineWidth", 2)
     .animate(false)
     .tooltip(false);
 
+  const onSliderFilter = (event: unknown) => {
+    const selection = (event as { data?: { selection?: unknown[] } })?.data?.selection?.[0];
+    const nextRange = ratioFromDomainSelection(selection, domain);
+    if (!nextRange) {
+      return;
+    }
+    currentRange = clampRangeWidth(nextRange, maxSpan);
+  };
+
+  chart.on(SLIDER_FILTER_EVENT, onSliderFilter);
   chart.render();
 
   const tooltip = createTooltipController<HistoryChartDatum>(chart, element, {
@@ -214,11 +350,16 @@ export function createHistoryChart(
 
   return {
     update(nextData) {
+      domain = buildTimeDomain(nextData);
+      maxSpan = getMaxSpan(nextData);
+      currentRange = alignRangeToLatest(currentRange, maxSpan);
+      line.slider(buildSliderConfig(currentRange));
       void line.changeData(nextData).then(() => {
         tooltip.refresh();
       });
     },
     destroy() {
+      chart.off(SLIDER_FILTER_EVENT, onSliderFilter);
       tooltip.destroy();
       chart.destroy();
     },
@@ -232,6 +373,17 @@ export function createGroupedBarChart(
   height = 280,
 ): ChartController<GroupedBarChartDatum> {
   const themeConfig = getChartThemeConfig();
+  const getMaxSpan = (nextData: GroupedBarChartDatum[]) =>
+    resolveMaxSpan(
+      countUniqueXLabels(nextData),
+      Math.max(element.clientWidth, DEFAULT_MIN_WIDTH),
+      GROUPED_PIXELS_PER_BUCKET,
+      GROUPED_MIN_VISIBLE_BUCKETS,
+      GROUPED_MAX_VISIBLE_BUCKETS,
+    );
+  let domain = buildTimeDomain(data);
+  let maxSpan = getMaxSpan(data);
+  let currentRange = resolveLatestRange(maxSpan);
 
   const chart = new Chart({
     container: element,
@@ -252,14 +404,30 @@ export function createGroupedBarChart(
     .scale("color", {
       range: themeConfig.seriesPalette,
     })
+    .slider(buildSliderConfig(currentRange))
     .axis({
-      x: { title: false },
+      x: {
+        title: false,
+        labelAutoRotate: false,
+        labelAutoHide: true,
+        labelAutoEllipsis: true,
+      },
       y: { title: false },
     })
     .style("maxWidth", 32)
     .animate(false)
     .tooltip(false);
 
+  const onSliderFilter = (event: unknown) => {
+    const selection = (event as { data?: { selection?: unknown[] } })?.data?.selection?.[0];
+    const nextRange = ratioFromDomainSelection(selection, domain);
+    if (!nextRange) {
+      return;
+    }
+    currentRange = clampRangeWidth(nextRange, maxSpan);
+  };
+
+  chart.on(SLIDER_FILTER_EVENT, onSliderFilter);
   chart.render();
 
   const tooltip = createTooltipController<GroupedBarChartDatum>(chart, element, {
@@ -279,11 +447,16 @@ export function createGroupedBarChart(
 
   return {
     update(nextData) {
+      domain = buildTimeDomain(nextData);
+      maxSpan = getMaxSpan(nextData);
+      currentRange = alignRangeToLatest(currentRange, maxSpan);
+      interval.slider(buildSliderConfig(currentRange));
       void interval.changeData(nextData).then(() => {
         tooltip.refresh();
       });
     },
     destroy() {
+      chart.off(SLIDER_FILTER_EVENT, onSliderFilter);
       tooltip.destroy();
       chart.destroy();
     },

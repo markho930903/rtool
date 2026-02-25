@@ -10,12 +10,14 @@ import type {
   ResourcePointDto,
   ResourceSnapshotDto,
 } from "@/contracts";
-import { useResourceMonitorStore, type ResourceSortMetric } from "@/stores/resource-monitor.store";
+import { useResourceMonitorStore } from "@/stores/resource-monitor.store";
 
 import type { GroupedBarChartDatum, HistoryChartDatum } from "../charts";
 
 const MAX_ATTRIBUTION_SNAPSHOTS = 1800;
 const ATTRIBUTION_GROUP_LIMIT = 4;
+const MAX_HISTORY_SERIES_POINTS = 600;
+const MAX_ATTRIBUTION_CHART_BUCKETS = 120;
 
 function formatBytes(bytes: number | null): string {
   if (bytes === null || !Number.isFinite(bytes) || bytes < 0) {
@@ -39,35 +41,15 @@ function formatPercent(value: number | null): string {
   return `${value.toFixed(2)}%`;
 }
 
-function formatTime(value: number, locale: string): string {
-  return new Intl.DateTimeFormat(locale, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(new Date(value));
+function pickMemorySortValue(item: ResourceModuleStatsDto | ResourceCrateStatsDto): number {
+  return item.estimatedMemoryBytes ?? -1;
 }
 
-function pickSortValue(metric: ResourceSortMetric, item: ResourceModuleStatsDto | ResourceCrateStatsDto): number {
-  if (metric === "cpu") {
-    return item.estimatedCpuPercent ?? -1;
-  }
-  if (metric === "memory") {
-    return item.estimatedMemoryBytes ?? -1;
-  }
-  return item.calls;
-}
-
-function formatSortMetricValue(metric: ResourceSortMetric, value: number): string {
+function formatMemorySortValue(value: number): string {
   if (!Number.isFinite(value) || value < 0) {
     return "--";
   }
-  if (metric === "cpu") {
-    return `${value.toFixed(2)}%`;
-  }
-  if (metric === "memory") {
-    return formatBytes(value);
-  }
-  return `${Math.round(value)}`;
+  return formatBytes(value);
 }
 
 function appendSnapshotSeries(history: ResourceSnapshotDto[], snapshot: ResourceSnapshotDto): ResourceSnapshotDto[] {
@@ -76,86 +58,203 @@ function appendSnapshotSeries(history: ResourceSnapshotDto[], snapshot: Resource
   return next.slice(-MAX_ATTRIBUTION_SNAPSHOTS);
 }
 
+interface NumericSeriesPoint {
+  sampledAt: number;
+  value: number;
+}
+
+function downsampleSeriesLttb(points: NumericSeriesPoint[], threshold: number): NumericSeriesPoint[] {
+  if (threshold <= 2 || points.length <= threshold) {
+    return points;
+  }
+
+  const sampled: NumericSeriesPoint[] = [points[0]];
+  const every = (points.length - 2) / (threshold - 2);
+  let a = 0;
+
+  for (let i = 0; i < threshold - 2; i += 1) {
+    const avgRangeStart = Math.floor((i + 1) * every) + 1;
+    const avgRangeEnd = Math.min(Math.floor((i + 2) * every) + 1, points.length);
+
+    let avgX: number;
+    let avgY: number;
+    if (avgRangeEnd <= avgRangeStart) {
+      const fallback = points[Math.min(avgRangeStart, points.length - 1)];
+      avgX = fallback.sampledAt;
+      avgY = fallback.value;
+    } else {
+      avgX = 0;
+      avgY = 0;
+      const avgRangeLength = avgRangeEnd - avgRangeStart;
+      for (let index = avgRangeStart; index < avgRangeEnd; index += 1) {
+        avgX += points[index].sampledAt;
+        avgY += points[index].value;
+      }
+      avgX /= avgRangeLength;
+      avgY /= avgRangeLength;
+    }
+
+    const rangeStart = Math.floor(i * every) + 1;
+    const rangeEnd = Math.min(Math.floor((i + 1) * every) + 1, points.length - 1);
+    if (rangeStart >= rangeEnd) {
+      sampled.push(points[Math.min(rangeStart, points.length - 1)]);
+      a = Math.min(rangeStart, points.length - 1);
+      continue;
+    }
+
+    let nextIndex = rangeStart;
+    let maxArea = -1;
+    for (let index = rangeStart; index < rangeEnd; index += 1) {
+      const area =
+        Math.abs(
+          (points[a].sampledAt - avgX) * (points[index].value - points[a].value) -
+            (points[a].sampledAt - points[index].sampledAt) * (avgY - points[a].value),
+        ) * 0.5;
+
+      if (area > maxArea) {
+        maxArea = area;
+        nextIndex = index;
+      }
+    }
+
+    sampled.push(points[nextIndex]);
+    a = nextIndex;
+  }
+
+  sampled.push(points[points.length - 1]);
+  return sampled;
+}
+
+function splitIntoBuckets<T>(items: T[], maxBuckets: number): T[][] {
+  if (items.length === 0) {
+    return [];
+  }
+  if (items.length <= maxBuckets) {
+    return items.map((item) => [item]);
+  }
+
+  const bucketSize = Math.ceil(items.length / maxBuckets);
+  const buckets: T[][] = [];
+  for (let index = 0; index < items.length; index += bucketSize) {
+    buckets.push(items.slice(index, index + bucketSize));
+  }
+  return buckets;
+}
+
 function buildHistoryChartData(
   points: ResourcePointDto[],
-  locale: string,
+  formatTimeLabel: (value: number) => string,
   seriesLabel: { cpu: string; memory: string },
 ): HistoryChartDatum[] {
-  return points.flatMap((point) => {
-    const time = formatTime(point.sampledAt, locale);
-    const next: HistoryChartDatum[] = [];
+  const cpuSeries = points
+    .filter((point) => point.processCpuPercent !== null)
+    .map((point) => ({
+      sampledAt: point.sampledAt,
+      value: point.processCpuPercent ?? 0,
+    }));
+  const memorySeries = points
+    .filter((point) => point.processMemoryBytes !== null)
+    .map((point) => ({
+      sampledAt: point.sampledAt,
+      value: (point.processMemoryBytes ?? 0) / 1024 / 1024,
+    }));
 
-    if (point.processCpuPercent !== null) {
-      next.push({
-        time,
-        value: point.processCpuPercent,
-        metric: seriesLabel.cpu,
-        kind: "cpu",
-      });
+  const sampledCpuSeries = downsampleSeriesLttb(cpuSeries, MAX_HISTORY_SERIES_POINTS);
+  const sampledMemorySeries = downsampleSeriesLttb(memorySeries, MAX_HISTORY_SERIES_POINTS);
+  const timeLabelCache = new Map<number, string>();
+  const resolveTimeLabel = (value: number): string => {
+    const cached = timeLabelCache.get(value);
+    if (cached) {
+      return cached;
     }
-
-    if (point.processMemoryBytes !== null) {
-      next.push({
-        time,
-        value: point.processMemoryBytes / 1024 / 1024,
-        metric: seriesLabel.memory,
-        kind: "memory",
-      });
-    }
-
+    const next = formatTimeLabel(value);
+    timeLabelCache.set(value, next);
     return next;
-  });
+  };
+
+  return [
+    ...sampledCpuSeries.map((point) => ({
+      time: resolveTimeLabel(point.sampledAt),
+      value: point.value,
+      metric: seriesLabel.cpu,
+      kind: "cpu" as const,
+    })),
+    ...sampledMemorySeries.map((point) => ({
+      time: resolveTimeLabel(point.sampledAt),
+      value: point.value,
+      metric: seriesLabel.memory,
+      kind: "memory" as const,
+    })),
+  ];
 }
 
 function buildModuleChartData(
   snapshots: ResourceSnapshotDto[],
   moduleTopIds: ResourceModuleIdDto[],
-  sortMetric: ResourceSortMetric,
-  locale: string,
+  formatTimeLabel: (value: number) => string,
   getLabel: (moduleId: ResourceModuleIdDto) => string,
 ): GroupedBarChartDatum[] {
   if (moduleTopIds.length === 0 || snapshots.length === 0) {
     return [];
   }
 
-  return snapshots.flatMap((entry) => {
-    const byId = new Map(entry.modules.map((item) => [item.moduleId, item]));
-    const time = formatTime(entry.sampledAt, locale);
-    return moduleTopIds.map((moduleId) => {
-      const current = byId.get(moduleId);
-      const value = current ? pickSortValue(sortMetric, current) : 0;
-      return {
-        time,
-        group: getLabel(moduleId),
-        value: value < 0 ? 0 : value,
-      };
-    });
+  const buckets = splitIntoBuckets(snapshots, MAX_ATTRIBUTION_CHART_BUCKETS);
+  return buckets.flatMap((bucket) => {
+    const maxById = new Map<ResourceModuleIdDto, number>(moduleTopIds.map((moduleId) => [moduleId, 0]));
+
+    for (const entry of bucket) {
+      const byId = new Map(entry.modules.map((item) => [item.moduleId, item]));
+      for (const moduleId of moduleTopIds) {
+        const current = byId.get(moduleId);
+        const value = current ? pickMemorySortValue(current) : 0;
+        const normalized = value < 0 ? 0 : value;
+        if (normalized > (maxById.get(moduleId) ?? 0)) {
+          maxById.set(moduleId, normalized);
+        }
+      }
+    }
+
+    const time = formatTimeLabel(bucket[bucket.length - 1].sampledAt);
+    return moduleTopIds.map((moduleId) => ({
+      time,
+      group: getLabel(moduleId),
+      value: maxById.get(moduleId) ?? 0,
+    }));
   });
 }
 
 function buildCrateChartData(
   snapshots: ResourceSnapshotDto[],
   crateTopIds: ResourceCrateIdDto[],
-  sortMetric: ResourceSortMetric,
-  locale: string,
+  formatTimeLabel: (value: number) => string,
   getLabel: (crateId: ResourceCrateIdDto) => string,
 ): GroupedBarChartDatum[] {
   if (crateTopIds.length === 0 || snapshots.length === 0) {
     return [];
   }
 
-  return snapshots.flatMap((entry) => {
-    const byId = new Map(entry.crates.map((item) => [item.crateId, item]));
-    const time = formatTime(entry.sampledAt, locale);
-    return crateTopIds.map((crateId) => {
-      const current = byId.get(crateId);
-      const value = current ? pickSortValue(sortMetric, current) : 0;
-      return {
-        time,
-        group: getLabel(crateId),
-        value: value < 0 ? 0 : value,
-      };
-    });
+  const buckets = splitIntoBuckets(snapshots, MAX_ATTRIBUTION_CHART_BUCKETS);
+  return buckets.flatMap((bucket) => {
+    const maxById = new Map<ResourceCrateIdDto, number>(crateTopIds.map((crateId) => [crateId, 0]));
+
+    for (const entry of bucket) {
+      const byId = new Map(entry.crates.map((item) => [item.crateId, item]));
+      for (const crateId of crateTopIds) {
+        const current = byId.get(crateId);
+        const value = current ? pickMemorySortValue(current) : 0;
+        const normalized = value < 0 ? 0 : value;
+        if (normalized > (maxById.get(crateId) ?? 0)) {
+          maxById.set(crateId, normalized);
+        }
+      }
+    }
+
+    const time = formatTimeLabel(bucket[bucket.length - 1].sampledAt);
+    return crateTopIds.map((crateId) => ({
+      time,
+      group: getLabel(crateId),
+      value: maxById.get(crateId) ?? 0,
+    }));
   });
 }
 
@@ -185,7 +284,6 @@ export interface UseResourceMonitorDataResult {
   error: string | null;
   overview: ResourceOverviewDto | null;
   historyWindowMinutes: 5 | 15 | 30;
-  sortMetric: ResourceSortMetric;
   visibleHistory: ResourcePointDto[];
   historyChartData: HistoryChartDatum[];
   moduleChartData: GroupedBarChartDatum[];
@@ -195,7 +293,6 @@ export interface UseResourceMonitorDataResult {
   meta: ResourceMetaText;
   refreshAll: () => Promise<void>;
   setHistoryWindowMinutes: (value: 5 | 15 | 30) => void;
-  setSortMetric: (value: ResourceSortMetric) => void;
   resetSessionWithLocalClear: () => Promise<void>;
   formatCurrentSortMetricValue: (value: number) => string;
 }
@@ -203,6 +300,16 @@ export interface UseResourceMonitorDataResult {
 export function useResourceMonitorData(): UseResourceMonitorDataResult {
   const { t, i18n } = useTranslation(["resource_monitor"]);
   const locale = i18n.resolvedLanguage ?? i18n.language;
+  const timeFormatter = useMemo(
+    () =>
+      new Intl.DateTimeFormat(locale, {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }),
+    [locale],
+  );
+  const formatTimeLabel = useCallback((value: number) => timeFormatter.format(new Date(value)), [timeFormatter]);
 
   const initialized = useResourceMonitorStore((state) => state.initialized);
   const loading = useResourceMonitorStore((state) => state.loading);
@@ -211,13 +318,11 @@ export function useResourceMonitorData(): UseResourceMonitorDataResult {
   const history = useResourceMonitorStore((state) => state.history);
   const lastUpdatedAt = useResourceMonitorStore((state) => state.lastUpdatedAt);
   const historyWindowMinutes = useResourceMonitorStore((state) => state.historyWindowMinutes);
-  const sortMetric = useResourceMonitorStore((state) => state.sortMetric);
   const initialize = useResourceMonitorStore((state) => state.initialize);
   const refreshAll = useResourceMonitorStore((state) => state.refreshAll);
   const startPolling = useResourceMonitorStore((state) => state.startPolling);
   const stopPolling = useResourceMonitorStore((state) => state.stopPolling);
   const setHistoryWindowMinutes = useResourceMonitorStore((state) => state.setHistoryWindowMinutes);
-  const setSortMetric = useResourceMonitorStore((state) => state.setSortMetric);
   const resetSession = useResourceMonitorStore((state) => state.resetSession);
 
   const [attributionSnapshots, setAttributionSnapshots] = useState<ResourceSnapshotDto[]>([]);
@@ -249,16 +354,16 @@ export function useResourceMonitorData(): UseResourceMonitorDataResult {
 
   const moduleStats = useMemo(() => {
     const modules = snapshot?.modules ?? [];
-    return [...modules].sort((left, right) => pickSortValue(sortMetric, right) - pickSortValue(sortMetric, left));
-  }, [snapshot?.modules, sortMetric]);
+    return [...modules].sort((left, right) => pickMemorySortValue(right) - pickMemorySortValue(left));
+  }, [snapshot?.modules]);
 
   const historyChartData = useMemo(
     () =>
-      buildHistoryChartData(visibleHistory, locale, {
+      buildHistoryChartData(visibleHistory, formatTimeLabel, {
         cpu: t("chart.series.cpu"),
         memory: t("chart.series.memoryMb"),
       }),
-    [locale, t, visibleHistory],
+    [formatTimeLabel, t, visibleHistory],
   );
 
   const moduleTopIds = useMemo(() => {
@@ -267,18 +372,16 @@ export function useResourceMonitorData(): UseResourceMonitorDataResult {
       return [] as ResourceModuleIdDto[];
     }
     return [...latest.modules]
-      .filter((item) => pickSortValue(sortMetric, item) >= 0)
-      .sort((left, right) => pickSortValue(sortMetric, right) - pickSortValue(sortMetric, left))
+      .filter((item) => pickMemorySortValue(item) >= 0)
+      .sort((left, right) => pickMemorySortValue(right) - pickMemorySortValue(left))
       .slice(0, ATTRIBUTION_GROUP_LIMIT)
       .map((item) => item.moduleId);
-  }, [sortMetric, visibleAttributionSnapshots]);
+  }, [visibleAttributionSnapshots]);
 
   const moduleChartData = useMemo(
     () =>
-      buildModuleChartData(visibleAttributionSnapshots, moduleTopIds, sortMetric, locale, (moduleId) =>
-        t(`module.${moduleId}`),
-      ),
-    [locale, moduleTopIds, sortMetric, t, visibleAttributionSnapshots],
+      buildModuleChartData(visibleAttributionSnapshots, moduleTopIds, formatTimeLabel, (moduleId) => t(`module.${moduleId}`)),
+    [formatTimeLabel, moduleTopIds, t, visibleAttributionSnapshots],
   );
 
   const crateTopIds = useMemo(() => {
@@ -287,16 +390,15 @@ export function useResourceMonitorData(): UseResourceMonitorDataResult {
       return [] as ResourceCrateIdDto[];
     }
     return [...latest.crates]
-      .filter((item) => pickSortValue(sortMetric, item) >= 0)
-      .sort((left, right) => pickSortValue(sortMetric, right) - pickSortValue(sortMetric, left))
+      .filter((item) => pickMemorySortValue(item) >= 0)
+      .sort((left, right) => pickMemorySortValue(right) - pickMemorySortValue(left))
       .slice(0, ATTRIBUTION_GROUP_LIMIT)
       .map((item) => item.crateId);
-  }, [sortMetric, visibleAttributionSnapshots]);
+  }, [visibleAttributionSnapshots]);
 
   const crateChartData = useMemo(
-    () =>
-      buildCrateChartData(visibleAttributionSnapshots, crateTopIds, sortMetric, locale, (crateId) => t(`crate.${crateId}`)),
-    [crateTopIds, locale, sortMetric, t, visibleAttributionSnapshots],
+    () => buildCrateChartData(visibleAttributionSnapshots, crateTopIds, formatTimeLabel, (crateId) => t(`crate.${crateId}`)),
+    [crateTopIds, formatTimeLabel, t, visibleAttributionSnapshots],
   );
 
   const overview = snapshot?.overview ?? null;
@@ -367,14 +469,14 @@ export function useResourceMonitorData(): UseResourceMonitorDataResult {
   const meta = useMemo<ResourceMetaText>(
     () => ({
       sampledAtText: t("meta.sampledAt", {
-        value: overview?.sampledAt ? formatTime(overview.sampledAt, locale) : "--",
+        value: overview?.sampledAt ? formatTimeLabel(overview.sampledAt) : "--",
       }),
       lastUpdatedText: t("meta.lastUpdated", {
-        value: lastUpdatedAt ? formatTime(lastUpdatedAt, locale) : "--",
+        value: lastUpdatedAt ? formatTimeLabel(lastUpdatedAt) : "--",
       }),
       historyPointsText: t("meta.historyPoints", { value: visibleHistory.length }),
     }),
-    [lastUpdatedAt, locale, overview?.sampledAt, t, visibleHistory.length],
+    [formatTimeLabel, lastUpdatedAt, overview?.sampledAt, t, visibleHistory.length],
   );
 
   const resetSessionWithLocalClear = useCallback(async () => {
@@ -382,10 +484,7 @@ export function useResourceMonitorData(): UseResourceMonitorDataResult {
     await resetSession();
   }, [resetSession]);
 
-  const formatCurrentSortMetricValue = useCallback(
-    (value: number) => formatSortMetricValue(sortMetric, value),
-    [sortMetric],
-  );
+  const formatCurrentSortMetricValue = useCallback((value: number) => formatMemorySortValue(value), []);
 
   return {
     initialized,
@@ -393,7 +492,6 @@ export function useResourceMonitorData(): UseResourceMonitorDataResult {
     error,
     overview,
     historyWindowMinutes,
-    sortMetric,
     visibleHistory,
     historyChartData,
     moduleChartData,
@@ -403,7 +501,6 @@ export function useResourceMonitorData(): UseResourceMonitorDataResult {
     meta,
     refreshAll,
     setHistoryWindowMinutes,
-    setSortMetric,
     resetSessionWithLocalClear,
     formatCurrentSortMetricValue,
   };

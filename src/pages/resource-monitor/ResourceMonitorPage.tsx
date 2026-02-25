@@ -35,13 +35,6 @@ export default function ResourceMonitorPage() {
     crateControllerRef.current = null;
   }, [resolvedTheme]);
 
-  useEffect(() => {
-    moduleControllerRef.current?.destroy();
-    moduleControllerRef.current = null;
-    crateControllerRef.current?.destroy();
-    crateControllerRef.current = null;
-  }, [monitor.sortMetric]);
-
   useEffect(
     () => () => {
       historyControllerRef.current?.destroy();
@@ -133,7 +126,6 @@ export default function ResourceMonitorPage() {
         loading={monitor.loading}
         error={monitor.error}
         historyWindowMinutes={monitor.historyWindowMinutes}
-        sortMetric={monitor.sortMetric}
         sampledAtText={monitor.meta.sampledAtText}
         lastUpdatedText={monitor.meta.lastUpdatedText}
         historyPointsText={monitor.meta.historyPointsText}
@@ -144,7 +136,6 @@ export default function ResourceMonitorPage() {
           void monitor.resetSessionWithLocalClear();
         }}
         onHistoryWindowChange={monitor.setHistoryWindowMinutes}
-        onSortMetricChange={monitor.setSortMetric}
       />
 
       <ResourceMetricsSection metricCards={monitor.metricCards} />

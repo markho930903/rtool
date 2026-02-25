@@ -1,21 +1,18 @@
 import { useTranslation } from "react-i18next";
 
 import { Button, Select } from "@/components/ui";
-import type { ResourceSortMetric } from "@/stores/resource-monitor.store";
 
 interface ResourceMonitorHeaderProps {
   initialized: boolean;
   loading: boolean;
   error: string | null;
   historyWindowMinutes: 5 | 15 | 30;
-  sortMetric: ResourceSortMetric;
   sampledAtText: string;
   lastUpdatedText: string;
   historyPointsText: string;
   onRefresh: () => void;
   onResetSession: () => void;
   onHistoryWindowChange: (value: 5 | 15 | 30) => void;
-  onSortMetricChange: (value: ResourceSortMetric) => void;
 }
 
 export default function ResourceMonitorHeader(props: ResourceMonitorHeaderProps) {
@@ -55,23 +52,6 @@ export default function ResourceMonitorHeader(props: ResourceMonitorHeaderProps)
               const value = Number(event.target.value);
               if (value === 5 || value === 15 || value === 30) {
                 props.onHistoryWindowChange(value);
-              }
-            }}
-          />
-        </div>
-
-        <div className="w-[180px]">
-          <Select
-            value={props.sortMetric}
-            options={[
-              { value: "cpu", label: t("filter.sort.cpu") },
-              { value: "memory", label: t("filter.sort.memory") },
-              { value: "calls", label: t("filter.sort.calls") },
-            ]}
-            onChange={(event) => {
-              const value = event.target.value;
-              if (value === "cpu" || value === "memory" || value === "calls") {
-                props.onSortMetricChange(value);
               }
             }}
           />

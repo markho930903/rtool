@@ -1,9 +1,12 @@
 import {
   Children,
+  type CSSProperties,
   forwardRef,
   isValidElement,
+  useCallback,
   useEffect,
   useId,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -11,6 +14,7 @@ import {
   type ReactNode,
   type SelectHTMLAttributes,
 } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 
 import { Button } from "@/components/ui/button";
@@ -60,12 +64,12 @@ const triggerClassMap: Record<SelectVariant, string> = {
 
 const panelClassMap: Record<SelectVariant, string> = {
   default:
-    "left-0 mt-1.5 max-h-64 w-full overflow-y-auto rounded-lg border border-border-glass bg-surface-glass-strong p-1 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]",
-  tool: "left-0 mt-1.5 max-h-64 min-w-full overflow-y-auto rounded-lg border border-border-glass bg-surface-glass-strong p-1 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]",
+    "overflow-y-auto rounded-lg border border-border-glass bg-surface-glass-strong p-1 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]",
+  tool: "overflow-y-auto rounded-lg border border-border-glass bg-surface-glass-strong p-1 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]",
   clipboard:
-    "left-0 mt-1.5 max-h-64 min-w-full overflow-y-auto rounded-lg border border-border-glass bg-surface-glass-strong p-1 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]",
+    "overflow-y-auto rounded-lg border border-border-glass bg-surface-glass-strong p-1 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]",
   theme:
-    "right-0 mt-1.5 max-h-64 min-w-full overflow-y-auto rounded-lg border border-border-glass bg-surface-glass-strong p-1 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]",
+    "overflow-y-auto rounded-lg border border-border-glass bg-surface-glass-strong p-1 shadow-overlay backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]",
 };
 
 const optionClassMap: Record<SelectVariant, string> = {
@@ -80,6 +84,18 @@ const sizeClassMap: Record<SelectSize, string> = {
   default: "min-h-[34px] text-sm",
   md: "min-h-[38px] text-sm",
 };
+
+const PANEL_GAP = 6;
+const VIEWPORT_PADDING = 8;
+const PANEL_MAX_HEIGHT = 256;
+const MIN_PANEL_HEIGHT = 120;
+
+function clamp(value: number, min: number, max: number): number {
+  if (max < min) {
+    return min;
+  }
+  return Math.min(Math.max(value, min), max);
+}
 
 function normalizeSelectValue(value: SelectHTMLAttributes<HTMLSelectElement>["value"]): string {
   if (Array.isArray(value)) {
@@ -192,14 +208,81 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
 
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState<number>(-1);
+  const [panelStyle, setPanelStyle] = useState<CSSProperties | null>(null);
 
   const rootRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLUListElement>(null);
   const hiddenSelectRef = useRef<HTMLSelectElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const optionRefs = useRef<Array<HTMLLIElement | null>>([]);
   const listboxId = useId();
 
   const selectedOption = options.find((option) => option.value === selectedValue) ?? options[0] ?? null;
+
+  const updatePanelPosition = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger || typeof window === "undefined") {
+      return;
+    }
+
+    const rect = trigger.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    const spaceBelow = viewportHeight - rect.bottom - VIEWPORT_PADDING;
+    const spaceAbove = rect.top - VIEWPORT_PADDING;
+    const placeTop = spaceBelow < MIN_PANEL_HEIGHT && spaceAbove > spaceBelow;
+    const availableHeight = Math.max(
+      0,
+      (placeTop ? spaceAbove : spaceBelow) - PANEL_GAP,
+    );
+    const maxHeight = clamp(
+      availableHeight,
+      Math.min(MIN_PANEL_HEIGHT, PANEL_MAX_HEIGHT),
+      PANEL_MAX_HEIGHT,
+    );
+    const maxWidth = Math.max(160, viewportWidth - VIEWPORT_PADDING * 2);
+    const minWidth = Math.min(rect.width, maxWidth);
+
+    const nextStyle: CSSProperties = {
+      position: "fixed",
+      zIndex: 90,
+      maxHeight: `${maxHeight}px`,
+      maxWidth: `${maxWidth}px`,
+    };
+
+    if (placeTop) {
+      nextStyle.bottom = `${viewportHeight - rect.top + PANEL_GAP}px`;
+    } else {
+      nextStyle.top = `${rect.bottom + PANEL_GAP}px`;
+    }
+
+    if (variant === "default") {
+      const width = Math.min(rect.width, maxWidth);
+      nextStyle.width = `${width}px`;
+      nextStyle.left = `${clamp(
+        rect.left,
+        VIEWPORT_PADDING,
+        viewportWidth - VIEWPORT_PADDING - width,
+      )}px`;
+    } else if (variant === "theme") {
+      nextStyle.minWidth = `${minWidth}px`;
+      nextStyle.right = `${clamp(
+        viewportWidth - rect.right,
+        VIEWPORT_PADDING,
+        viewportWidth - VIEWPORT_PADDING - minWidth,
+      )}px`;
+    } else {
+      nextStyle.minWidth = `${minWidth}px`;
+      nextStyle.left = `${clamp(
+        rect.left,
+        VIEWPORT_PADDING,
+        viewportWidth - VIEWPORT_PADDING - minWidth,
+      )}px`;
+    }
+
+    setPanelStyle(nextStyle);
+  }, [variant]);
 
   useEffect(() => {
     if (controlledValue !== null) {
@@ -240,7 +323,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
     }
 
     const onPointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (!rootRef.current?.contains(target) && !panelRef.current?.contains(target)) {
         setOpen(false);
       }
     };
@@ -248,6 +332,26 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
     document.addEventListener("pointerdown", onPointerDown);
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [open]);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPanelStyle(null);
+      return;
+    }
+
+    updatePanelPosition();
+
+    const syncPosition = () => {
+      updatePanelPosition();
+    };
+    window.addEventListener("resize", syncPosition);
+    window.addEventListener("scroll", syncPosition, true);
+
+    return () => {
+      window.removeEventListener("resize", syncPosition);
+      window.removeEventListener("scroll", syncPosition, true);
+    };
+  }, [open, updatePanelPosition]);
 
   useEffect(() => {
     if (!open || activeIndex < 0) {
@@ -392,7 +496,76 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
     className,
   );
 
-  const panelClassName = cx("absolute z-30", panelClassMap[variant]);
+  const panelClassName = cx("fixed z-[90]", panelClassMap[variant]);
+  const panelNode =
+    open && typeof document !== "undefined"
+      ? createPortal(
+          <ul
+            id={listboxId}
+            ref={panelRef}
+            role="listbox"
+            className={panelClassName}
+            style={panelStyle ?? { visibility: "hidden" }}
+            aria-activedescendant={activeIndex >= 0 ? `${listboxId}-${activeIndex}` : undefined}
+          >
+            {options.map((option, index) => {
+              const isSelected = selectedValue === option.value;
+              const isActive = activeIndex === index;
+
+              return (
+                <li
+                  id={`${listboxId}-${index}`}
+                  key={option.key}
+                  ref={(node) => {
+                    optionRefs.current[index] = node;
+                  }}
+                  role="option"
+                  aria-selected={isSelected}
+                  className={cx(
+                    "flex items-center justify-between gap-2",
+                    "transition-colors duration-120",
+                    optionClassMap[variant],
+                    option.disabled
+                      ? "cursor-not-allowed text-text-muted/50"
+                      : "cursor-pointer text-text-secondary hover:bg-surface-glass-soft hover:text-text-primary",
+                    isActive && !option.disabled ? "bg-surface-glass-soft text-text-primary" : null,
+                    isSelected && !option.disabled ? "bg-accent-soft text-text-primary" : null,
+                  )}
+                  onMouseEnter={() => {
+                    if (!option.disabled) {
+                      setActiveIndex(index);
+                    }
+                  }}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    if (!option.disabled) {
+                      commitSelection(option.value);
+                    }
+                  }}
+                >
+                  <span className="inline-flex min-w-0 items-center gap-2">
+                    {option.icon ? <span className={cx("btn-icon shrink-0", option.icon)} aria-hidden="true" /> : null}
+                    <span className="truncate">{option.label}</span>
+                  </span>
+                  {isSelected ? (
+                    <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true">
+                      <path
+                        d="m3.5 8.25 2.5 2.5L12.5 4.5"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth="1.6"
+                      />
+                    </svg>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>,
+          document.body,
+        )
+      : null;
 
   return (
     <div ref={rootRef} className={cx("relative", wrapperClassMap[variant])}>
@@ -455,70 +628,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
           />
         </svg>
       </Button>
-
-      {open ? (
-        <ul
-          id={listboxId}
-          role="listbox"
-          className={panelClassName}
-          aria-activedescendant={activeIndex >= 0 ? `${listboxId}-${activeIndex}` : undefined}
-        >
-          {options.map((option, index) => {
-            const isSelected = selectedValue === option.value;
-            const isActive = activeIndex === index;
-
-            return (
-              <li
-                id={`${listboxId}-${index}`}
-                key={option.key}
-                ref={(node) => {
-                  optionRefs.current[index] = node;
-                }}
-                role="option"
-                aria-selected={isSelected}
-                className={cx(
-                  "flex items-center justify-between gap-2",
-                  "transition-colors duration-120",
-                  optionClassMap[variant],
-                  option.disabled
-                    ? "cursor-not-allowed text-text-muted/50"
-                    : "cursor-pointer text-text-secondary hover:bg-surface-glass-soft hover:text-text-primary",
-                  isActive && !option.disabled ? "bg-surface-glass-soft text-text-primary" : null,
-                  isSelected && !option.disabled ? "bg-accent-soft text-text-primary" : null,
-                )}
-                onMouseEnter={() => {
-                  if (!option.disabled) {
-                    setActiveIndex(index);
-                  }
-                }}
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => {
-                  if (!option.disabled) {
-                    commitSelection(option.value);
-                  }
-                }}
-              >
-                <span className="inline-flex min-w-0 items-center gap-2">
-                  {option.icon ? <span className={cx("btn-icon shrink-0", option.icon)} aria-hidden="true" /> : null}
-                  <span className="truncate">{option.label}</span>
-                </span>
-                {isSelected ? (
-                  <svg viewBox="0 0 16 16" className="h-3.5 w-3.5 shrink-0 text-accent" aria-hidden="true">
-                    <path
-                      d="m3.5 8.25 2.5 2.5L12.5 4.5"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="1.6"
-                    />
-                  </svg>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
+      {panelNode}
     </div>
   );
 });

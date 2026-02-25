@@ -62,11 +62,11 @@
   /* semantic: dark theme defaults */
   --color-bg-app: rgb(var(--primitive-color-dark-900));
   --color-bg-orb-1: rgb(var(--primitive-color-accent-dark) / 9%);
-  --color-bg-orb-2: rgb(var(--primitive-color-white) / 4%);
-  --glass-alpha-strong: 88%;
-  --glass-alpha-surface: 82%;
-  --glass-alpha-soft: 28%;
-  --glass-alpha-overlay: 90%;
+  --color-bg-orb-2: rgb(var(--primitive-color-white) / 1%);
+  --glass-alpha-strong: 78%;
+  --glass-alpha-surface: 70%;
+  --glass-alpha-soft: 8%;
+  --glass-alpha-overlay: 84%;
   --color-surface-glass-strong: rgb(var(--primitive-color-dark-800) / var(--glass-alpha-strong));
   --color-surface-glass: rgb(var(--primitive-color-dark-800) / var(--glass-alpha-surface));
   --color-surface-glass-soft: rgb(var(--primitive-color-white) / var(--glass-alpha-soft));
@@ -78,8 +78,8 @@
   --color-surface-popover: rgb(var(--primitive-color-dark-800) / 68%);
   --color-surface-scrim: rgb(var(--primitive-color-dark-950) / 56%);
 
-  --color-border-glass: rgb(var(--primitive-color-white) / 18%);
-  --color-border-glass-strong: rgb(var(--primitive-color-white) / 28%);
+  --color-border-glass: rgb(var(--primitive-color-white) / 14%);
+  --color-border-glass-strong: rgb(var(--primitive-color-white) / 20%);
   --color-border-muted: var(--color-border-glass);
   --color-border-strong: var(--color-border-glass-strong);
 
@@ -96,7 +96,7 @@
   --color-sidebar-item-active: rgb(var(--primitive-color-accent-dark) / 20%);
   --color-popover-highlight: rgb(var(--primitive-color-white) / 5%);
   --color-shimmer-highlight: rgb(var(--primitive-color-white));
-  --color-specular: rgb(var(--primitive-color-white) / 34%);
+  --color-specular: rgb(var(--primitive-color-white) / 16%);
 
   /* semantic: chart */
   --color-chart-axis-label: rgb(var(--primitive-color-dark-300) / 84%);
@@ -117,13 +117,13 @@
 
   --glass-blur: 24px;
   --glass-saturate: 150%;
-  --glass-brightness: 100%;
+  --glass-brightness: 96%;
 
   /* component: shadow */
   --shadow-glass-card: 0 10px 24px rgb(var(--primitive-color-black) / 15%);
   --shadow-glass-elevated: 0 14px 32px rgb(var(--primitive-color-black) / 19%);
   --shadow-glass-inset:
-    inset 0 1px 0 rgb(var(--primitive-color-white) / 10%), inset 0 -1px 0 rgb(var(--primitive-color-black) / 10%);
+    inset 0 1px 0 rgb(var(--primitive-color-white) / 4%), inset 0 -1px 0 rgb(var(--primitive-color-black) / 16%);
 
   --shadow-surface: var(--shadow-glass-card);
   --shadow-overlay: var(--shadow-glass-elevated);

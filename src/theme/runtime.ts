@@ -12,10 +12,10 @@ interface GlassAlphaStops {
 
 const GLASS_ALPHA_STOPS: Record<ResolvedTheme, GlassAlphaStops> = {
   dark: {
-    strong: [20, 88],
-    surface: [16, 82],
-    soft: [4, 28],
-    overlay: [18, 90],
+    strong: [14, 78],
+    surface: [10, 70],
+    soft: [1, 8],
+    overlay: [16, 84],
   },
   light: {
     strong: [28, 88],
@@ -24,6 +24,8 @@ const GLASS_ALPHA_STOPS: Record<ResolvedTheme, GlassAlphaStops> = {
     overlay: [30, 88],
   },
 };
+
+const DARK_BRIGHTNESS_SCALE = 0.96;
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
@@ -137,10 +139,11 @@ export function applyLiquidGlassToDocument(resolved: ResolvedTheme, settings: Li
   const surfaceAlpha = interpolate(alphaStops.surface[0], alphaStops.surface[1], opacityProgress);
   const softAlpha = interpolate(alphaStops.soft[0], alphaStops.soft[1], opacityProgress);
   const overlayAlpha = interpolate(alphaStops.overlay[0], alphaStops.overlay[1], opacityProgress);
+  const effectiveBrightness = resolved === "dark" ? profile.brightness * DARK_BRIGHTNESS_SCALE : profile.brightness;
 
   root.style.setProperty("--glass-blur", `${profile.blur}px`);
   root.style.setProperty("--glass-saturate", `${profile.saturate}%`);
-  root.style.setProperty("--glass-brightness", `${profile.brightness}%`);
+  root.style.setProperty("--glass-brightness", `${effectiveBrightness.toFixed(2)}%`);
   root.style.setProperty("--glass-alpha-strong", formatPercent(strongAlpha));
   root.style.setProperty("--glass-alpha-surface", formatPercent(surfaceAlpha));
   root.style.setProperty("--glass-alpha-soft", formatPercent(softAlpha));

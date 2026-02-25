@@ -15,8 +15,6 @@ let pollingTimer: number | null = null;
 let inFlightSnapshot: Promise<void> | null = null;
 let inFlightBootstrap: Promise<void> | null = null;
 
-export type ResourceSortMetric = "cpu" | "memory" | "calls";
-
 interface ResourceMonitorState {
   initialized: boolean;
   loading: boolean;
@@ -25,7 +23,6 @@ interface ResourceMonitorState {
   history: ResourcePointDto[];
   lastUpdatedAt: number | null;
   historyWindowMinutes: 5 | 15 | 30;
-  sortMetric: ResourceSortMetric;
 }
 
 interface ResourceMonitorActions {
@@ -35,7 +32,6 @@ interface ResourceMonitorActions {
   startPolling: () => void;
   stopPolling: () => void;
   setHistoryWindowMinutes: (minutes: 5 | 15 | 30) => void;
-  setSortMetric: (metric: ResourceSortMetric) => void;
   resetSession: () => Promise<void>;
 }
 
@@ -65,7 +61,6 @@ export const useResourceMonitorStore = create<ResourceMonitorStore>((set, get) =
   history: [],
   lastUpdatedAt: null,
   historyWindowMinutes: 30,
-  sortMetric: "cpu",
 
   async initialize() {
     if (get().initialized) {
@@ -174,10 +169,6 @@ export const useResourceMonitorStore = create<ResourceMonitorStore>((set, get) =
 
   setHistoryWindowMinutes(historyWindowMinutes) {
     set({ historyWindowMinutes });
-  },
-
-  setSortMetric(sortMetric) {
-    set({ sortMetric });
   },
 
   async resetSession() {

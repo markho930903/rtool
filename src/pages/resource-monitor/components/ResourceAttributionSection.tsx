@@ -16,7 +16,9 @@ export default function ResourceAttributionSection(props: ResourceAttributionSec
     <section className="grid grid-cols-1 gap-3 xl:grid-cols-[1.15fr_1fr]">
       <article className="ui-glass-panel p-4">
         <header className="mb-3">
-          <div className="font-mono ui-text-micro uppercase tracking-ui-wide text-text-muted">{t("panel.crates.title")}</div>
+          <div className="font-mono ui-text-micro uppercase tracking-ui-wide text-text-muted">
+            {t("panel.crates.title")}
+          </div>
           <h2 className="mt-1 text-sm font-semibold text-text-primary">{t("panel.crates.subtitle")}</h2>
         </header>
         {props.hasCrateChartData ? (
@@ -28,7 +30,9 @@ export default function ResourceAttributionSection(props: ResourceAttributionSec
 
       <article className="ui-glass-panel p-4">
         <header className="mb-3">
-          <div className="font-mono ui-text-micro uppercase tracking-ui-wide text-text-muted">{t("panel.analysis.title")}</div>
+          <div className="font-mono ui-text-micro uppercase tracking-ui-wide text-text-muted">
+            {t("panel.analysis.title")}
+          </div>
           <h2 className="mt-1 text-sm font-semibold text-text-primary">{t("panel.analysis.subtitle")}</h2>
         </header>
 

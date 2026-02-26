@@ -136,7 +136,9 @@ export default function LauncherSettingsSection(props: LauncherSettingsSectionPr
             </span>
           </div>
           {props.state.status?.lastError ? (
-            <p className="mt-2 mb-0 text-xs text-danger">{t("launcher.status.lastError", { value: props.state.status.lastError })}</p>
+            <p className="mt-2 mb-0 text-xs text-danger">
+              {t("launcher.status.lastError", { value: props.state.status.lastError })}
+            </p>
           ) : null}
           {props.state.launcherTruncatedHintText ? (
             <p className="mt-2 mb-0 text-xs text-text-muted">{props.state.launcherTruncatedHintText}</p>

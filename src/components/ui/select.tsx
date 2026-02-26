@@ -232,15 +232,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
     const spaceBelow = viewportHeight - rect.bottom - VIEWPORT_PADDING;
     const spaceAbove = rect.top - VIEWPORT_PADDING;
     const placeTop = spaceBelow < MIN_PANEL_HEIGHT && spaceAbove > spaceBelow;
-    const availableHeight = Math.max(
-      0,
-      (placeTop ? spaceAbove : spaceBelow) - PANEL_GAP,
-    );
-    const maxHeight = clamp(
-      availableHeight,
-      Math.min(MIN_PANEL_HEIGHT, PANEL_MAX_HEIGHT),
-      PANEL_MAX_HEIGHT,
-    );
+    const availableHeight = Math.max(0, (placeTop ? spaceAbove : spaceBelow) - PANEL_GAP);
+    const maxHeight = clamp(availableHeight, Math.min(MIN_PANEL_HEIGHT, PANEL_MAX_HEIGHT), PANEL_MAX_HEIGHT);
     const maxWidth = Math.max(160, viewportWidth - VIEWPORT_PADDING * 2);
     const minWidth = Math.min(rect.width, maxWidth);
 
@@ -260,11 +253,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
     if (variant === "default") {
       const width = Math.min(rect.width, maxWidth);
       nextStyle.width = `${width}px`;
-      nextStyle.left = `${clamp(
-        rect.left,
-        VIEWPORT_PADDING,
-        viewportWidth - VIEWPORT_PADDING - width,
-      )}px`;
+      nextStyle.left = `${clamp(rect.left, VIEWPORT_PADDING, viewportWidth - VIEWPORT_PADDING - width)}px`;
     } else if (variant === "theme") {
       nextStyle.minWidth = `${minWidth}px`;
       nextStyle.right = `${clamp(
@@ -274,11 +263,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select
       )}px`;
     } else {
       nextStyle.minWidth = `${minWidth}px`;
-      nextStyle.left = `${clamp(
-        rect.left,
-        VIEWPORT_PADDING,
-        viewportWidth - VIEWPORT_PADDING - minWidth,
-      )}px`;
+      nextStyle.left = `${clamp(rect.left, VIEWPORT_PADDING, viewportWidth - VIEWPORT_PADDING - minWidth)}px`;
     }
 
     setPanelStyle(nextStyle);

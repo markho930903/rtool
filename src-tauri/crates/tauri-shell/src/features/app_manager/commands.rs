@@ -5,15 +5,17 @@ use app_core::models::{
     AppManagerActionResultDto, AppManagerCleanupInputDto, AppManagerCleanupResultDto,
     AppManagerDetailQueryDto, AppManagerExportScanInputDto, AppManagerExportScanResultDto,
     AppManagerPageDto, AppManagerQueryDto, AppManagerResidueScanInputDto,
-    AppManagerResidueScanResultDto, AppManagerStartupUpdateInputDto, AppManagerUninstallInputDto,
+    AppManagerResidueScanResultDto, AppManagerResolveSizesInputDto, AppManagerResolveSizesResultDto,
+    AppManagerSnapshotMetaDto, AppManagerStartupUpdateInputDto, AppManagerUninstallInputDto,
     ManagedAppDetailDto,
 };
 use app_core::{AppError, AppResult, InvokeError, ResultExt};
 use app_launcher_app::app_manager::{
     cleanup_managed_app_residue, export_managed_app_scan_result, get_managed_app_detail,
-    list_managed_apps, open_uninstall_help, poll_managed_apps_auto_refresh,
+    get_managed_app_detail_core, get_managed_app_detail_heavy, list_managed_apps,
+    list_managed_apps_snapshot_meta, open_uninstall_help, poll_managed_apps_auto_refresh,
     refresh_managed_apps_index, scan_managed_app_residue, set_managed_app_startup,
-    uninstall_managed_app,
+    uninstall_managed_app, resolve_managed_app_sizes,
 };
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -152,6 +154,81 @@ pub async fn app_manager_get_detail(
         window_label,
         "app_manager_get_detail",
         move || get_managed_app_detail(&host, query),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn app_manager_list_snapshot_meta(
+    app: tauri::AppHandle,
+    request_id: Option<String>,
+    window_label: Option<String>,
+) -> Result<AppManagerSnapshotMetaDto, InvokeError> {
+    ensure_app_manager_watcher_started(&app);
+    let host = TauriLauncherHost::new(app);
+    run_blocking_command(
+        "app_manager_list_snapshot_meta",
+        request_id,
+        window_label,
+        "app_manager_list_snapshot_meta",
+        move || list_managed_apps_snapshot_meta(&host),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn app_manager_resolve_sizes(
+    app: tauri::AppHandle,
+    input: AppManagerResolveSizesInputDto,
+    request_id: Option<String>,
+    window_label: Option<String>,
+) -> Result<AppManagerResolveSizesResultDto, InvokeError> {
+    ensure_app_manager_watcher_started(&app);
+    let host = TauriLauncherHost::new(app);
+    run_blocking_command(
+        "app_manager_resolve_sizes",
+        request_id,
+        window_label,
+        "app_manager_resolve_sizes",
+        move || resolve_managed_app_sizes(&host, input),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn app_manager_get_detail_core(
+    app: tauri::AppHandle,
+    query: AppManagerDetailQueryDto,
+    request_id: Option<String>,
+    window_label: Option<String>,
+) -> Result<ManagedAppDetailDto, InvokeError> {
+    ensure_app_manager_watcher_started(&app);
+    let host = TauriLauncherHost::new(app);
+    run_blocking_command(
+        "app_manager_get_detail_core",
+        request_id,
+        window_label,
+        "app_manager_get_detail_core",
+        move || get_managed_app_detail_core(&host, query),
+    )
+    .await
+}
+
+#[tauri::command]
+pub async fn app_manager_get_detail_heavy(
+    app: tauri::AppHandle,
+    input: AppManagerResidueScanInputDto,
+    request_id: Option<String>,
+    window_label: Option<String>,
+) -> Result<AppManagerResidueScanResultDto, InvokeError> {
+    ensure_app_manager_watcher_started(&app);
+    let host = TauriLauncherHost::new(app);
+    run_blocking_command(
+        "app_manager_get_detail_heavy",
+        request_id,
+        window_label,
+        "app_manager_get_detail_heavy",
+        move || get_managed_app_detail_heavy(&host, input),
     )
     .await
 }

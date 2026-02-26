@@ -10,12 +10,14 @@ use app_core::models::{
     AppManagerIndexUpdateReason, AppManagerIndexUpdatedPayloadDto, AppManagerPageDto,
     AppManagerPathType, AppManagerPlatform, AppManagerQueryDto, AppManagerResidueConfidence,
     AppManagerResidueGroupDto, AppManagerResidueItemDto, AppManagerResidueKind,
-    AppManagerResidueMatchReason, AppManagerResidueScanInputDto, AppManagerResidueScanResultDto,
-    AppManagerRiskLevel, AppManagerScanWarningCode, AppManagerScanWarningDetailCode,
-    AppManagerScanWarningDto, AppManagerScope, AppManagerSizeAccuracy, AppManagerSource,
-    AppManagerStartupScope, AppManagerStartupUpdateInputDto, AppManagerUninstallInputDto,
-    AppManagerUninstallKind, AppReadonlyReasonCode, AppRelatedRootDto, AppSizeSummaryDto,
-    ManagedAppDetailDto, ManagedAppDto,
+    AppManagerResidueMatchReason, AppManagerResidueScanInputDto, AppManagerResidueScanMode,
+    AppManagerResidueScanResultDto, AppManagerResolveSizesInputDto, AppManagerResolveSizesResultDto,
+    AppManagerResolvedSizeDto, AppManagerRiskLevel, AppManagerScanWarningCode,
+    AppManagerScanWarningDetailCode, AppManagerScanWarningDto, AppManagerScope,
+    AppManagerSizeAccuracy, AppManagerSnapshotMetaDto, AppManagerSource, AppManagerStartupScope,
+    AppManagerStartupUpdateInputDto, AppManagerUninstallInputDto, AppManagerUninstallKind,
+    AppReadonlyReasonCode, AppRelatedRootDto, AppSizeSummaryDto, ManagedAppDetailDto,
+    ManagedAppDto,
 };
 use app_core::{AppError, AppResult, ResultExt};
 #[cfg(target_os = "macos")]
@@ -32,6 +34,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 mod api;
 mod cleanup;
+mod discovery;
+mod identity;
 mod index;
 mod naming;
 mod residue;
@@ -41,6 +45,8 @@ mod uninstall;
 
 pub use api::*;
 use cleanup::*;
+use discovery::*;
+use identity::*;
 use index::*;
 use naming::*;
 use residue::*;
@@ -498,6 +504,10 @@ mod display_name_tests;
 #[path = "../../tests/app_manager/query_contract_tests.rs"]
 mod query_contract_tests;
 
+#[cfg(test)]
+#[path = "../../tests/app_manager/discovery_tests.rs"]
+mod discovery_tests;
+
 #[cfg(all(test, target_os = "macos"))]
 #[path = "../../tests/app_manager/macos_tests.rs"]
-mod tests;
+mod macos_tests;

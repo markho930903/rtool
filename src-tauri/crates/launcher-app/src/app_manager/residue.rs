@@ -343,30 +343,57 @@ pub(super) fn append_scan_size_warnings(
     }
 }
 
-fn collect_known_residue_candidates(item: &ManagedAppDto) -> Vec<ResidueCandidate> {
-    let mut candidates = Vec::new();
+fn append_scan_warning(
+    warnings: &mut Vec<AppManagerScanWarningDto>,
+    warning_keys: &mut HashSet<(
+        AppManagerScanWarningCode,
+        String,
+        AppManagerScanWarningDetailCode,
+    )>,
+    warning: AppManagerScanWarningDto,
+) {
+    let path = warning.path.clone().unwrap_or_default();
+    let detail_code = warning
+        .detail_code
+        .unwrap_or(AppManagerScanWarningDetailCode::IoOther);
+    let key = (warning.code, path, detail_code);
+    if warning_keys.insert(key) {
+        warnings.push(warning);
+    }
+}
+
+pub(super) fn collect_quick_residue_candidates(
+    item: &ManagedAppDto,
+    profile: &ResidueIdentityProfile,
+) -> Vec<ResidueCandidate> {
+    let mut candidates = collect_related_root_specs(item)
+        .iter()
+        .filter_map(candidate_from_related_root)
+        .collect::<Vec<_>>();
+
+    let identifiers = profile_identifiers(profile);
 
     #[cfg(target_os = "macos")]
     {
-        if let Some(bundle) = item.bundle_or_app_id.as_deref()
-            && let Some(home) = home_dir()
-        {
-            let preference_file = home
-                .join("Library/Preferences")
-                .join(format!("{bundle}.plist"));
-            candidates.push(ResidueCandidate {
-                path: preference_file,
-                scope: AppManagerScope::User,
-                kind: AppManagerResidueKind::Preferences,
-                exists: false,
-                filesystem: true,
-                match_reason: AppManagerResidueMatchReason::BundleId,
-                confidence: AppManagerResidueConfidence::Exact,
-                evidence: vec!["bundle_id_exact".to_string()],
-                risk_level: AppManagerRiskLevel::Medium,
-                recommended: true,
-                readonly_reason_code: None,
-            });
+        for identifier in &identifiers {
+            push_macos_identifier_templates(&mut candidates, identifier);
+        }
+        for alias in collect_app_path_aliases(item) {
+            for temp_root in mac_collect_temp_alias_roots(alias.as_str()) {
+                candidates.push(ResidueCandidate {
+                    path: temp_root,
+                    scope: AppManagerScope::User,
+                    kind: AppManagerResidueKind::Cache,
+                    exists: false,
+                    filesystem: true,
+                    match_reason: AppManagerResidueMatchReason::RelatedRoot,
+                    confidence: AppManagerResidueConfidence::High,
+                    evidence: vec![format!("temp_alias:{}", alias)],
+                    risk_level: AppManagerRiskLevel::Low,
+                    recommended: true,
+                    readonly_reason_code: None,
+                });
+            }
         }
         if let Some(startup_path) = mac_startup_file_path(item.id.as_str()) {
             candidates.push(ResidueCandidate {
@@ -383,10 +410,31 @@ fn collect_known_residue_candidates(item: &ManagedAppDto) -> Vec<ResidueCandidat
                 readonly_reason_code: None,
             });
         }
+        if profile.has_file_provider_extension
+            && let Some(home) = home_dir()
+        {
+            candidates.push(ResidueCandidate {
+                path: home.join("Library/Application Support/FileProvider"),
+                scope: AppManagerScope::User,
+                kind: AppManagerResidueKind::AppSupport,
+                exists: false,
+                filesystem: true,
+                match_reason: AppManagerResidueMatchReason::ExtensionBundle,
+                confidence: AppManagerResidueConfidence::Medium,
+                evidence: vec!["file_provider_extension_detected".to_string()],
+                risk_level: AppManagerRiskLevel::Low,
+                recommended: false,
+                readonly_reason_code: None,
+            });
+        }
     }
 
     #[cfg(target_os = "windows")]
     {
+        for identifier in &identifiers {
+            push_windows_identifier_templates(&mut candidates, identifier);
+        }
+
         if let Some(app_data) = std::env::var_os("APPDATA") {
             let startup_name = format!("{}.lnk", item.name);
             candidates.push(ResidueCandidate {
@@ -405,11 +453,250 @@ fn collect_known_residue_candidates(item: &ManagedAppDto) -> Vec<ResidueCandidat
                 readonly_reason_code: None,
             });
         }
-
         candidates.extend(windows_collect_registry_residue_candidates(item));
     }
 
     candidates
+}
+
+#[cfg(target_os = "macos")]
+fn push_macos_identifier_templates(
+    candidates: &mut Vec<ResidueCandidate>,
+    identifier: &ResidueIdentifier,
+) {
+    if let Some(home) = home_dir() {
+        let base = home.join("Library");
+        push_fs_template_candidate(
+            candidates,
+            base.join("Application Scripts").join(identifier.value.as_str()),
+            AppManagerScope::User,
+            AppManagerResidueKind::AppScript,
+            identifier,
+        );
+        push_fs_template_candidate(
+            candidates,
+            base.join("Containers").join(identifier.value.as_str()),
+            AppManagerScope::User,
+            AppManagerResidueKind::Container,
+            identifier,
+        );
+        push_fs_template_candidate(
+            candidates,
+            base.join("Group Containers").join(identifier.value.as_str()),
+            AppManagerScope::User,
+            AppManagerResidueKind::GroupContainer,
+            identifier,
+        );
+        push_fs_template_candidate(
+            candidates,
+            base.join("Application Support").join(identifier.value.as_str()),
+            AppManagerScope::User,
+            AppManagerResidueKind::AppSupport,
+            identifier,
+        );
+        push_fs_template_candidate(
+            candidates,
+            base.join("Caches").join(identifier.value.as_str()),
+            AppManagerScope::User,
+            AppManagerResidueKind::Cache,
+            identifier,
+        );
+        push_fs_template_candidate(
+            candidates,
+            base.join("HTTPStorages").join(identifier.value.as_str()),
+            AppManagerScope::User,
+            AppManagerResidueKind::Cache,
+            identifier,
+        );
+        push_fs_template_candidate(
+            candidates,
+            base.join("Preferences")
+                .join(format!("{}.plist", identifier.value)),
+            AppManagerScope::User,
+            AppManagerResidueKind::Preferences,
+            identifier,
+        );
+        push_fs_template_candidate(
+            candidates,
+            base.join("Logs").join(identifier.value.as_str()),
+            AppManagerScope::User,
+            AppManagerResidueKind::Logs,
+            identifier,
+        );
+        push_fs_template_candidate(
+            candidates,
+            base.join("Saved Application State")
+                .join(format!("{}.savedState", identifier.value)),
+            AppManagerScope::User,
+            AppManagerResidueKind::SavedState,
+            identifier,
+        );
+        push_fs_template_candidate(
+            candidates,
+            base.join("WebKit").join(identifier.value.as_str()),
+            AppManagerScope::User,
+            AppManagerResidueKind::WebkitData,
+            identifier,
+        );
+    }
+
+    push_fs_template_candidate(
+        candidates,
+        PathBuf::from("/Library/Application Support").join(identifier.value.as_str()),
+        AppManagerScope::System,
+        AppManagerResidueKind::AppSupport,
+        identifier,
+    );
+    push_fs_template_candidate(
+        candidates,
+        PathBuf::from("/Library/Caches").join(identifier.value.as_str()),
+        AppManagerScope::System,
+        AppManagerResidueKind::Cache,
+        identifier,
+    );
+    push_fs_template_candidate(
+        candidates,
+        PathBuf::from("/Library/Preferences").join(format!("{}.plist", identifier.value)),
+        AppManagerScope::System,
+        AppManagerResidueKind::Preferences,
+        identifier,
+    );
+    push_fs_template_candidate(
+        candidates,
+        PathBuf::from("/Library/Logs").join(identifier.value.as_str()),
+        AppManagerScope::System,
+        AppManagerResidueKind::Logs,
+        identifier,
+    );
+    push_fs_template_candidate(
+        candidates,
+        PathBuf::from("/Library/LaunchAgents").join(format!("{}.plist", identifier.value)),
+        AppManagerScope::System,
+        AppManagerResidueKind::LaunchAgent,
+        identifier,
+    );
+    push_fs_template_candidate(
+        candidates,
+        PathBuf::from("/Library/LaunchDaemons").join(format!("{}.plist", identifier.value)),
+        AppManagerScope::System,
+        AppManagerResidueKind::LaunchDaemon,
+        identifier,
+    );
+    push_fs_template_candidate(
+        candidates,
+        PathBuf::from("/Library/PrivilegedHelperTools").join(identifier.value.as_str()),
+        AppManagerScope::System,
+        AppManagerResidueKind::HelperTool,
+        identifier,
+    );
+    push_fs_template_candidate(
+        candidates,
+        PathBuf::from("/private/var/db/receipts").join(format!("{}.bom", identifier.value)),
+        AppManagerScope::System,
+        AppManagerResidueKind::AppSupport,
+        identifier,
+    );
+    push_fs_template_candidate(
+        candidates,
+        PathBuf::from("/private/var/db/receipts").join(format!("{}.plist", identifier.value)),
+        AppManagerScope::System,
+        AppManagerResidueKind::AppSupport,
+        identifier,
+    );
+}
+
+#[cfg(target_os = "windows")]
+fn push_windows_identifier_templates(
+    candidates: &mut Vec<ResidueCandidate>,
+    identifier: &ResidueIdentifier,
+) {
+    if let Some(app_data) = std::env::var_os("APPDATA") {
+        push_fs_template_candidate(
+            candidates,
+            PathBuf::from(app_data).join(identifier.value.as_str()),
+            AppManagerScope::User,
+            AppManagerResidueKind::AppData,
+            identifier,
+        );
+    }
+
+    if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+        let local_root = PathBuf::from(local_app_data);
+        push_fs_template_candidate(
+            candidates,
+            local_root.join(identifier.value.as_str()),
+            AppManagerScope::User,
+            AppManagerResidueKind::AppData,
+            identifier,
+        );
+        push_fs_template_candidate(
+            candidates,
+            local_root.join("Packages").join(identifier.value.as_str()),
+            AppManagerScope::User,
+            AppManagerResidueKind::AppData,
+            identifier,
+        );
+        push_fs_template_candidate(
+            candidates,
+            local_root.join("Programs").join(identifier.value.as_str()),
+            AppManagerScope::User,
+            AppManagerResidueKind::AppData,
+            identifier,
+        );
+        push_fs_template_candidate(
+            candidates,
+            local_root.join("Temp").join(identifier.value.as_str()),
+            AppManagerScope::User,
+            AppManagerResidueKind::Cache,
+            identifier,
+        );
+    }
+
+    if let Some(home) = home_dir() {
+        push_fs_template_candidate(
+            candidates,
+            home.join("AppData/LocalLow").join(identifier.value.as_str()),
+            AppManagerScope::User,
+            AppManagerResidueKind::AppData,
+            identifier,
+        );
+    }
+
+    if let Some(program_data) = std::env::var_os("ProgramData") {
+        push_fs_template_candidate(
+            candidates,
+            PathBuf::from(program_data).join(identifier.value.as_str()),
+            AppManagerScope::System,
+            AppManagerResidueKind::AppData,
+            identifier,
+        );
+    }
+}
+
+fn push_fs_template_candidate(
+    candidates: &mut Vec<ResidueCandidate>,
+    path: PathBuf,
+    scope: AppManagerScope,
+    kind: AppManagerResidueKind,
+    identifier: &ResidueIdentifier,
+) {
+    candidates.push(ResidueCandidate {
+        path,
+        scope,
+        kind,
+        exists: false,
+        filesystem: true,
+        match_reason: identifier.match_reason,
+        confidence: AppManagerResidueConfidence::Exact,
+        evidence: vec![format!(
+            "template_identifier:{}:{}",
+            format!("{:?}", identifier.match_reason).to_ascii_lowercase(),
+            identifier.value
+        )],
+        risk_level: AppManagerRiskLevel::Low,
+        recommended: true,
+        readonly_reason_code: None,
+    });
 }
 
 #[cfg(target_os = "windows")]
@@ -435,11 +722,10 @@ fn windows_collect_registry_residue_candidates(item: &ManagedAppDto) -> Vec<Resi
         uninstall_entries.as_slice(),
     ) {
         let scope = windows_registry_scope(entry.registry_key.as_str());
-        let kind = AppManagerResidueKind::RegistryKey;
         candidates.push(ResidueCandidate {
             path: PathBuf::from(entry.registry_key),
             scope,
-            kind,
+            kind: AppManagerResidueKind::RegistryKey,
             exists: true,
             filesystem: false,
             match_reason: AppManagerResidueMatchReason::UninstallRegistry,
@@ -524,6 +810,14 @@ fn group_label(kind: AppManagerResidueKind, scope: AppManagerScope) -> String {
         AppManagerResidueKind::Preferences => "偏好设置",
         AppManagerResidueKind::Logs => "日志目录",
         AppManagerResidueKind::Startup => "启动项",
+        AppManagerResidueKind::AppScript => "应用脚本目录",
+        AppManagerResidueKind::Container => "容器目录",
+        AppManagerResidueKind::GroupContainer => "组容器目录",
+        AppManagerResidueKind::SavedState => "保存状态目录",
+        AppManagerResidueKind::WebkitData => "WebKit 数据目录",
+        AppManagerResidueKind::LaunchAgent => "启动代理",
+        AppManagerResidueKind::LaunchDaemon => "启动守护进程",
+        AppManagerResidueKind::HelperTool => "辅助工具",
         AppManagerResidueKind::AppData => "应用数据目录",
         AppManagerResidueKind::RegistryKey => "注册表键",
         AppManagerResidueKind::RegistryValue => "注册表值",
@@ -555,63 +849,124 @@ pub(super) fn should_replace_residue_candidate(
     false
 }
 
-fn candidate_from_related_root(root: &RelatedRootSpec) -> Option<ResidueCandidate> {
-    let kind = root.kind;
-    if kind == AppManagerResidueKind::Install {
-        return None;
+fn risk_level_for_kind(kind: AppManagerResidueKind, scope: AppManagerScope) -> AppManagerRiskLevel {
+    if matches!(
+        kind,
+        AppManagerResidueKind::LaunchDaemon | AppManagerResidueKind::HelperTool
+    ) {
+        return AppManagerRiskLevel::High;
     }
-    let scope = root.scope;
-    let risk_level = if scope == AppManagerScope::System {
-        if kind == AppManagerResidueKind::Startup {
+    if matches!(
+        kind,
+        AppManagerResidueKind::Preferences
+            | AppManagerResidueKind::Startup
+            | AppManagerResidueKind::LaunchAgent
+    ) {
+        return AppManagerRiskLevel::Medium;
+    }
+    if matches!(
+        kind,
+        AppManagerResidueKind::RegistryKey | AppManagerResidueKind::RegistryValue
+    ) {
+        return if scope == AppManagerScope::System {
             AppManagerRiskLevel::High
         } else {
             AppManagerRiskLevel::Medium
-        }
-    } else if matches!(
-        kind,
-        AppManagerResidueKind::Preferences | AppManagerResidueKind::Startup
-    ) {
-        AppManagerRiskLevel::Medium
-    } else {
-        AppManagerRiskLevel::Low
-    };
-    let readonly_reason_code =
-        if scope == AppManagerScope::System && kind == AppManagerResidueKind::Startup {
-            Some(AppReadonlyReasonCode::ManagedByPolicy)
-        } else {
-            None
         };
-    Some(ResidueCandidate {
-        path: root.path.clone(),
-        scope,
+    }
+    AppManagerRiskLevel::Low
+}
+
+fn default_readonly_reason(
+    kind: AppManagerResidueKind,
+    scope: AppManagerScope,
+) -> Option<AppReadonlyReasonCode> {
+    if scope == AppManagerScope::System && kind == AppManagerResidueKind::Startup {
+        return Some(AppReadonlyReasonCode::ManagedByPolicy);
+    }
+    None
+}
+
+fn default_recommended(
+    kind: AppManagerResidueKind,
+    scope: AppManagerScope,
+    confidence: AppManagerResidueConfidence,
+) -> bool {
+    if confidence == AppManagerResidueConfidence::Medium {
+        return false;
+    }
+    if matches!(
         kind,
+        AppManagerResidueKind::LaunchDaemon | AppManagerResidueKind::HelperTool
+    ) {
+        return false;
+    }
+    if scope == AppManagerScope::System
+        && matches!(
+            kind,
+            AppManagerResidueKind::RegistryKey | AppManagerResidueKind::RegistryValue
+        )
+    {
+        return false;
+    }
+    true
+}
+
+fn normalize_candidate(candidate: &mut ResidueCandidate) {
+    candidate.risk_level = risk_level_for_kind(candidate.kind, candidate.scope);
+    if candidate.readonly_reason_code.is_none() {
+        candidate.readonly_reason_code = default_readonly_reason(candidate.kind, candidate.scope);
+    }
+    candidate.recommended = candidate.recommended
+        && default_recommended(candidate.kind, candidate.scope, candidate.confidence);
+}
+
+fn candidate_from_related_root(root: &RelatedRootSpec) -> Option<ResidueCandidate> {
+    if root.kind == AppManagerResidueKind::Install {
+        return None;
+    }
+    let mut candidate = ResidueCandidate {
+        path: root.path.clone(),
+        scope: root.scope,
+        kind: root.kind,
         exists: false,
         filesystem: true,
         match_reason: AppManagerResidueMatchReason::RelatedRoot,
         confidence: AppManagerResidueConfidence::Exact,
         evidence: vec![format!("related_root:{}", root.kind.as_str())],
-        risk_level,
-        recommended: scope == AppManagerScope::User,
-        readonly_reason_code,
-    })
+        risk_level: AppManagerRiskLevel::Low,
+        recommended: true,
+        readonly_reason_code: None,
+    };
+    normalize_candidate(&mut candidate);
+    Some(candidate)
 }
 
-pub(super) fn build_residue_scan_result(item: &ManagedAppDto) -> AppManagerResidueScanResultDto {
-    let roots = collect_related_root_specs(item);
+pub(super) fn build_residue_scan_result(
+    item: &ManagedAppDto,
+    mode: AppManagerResidueScanMode,
+) -> AppManagerResidueScanResultDto {
+    let identity = build_residue_identity_profile(item);
     let mut warnings = Vec::new();
     let mut warning_keys: HashSet<(
         AppManagerScanWarningCode,
         String,
         AppManagerScanWarningDetailCode,
     )> = HashSet::new();
-    let mut candidates = roots
-        .iter()
-        .filter_map(candidate_from_related_root)
-        .collect::<Vec<_>>();
-    candidates.extend(collect_known_residue_candidates(item));
+
+    let mut candidates = collect_quick_residue_candidates(item, &identity);
+
+    if mode == AppManagerResidueScanMode::Deep {
+        let discovery_result = discover_residue_candidates(&identity);
+        candidates.extend(discovery_result.candidates);
+        for warning in discovery_result.warnings {
+            append_scan_warning(&mut warnings, &mut warning_keys, warning);
+        }
+    }
 
     let mut dedup = HashMap::<String, ResidueCandidate>::new();
-    for candidate in candidates {
+    for mut candidate in candidates {
+        normalize_candidate(&mut candidate);
         let key = normalize_path_key(candidate.path.to_string_lossy().as_ref());
         if key.is_empty() {
             continue;
@@ -710,6 +1065,7 @@ pub(super) fn build_residue_scan_result(item: &ManagedAppDto) -> AppManagerResid
 
     AppManagerResidueScanResultDto {
         app_id: item.id.clone(),
+        scan_mode: mode,
         total_size_bytes,
         groups,
         warnings,

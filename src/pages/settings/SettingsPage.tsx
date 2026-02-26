@@ -1,8 +1,8 @@
-import SettingsSidebar from "@/pages/settings/components/SettingsSidebar";
 import ClipboardSettingsSection from "@/pages/settings/components/ClipboardSettingsSection";
 import GeneralSettingsSection from "@/pages/settings/components/GeneralSettingsSection";
 import LauncherSettingsSection from "@/pages/settings/components/LauncherSettingsSection";
 import LoggingSettingsSection from "@/pages/settings/components/LoggingSettingsSection";
+import SettingsSidebar from "@/pages/settings/components/SettingsSidebar";
 import TransferSettingsSection from "@/pages/settings/components/TransferSettingsSection";
 import { useSettingsPageState } from "@/pages/settings/hooks/useSettingsPageState";
 

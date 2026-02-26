@@ -1,0 +1,664 @@
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+import type {
+  AppManagerCleanupDeleteMode,
+  AppManagerCleanupResult,
+  AppManagerIndexUpdatedPayload,
+  AppManagerResidueItem,
+  AppManagerResidueScanResult,
+  ManagedApp,
+  ManagedAppDetail,
+} from "@/components/app-manager/types";
+import {
+  appManagerCleanup,
+  appManagerGetDetailCore,
+  appManagerGetDetailHeavy,
+  appManagerList,
+  appManagerRefreshIndex,
+  appManagerResolveSizes,
+  appManagerRevealPath,
+} from "@/services/app-manager.service";
+
+const PAGE_SIZE = 120;
+const SIZE_BATCH = 10;
+const SIZE_PRIORITY_COUNT = 24;
+const KEYWORD_DEBOUNCE_MS = 220;
+type AppSizeState = "pending" | "resolving" | "exact" | "estimated";
+
+function uniqueById(items: ManagedApp[]): ManagedApp[] {
+  const map = new Map<string, ManagedApp>();
+  for (const item of items) {
+    map.set(item.id, item);
+  }
+  return [...map.values()];
+}
+
+function initialSizeState(item: ManagedApp): AppSizeState {
+  if (item.sizeAccuracy === "exact" && item.sizeBytes !== null) {
+    return "exact";
+  }
+  if (item.sizeBytes !== null) {
+    return "estimated";
+  }
+  return "pending";
+}
+
+function retainById<T>(record: Record<string, T>, keep: Set<string>): Record<string, T> {
+  if (Object.keys(record).length === 0) {
+    return record;
+  }
+  const next: Record<string, T> = {};
+  for (const [key, value] of Object.entries(record)) {
+    if (keep.has(key)) {
+      next[key] = value;
+    }
+  }
+  return next;
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+export function useAppManagerController() {
+  const [items, setItems] = useState<ManagedApp[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [keyword, setKeyword] = useState("");
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [totalCount, setTotalCount] = useState(0);
+  const [indexedAt, setIndexedAt] = useState<number | null>(null);
+  const [revision, setRevision] = useState(0);
+  const [indexState, setIndexState] = useState<"ready" | "building" | "degraded">("ready");
+  const [listError, setListError] = useState<string | null>(null);
+
+  const [selectedAppId, setSelectedAppId] = useState<string | null>(null);
+  const [sizeStateByAppId, setSizeStateByAppId] = useState<Record<string, AppSizeState>>({});
+
+  const [detailCoreById, setDetailCoreById] = useState<Record<string, ManagedAppDetail>>({});
+  const [detailHeavyById, setDetailHeavyById] = useState<Record<string, AppManagerResidueScanResult>>({});
+  const [detailCoreLoadingById, setDetailCoreLoadingById] = useState<Record<string, boolean>>({});
+  const [detailHeavyLoadingById, setDetailHeavyLoadingById] = useState<Record<string, boolean>>({});
+  const [detailError, setDetailError] = useState<string | null>(null);
+
+  const [selectedResidueIdsByAppId, setSelectedResidueIdsByAppId] = useState<Record<string, string[]>>({});
+  const [selectionTouchedByUserByAppId, setSelectionTouchedByUserByAppId] = useState<Record<string, boolean>>({});
+  const [includeMainByAppId, setIncludeMainByAppId] = useState<Record<string, boolean>>({});
+  const [deleteModeByAppId, setDeleteModeByAppId] = useState<Record<string, AppManagerCleanupDeleteMode>>({});
+  const [cleanupLoadingByAppId, setCleanupLoadingByAppId] = useState<Record<string, boolean>>({});
+  const [cleanupResultByAppId, setCleanupResultByAppId] = useState<Record<string, AppManagerCleanupResult>>({});
+  const [cleanupError, setCleanupError] = useState<string | null>(null);
+
+  const sizeQueueRef = useRef<string[]>([]);
+  const sizeQueuedSetRef = useRef<Set<string>>(new Set());
+  const sizeFlushingRef = useRef(false);
+  const sizeStateRef = useRef<Record<string, AppSizeState>>({});
+
+  const itemsRef = useRef<ManagedApp[]>([]);
+  const keywordRef = useRef("");
+  const listRequestSeqRef = useRef(0);
+  const firstListLoadDoneRef = useRef(false);
+
+  const detailCoreByIdRef = useRef<Record<string, ManagedAppDetail>>({});
+  const detailHeavyByIdRef = useRef<Record<string, AppManagerResidueScanResult>>({});
+  const selectedResidueIdsByAppIdRef = useRef<Record<string, string[]>>({});
+  const selectionTouchedByUserByAppIdRef = useRef<Record<string, boolean>>({});
+  const detailHeavyRequestSeqByAppRef = useRef<Record<string, number>>({});
+  const includeMainByAppIdRef = useRef<Record<string, boolean>>({});
+  const deleteModeByAppIdRef = useRef<Record<string, AppManagerCleanupDeleteMode>>({});
+
+  useEffect(() => {
+    sizeStateRef.current = sizeStateByAppId;
+  }, [sizeStateByAppId]);
+
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
+
+  useEffect(() => {
+    keywordRef.current = keyword;
+  }, [keyword]);
+
+  useEffect(() => {
+    detailCoreByIdRef.current = detailCoreById;
+  }, [detailCoreById]);
+
+  useEffect(() => {
+    detailHeavyByIdRef.current = detailHeavyById;
+  }, [detailHeavyById]);
+
+  useEffect(() => {
+    selectedResidueIdsByAppIdRef.current = selectedResidueIdsByAppId;
+  }, [selectedResidueIdsByAppId]);
+
+  useEffect(() => {
+    selectionTouchedByUserByAppIdRef.current = selectionTouchedByUserByAppId;
+  }, [selectionTouchedByUserByAppId]);
+
+  useEffect(() => {
+    includeMainByAppIdRef.current = includeMainByAppId;
+  }, [includeMainByAppId]);
+
+  useEffect(() => {
+    deleteModeByAppIdRef.current = deleteModeByAppId;
+  }, [deleteModeByAppId]);
+
+  const updateSizeState = useCallback((appIds: string[], state: AppSizeState) => {
+    setSizeStateByAppId((prev) => {
+      const next = { ...prev };
+      for (const appId of appIds) {
+        if ((next[appId] ?? "pending") !== "exact") {
+          next[appId] = state;
+        }
+      }
+      return next;
+    });
+  }, []);
+
+  const flushSizeQueue = useCallback(async () => {
+    if (sizeFlushingRef.current) {
+      return;
+    }
+    sizeFlushingRef.current = true;
+
+    try {
+      while (sizeQueueRef.current.length > 0) {
+        const visibleIds = new Set(itemsRef.current.map((item) => item.id));
+        const batch = sizeQueueRef.current.splice(0, SIZE_BATCH);
+        for (const appId of batch) {
+          sizeQueuedSetRef.current.delete(appId);
+        }
+
+        const candidates = batch.filter((appId) => {
+          if (!visibleIds.has(appId)) {
+            return false;
+          }
+          return (sizeStateRef.current[appId] ?? "pending") !== "exact";
+        });
+        if (candidates.length === 0) {
+          continue;
+        }
+
+        updateSizeState(candidates, "resolving");
+        try {
+          const resolved = await appManagerResolveSizes({ appIds: candidates });
+          const resolvedById = new Map(resolved.items.map((item) => [item.appId, item]));
+          setItems((prev) =>
+            prev.map((item) => {
+              const next = resolvedById.get(item.id);
+              if (!next) {
+                return item;
+              }
+              return {
+                ...item,
+                sizeBytes: next.sizeBytes,
+                sizeAccuracy: next.sizeAccuracy,
+                sizeComputedAt: next.sizeComputedAt,
+              };
+            }),
+          );
+          setSizeStateByAppId((prev) => {
+            const next = { ...prev };
+            for (const appId of candidates) {
+              const value = resolvedById.get(appId);
+              if (!value) {
+                next[appId] = "pending";
+                continue;
+              }
+              next[appId] = value.sizeAccuracy === "exact" ? "exact" : "estimated";
+            }
+            return next;
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          setListError(message);
+          updateSizeState(candidates, "pending");
+        }
+        await delay(12);
+      }
+    } finally {
+      sizeFlushingRef.current = false;
+    }
+  }, [updateSizeState]);
+
+  const enqueueSizeResolution = useCallback(
+    (appIds: string[], priority = false) => {
+      const queue = sizeQueueRef.current;
+      for (const appId of appIds) {
+        const state = sizeStateRef.current[appId] ?? "pending";
+        if (state === "exact") {
+          continue;
+        }
+        if (sizeQueuedSetRef.current.has(appId)) {
+          continue;
+        }
+        sizeQueuedSetRef.current.add(appId);
+        if (priority) {
+          queue.unshift(appId);
+        } else {
+          queue.push(appId);
+        }
+      }
+      void flushSizeQueue();
+    },
+    [flushSizeQueue],
+  );
+
+  const applyListPage = useCallback(
+    (nextItems: ManagedApp[], replace: boolean): ManagedApp[] => {
+      const base = replace ? [] : itemsRef.current;
+      const merged = replace ? nextItems : uniqueById([...base, ...nextItems]);
+      const keep = new Set(merged.map((item) => item.id));
+
+      itemsRef.current = merged;
+      setItems(merged);
+
+      setSizeStateByAppId((prev) => {
+        const next: Record<string, AppSizeState> = replace ? {} : retainById(prev, keep);
+        for (const item of merged) {
+          if (!next[item.id]) {
+            next[item.id] = initialSizeState(item);
+          }
+        }
+        return next;
+      });
+
+      if (replace) {
+        sizeQueueRef.current = [];
+        sizeQueuedSetRef.current.clear();
+
+        setDetailCoreById((prev) => retainById(prev, keep));
+        setDetailHeavyById((prev) => retainById(prev, keep));
+        setDetailCoreLoadingById((prev) => retainById(prev, keep));
+        setDetailHeavyLoadingById((prev) => retainById(prev, keep));
+        setSelectedResidueIdsByAppId((prev) => retainById(prev, keep));
+        setSelectionTouchedByUserByAppId((prev) => retainById(prev, keep));
+        setIncludeMainByAppId((prev) => retainById(prev, keep));
+        setDeleteModeByAppId((prev) => retainById(prev, keep));
+        setCleanupLoadingByAppId((prev) => retainById(prev, keep));
+        setCleanupResultByAppId((prev) => retainById(prev, keep));
+      }
+
+      const priority = nextItems.slice(0, SIZE_PRIORITY_COUNT).map((item) => item.id);
+      const rest = nextItems.slice(SIZE_PRIORITY_COUNT).map((item) => item.id);
+      enqueueSizeResolution(priority, true);
+      enqueueSizeResolution(rest, false);
+
+      return merged;
+    },
+    [enqueueSizeResolution],
+  );
+
+  const loadListPage = useCallback(
+    async (cursor?: string, replace = false, keywordValue?: string) => {
+      const requestSeq = ++listRequestSeqRef.current;
+      if (replace) {
+        setLoading(true);
+      } else {
+        setLoadingMore(true);
+      }
+      if (replace) {
+        setListError(null);
+      }
+
+      try {
+        const keywordText = (keywordValue ?? keywordRef.current).trim();
+        const page = await appManagerList({
+          keyword: keywordText ? keywordText : undefined,
+          limit: PAGE_SIZE,
+          cursor,
+        });
+        if (requestSeq !== listRequestSeqRef.current) {
+          return;
+        }
+
+        const mergedItems = applyListPage(page.items, replace);
+        setNextCursor(page.nextCursor);
+        setIndexedAt(page.indexedAt);
+        setRevision(page.revision);
+        setIndexState(page.indexState);
+        setTotalCount(page.totalCount);
+        setSelectedAppId((current) => {
+          if (current && mergedItems.some((item) => item.id === current)) {
+            return current;
+          }
+          return mergedItems[0]?.id ?? null;
+        });
+      } catch (error) {
+        if (requestSeq !== listRequestSeqRef.current) {
+          return;
+        }
+        setListError(error instanceof Error ? error.message : String(error));
+      } finally {
+        if (requestSeq !== listRequestSeqRef.current) {
+          return;
+        }
+        if (replace) {
+          setLoading(false);
+        } else {
+          setLoadingMore(false);
+        }
+      }
+    },
+    [applyListPage],
+  );
+
+  const loadListFirstPage = useCallback(
+    async (keywordValue?: string) => {
+      await loadListPage(undefined, true, keywordValue);
+    },
+    [loadListPage],
+  );
+
+  const refreshList = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await appManagerRefreshIndex();
+      await loadListFirstPage(keywordRef.current);
+    } catch (error) {
+      setListError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadListFirstPage]);
+
+  const loadDetailCore = useCallback(async (appId: string, force = false) => {
+    if (!force && detailCoreByIdRef.current[appId]) {
+      return;
+    }
+    setDetailCoreLoadingById((prev) => ({ ...prev, [appId]: true }));
+    setDetailError(null);
+    try {
+      const detail = await appManagerGetDetailCore(appId);
+      setDetailCoreById((prev) => ({ ...prev, [appId]: detail }));
+    } catch (error) {
+      setDetailError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setDetailCoreLoadingById((prev) => ({ ...prev, [appId]: false }));
+    }
+  }, []);
+
+  const applyHeavyResult = useCallback((appId: string, heavy: AppManagerResidueScanResult) => {
+    setDetailHeavyById((prev) => ({ ...prev, [appId]: heavy }));
+
+    const allItemIds = new Set(heavy.groups.flatMap((group) => group.items.map((item) => item.itemId)));
+    const recommendedIds = heavy.groups
+      .flatMap((group) => group.items)
+      .filter((item) => item.recommended)
+      .map((item) => item.itemId);
+
+    setSelectedResidueIdsByAppId((prev) => {
+      const existing = (prev[appId] ?? []).filter((itemId) => allItemIds.has(itemId));
+      const touched = selectionTouchedByUserByAppIdRef.current[appId] ?? false;
+      const nextSelection = touched ? existing : [...new Set([...existing, ...recommendedIds])];
+      return { ...prev, [appId]: nextSelection };
+    });
+
+    setSelectionTouchedByUserByAppId((prev) => ({ ...prev, [appId]: prev[appId] ?? false }));
+    setIncludeMainByAppId((prev) => ({ ...prev, [appId]: prev[appId] ?? true }));
+    setDeleteModeByAppId((prev) => ({ ...prev, [appId]: prev[appId] ?? "trash" }));
+  }, []);
+
+  const loadDetailHeavy = useCallback(
+    async (appId: string, force = false) => {
+      const cached = detailHeavyByIdRef.current[appId];
+      if (!force && cached?.scanMode === "deep") {
+        return;
+      }
+
+      const nextSeq = (detailHeavyRequestSeqByAppRef.current[appId] ?? 0) + 1;
+      detailHeavyRequestSeqByAppRef.current[appId] = nextSeq;
+      const isLatest = () => detailHeavyRequestSeqByAppRef.current[appId] === nextSeq;
+
+      setDetailHeavyLoadingById((prev) => ({ ...prev, [appId]: true }));
+      setDetailError(null);
+      try {
+        if (!force) {
+          try {
+            const quick = await appManagerGetDetailHeavy(appId, "quick");
+            if (isLatest()) {
+              applyHeavyResult(appId, quick);
+            }
+          } catch {
+            // Quick 失败时继续 deep，避免详情空白。
+          }
+        }
+        const deep = await appManagerGetDetailHeavy(appId, "deep");
+        if (!isLatest()) {
+          return;
+        }
+        applyHeavyResult(appId, deep);
+      } catch (error) {
+        if (!isLatest()) {
+          return;
+        }
+        setDetailError(error instanceof Error ? error.message : String(error));
+      } finally {
+        if (!isLatest()) {
+          return;
+        }
+        setDetailHeavyLoadingById((prev) => ({ ...prev, [appId]: false }));
+      }
+    },
+    [applyHeavyResult],
+  );
+
+  useEffect(() => {
+    const delayMs = firstListLoadDoneRef.current ? KEYWORD_DEBOUNCE_MS : 40;
+    const timer = window.setTimeout(() => {
+      firstListLoadDoneRef.current = true;
+      void loadListFirstPage(keyword);
+    }, delayMs);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [keyword, loadListFirstPage]);
+
+  useEffect(() => {
+    let unlisten: UnlistenFn | null = null;
+    let disposed = false;
+
+    const setup = async () => {
+      const stop = await listen<AppManagerIndexUpdatedPayload>("rtool://app-manager/index-updated", (event) => {
+        if (!event.payload) {
+          return;
+        }
+        setRevision((prev) => Math.max(prev, event.payload.revision));
+        setIndexedAt(event.payload.indexedAt);
+        void loadListFirstPage(keywordRef.current);
+      });
+      if (disposed) {
+        stop();
+        return;
+      }
+      unlisten = stop;
+    };
+
+    void setup();
+
+    return () => {
+      disposed = true;
+      listRequestSeqRef.current += 1;
+      unlisten?.();
+    };
+  }, [loadListFirstPage]);
+
+  useEffect(() => {
+    if (!selectedAppId) {
+      return;
+    }
+    void loadDetailCore(selectedAppId);
+    void loadDetailHeavy(selectedAppId);
+    enqueueSizeResolution([selectedAppId], true);
+  }, [enqueueSizeResolution, loadDetailCore, loadDetailHeavy, selectedAppId]);
+
+  const selectedApp = useMemo(() => items.find((item) => item.id === selectedAppId) ?? null, [items, selectedAppId]);
+  const selectedCore = selectedApp ? (detailCoreById[selectedApp.id] ?? null) : null;
+  const selectedHeavy = selectedApp ? (detailHeavyById[selectedApp.id] ?? null) : null;
+  const selectedCoreLoading = selectedApp ? Boolean(detailCoreLoadingById[selectedApp.id]) : false;
+  const selectedHeavyLoading = selectedApp ? Boolean(detailHeavyLoadingById[selectedApp.id]) : false;
+  const selectedDeepCompleting = selectedApp
+    ? Boolean(detailHeavyLoadingById[selectedApp.id] && detailHeavyById[selectedApp.id]?.scanMode === "quick")
+    : false;
+  const selectedResidueIds = selectedApp ? (selectedResidueIdsByAppId[selectedApp.id] ?? []) : [];
+  const selectedIncludeMain = selectedApp ? (includeMainByAppId[selectedApp.id] ?? true) : true;
+  const selectedDeleteMode = selectedApp ? (deleteModeByAppId[selectedApp.id] ?? "trash") : "trash";
+  const selectedCleanupResult = selectedApp ? (cleanupResultByAppId[selectedApp.id] ?? null) : null;
+  const selectedCleanupLoading = selectedApp ? Boolean(cleanupLoadingByAppId[selectedApp.id]) : false;
+
+  const toggleResidue = useCallback((appId: string, itemId: string, checked: boolean) => {
+    setSelectedResidueIdsByAppId((prev) => {
+      const current = new Set(prev[appId] ?? []);
+      if (checked) {
+        current.add(itemId);
+      } else {
+        current.delete(itemId);
+      }
+      return { ...prev, [appId]: [...current] };
+    });
+    setSelectionTouchedByUserByAppId((prev) => ({ ...prev, [appId]: true }));
+  }, []);
+
+  const setIncludeMain = useCallback((appId: string, includeMain: boolean) => {
+    setIncludeMainByAppId((prev) => ({ ...prev, [appId]: includeMain }));
+  }, []);
+
+  const setDeleteMode = useCallback((appId: string, mode: AppManagerCleanupDeleteMode) => {
+    setDeleteModeByAppId((prev) => ({ ...prev, [appId]: mode }));
+  }, []);
+
+  const runCleanup = useCallback(
+    async (
+      app: ManagedApp,
+      payload: {
+        selectedItemIds: string[];
+        includeMainApp: boolean;
+        deleteMode: AppManagerCleanupDeleteMode;
+      },
+    ) => {
+      if (!payload.includeMainApp && payload.selectedItemIds.length === 0) {
+        setCleanupError("请至少选择一个清理项");
+        return;
+      }
+
+      const appId = app.id;
+      setCleanupLoadingByAppId((prev) => ({ ...prev, [appId]: true }));
+      setCleanupError(null);
+      try {
+        const result = await appManagerCleanup({
+          appId,
+          selectedItemIds: payload.selectedItemIds,
+          includeMainApp: payload.includeMainApp,
+          deleteMode: payload.deleteMode,
+          skipOnError: true,
+          confirmedFingerprint: payload.includeMainApp ? app.fingerprint : undefined,
+        });
+        setCleanupResultByAppId((prev) => ({ ...prev, [appId]: result }));
+        setSelectedResidueIdsByAppId((prev) => ({ ...prev, [appId]: [] }));
+        setSelectionTouchedByUserByAppId((prev) => ({ ...prev, [appId]: false }));
+        await loadListFirstPage(keywordRef.current);
+        await Promise.all([loadDetailCore(appId, true), loadDetailHeavy(appId, true)]);
+      } catch (error) {
+        setCleanupError(error instanceof Error ? error.message : String(error));
+      } finally {
+        setCleanupLoadingByAppId((prev) => ({ ...prev, [appId]: false }));
+      }
+    },
+    [loadDetailCore, loadDetailHeavy, loadListFirstPage],
+  );
+
+  const cleanupNow = useCallback(async () => {
+    if (!selectedApp) {
+      return;
+    }
+    const appId = selectedApp.id;
+    await runCleanup(selectedApp, {
+      selectedItemIds: selectedResidueIdsByAppIdRef.current[appId] ?? [],
+      includeMainApp: includeMainByAppIdRef.current[appId] ?? true,
+      deleteMode: deleteModeByAppIdRef.current[appId] ?? "trash",
+    });
+  }, [runCleanup, selectedApp]);
+
+  const retryFailed = useCallback(async () => {
+    if (!selectedApp || !selectedCleanupResult) {
+      return;
+    }
+    const retryIds = selectedCleanupResult.failed.map((item) => item.itemId).filter((itemId) => itemId !== "main-app");
+    if (retryIds.length === 0) {
+      return;
+    }
+    const dedupedRetryIds = [...new Set(retryIds)];
+    setSelectedResidueIdsByAppId((prev) => ({ ...prev, [selectedApp.id]: dedupedRetryIds }));
+    setIncludeMainByAppId((prev) => ({ ...prev, [selectedApp.id]: false }));
+    await runCleanup(selectedApp, {
+      selectedItemIds: dedupedRetryIds,
+      includeMainApp: false,
+      deleteMode: deleteModeByAppIdRef.current[selectedApp.id] ?? "trash",
+    });
+  }, [runCleanup, selectedApp, selectedCleanupResult]);
+
+  const revealPath = useCallback(async (path: string) => {
+    await appManagerRevealPath(path);
+  }, []);
+
+  const scanAgain = useCallback(async () => {
+    if (!selectedApp) {
+      return;
+    }
+    await loadDetailHeavy(selectedApp.id, true);
+  }, [loadDetailHeavy, selectedApp]);
+
+  const hasMore = Boolean(nextCursor);
+
+  const onLoadMore = useCallback(async () => {
+    if (!nextCursor || loadingMore) {
+      return;
+    }
+    await loadListPage(nextCursor, false, keywordRef.current);
+  }, [loadListPage, loadingMore, nextCursor]);
+
+  return {
+    items,
+    loading: loading || refreshing,
+    loadingMore,
+    hasMore,
+    keyword,
+    setKeyword,
+    totalCount,
+    indexedAt,
+    revision,
+    indexState,
+    listError,
+    selectedAppId,
+    setSelectedAppId,
+    selectedApp,
+    refreshList,
+    onLoadMore,
+    selectedCore,
+    selectedHeavy,
+    selectedCoreLoading,
+    selectedHeavyLoading,
+    selectedDeepCompleting,
+    detailError,
+    selectedResidueIds,
+    selectedIncludeMain,
+    selectedDeleteMode,
+    setIncludeMain,
+    setDeleteMode,
+    toggleResidue,
+    cleanupNow,
+    selectedCleanupLoading,
+    selectedCleanupResult,
+    cleanupError,
+    retryFailed,
+    revealPath,
+    scanAgain,
+  };
+}
+
+export type AppManagerController = ReturnType<typeof useAppManagerController>;
+export type AppManagerResidueEntry = AppManagerResidueItem;

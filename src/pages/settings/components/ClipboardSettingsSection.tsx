@@ -48,7 +48,8 @@ export default function ClipboardSettingsSection(props: ClipboardSettingsSection
             <label className="text-xs text-text-secondary">{t("clipboard.sizePreset")}</label>
             <div role="radiogroup" aria-label={t("clipboard.sizePreset")} className="grid gap-2 sm:grid-cols-2">
               {props.state.presets.map((presetValue) => {
-                const active = props.state.sizeThresholdMode === "preset" && props.state.selectedPresetMb === presetValue;
+                const active =
+                  props.state.sizeThresholdMode === "preset" && props.state.selectedPresetMb === presetValue;
                 return (
                   <Button
                     key={presetValue}

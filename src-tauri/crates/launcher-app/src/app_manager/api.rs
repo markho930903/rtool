@@ -1,5 +1,13 @@
 use super::*;
 
+fn scan_cache_key(app_id: &str, mode: AppManagerResidueScanMode) -> String {
+    let mode_key = match mode {
+        AppManagerResidueScanMode::Quick => "quick",
+        AppManagerResidueScanMode::Deep => "deep",
+    };
+    format!("{app_id}|{mode_key}")
+}
+
 pub fn list_managed_apps(
     app: &dyn LauncherHost,
     query: AppManagerQueryDto,
@@ -48,6 +56,7 @@ pub fn list_managed_apps(
         return Ok(AppManagerPageDto {
             items: Vec::new(),
             next_cursor: None,
+            total_count: total as u64,
             indexed_at: cache.indexed_at,
             revision: cache.revision,
             index_state: cache.index_state,
@@ -65,10 +74,85 @@ pub fn list_managed_apps(
     Ok(AppManagerPageDto {
         items,
         next_cursor,
+        total_count: total as u64,
         indexed_at: cache.indexed_at,
         revision: cache.revision,
         index_state: cache.index_state,
     })
+}
+
+pub fn list_managed_apps_snapshot_meta(app: &dyn LauncherHost) -> AppResult<AppManagerSnapshotMetaDto> {
+    let cache = load_or_refresh_index(app, false)?;
+    Ok(AppManagerSnapshotMetaDto {
+        indexed_at: cache.indexed_at,
+        revision: cache.revision,
+        total_count: cache.items.len() as u64,
+        index_state: cache.index_state,
+    })
+}
+
+pub fn resolve_managed_app_sizes(
+    app: &dyn LauncherHost,
+    input: AppManagerResolveSizesInputDto,
+) -> AppResult<AppManagerResolveSizesResultDto> {
+    let cache = load_or_refresh_index(app, false)?;
+    let wanted = input
+        .app_ids
+        .iter()
+        .map(|value| value.as_str())
+        .collect::<HashSet<_>>();
+    if wanted.is_empty() {
+        return Ok(AppManagerResolveSizesResultDto { items: Vec::new() });
+    }
+
+    let mut resolved = Vec::new();
+    for item in cache.items.iter().filter(|candidate| wanted.contains(candidate.id.as_str())) {
+        let size_path = resolve_app_size_path(Path::new(item.path.as_str()));
+        let exact_size_bytes = exact_path_size_bytes(size_path.as_path());
+        let (size_bytes, size_accuracy, size_computed_at) = if let Some(size_bytes) = exact_size_bytes {
+            (
+                Some(size_bytes),
+                AppManagerSizeAccuracy::Exact,
+                Some(now_unix_seconds()),
+            )
+        } else if let Some(size_bytes) = try_get_path_size_bytes(size_path.as_path()) {
+            (
+                Some(size_bytes),
+                AppManagerSizeAccuracy::Estimated,
+                Some(now_unix_seconds()),
+            )
+        } else {
+            (None, AppManagerSizeAccuracy::Estimated, None)
+        };
+        resolved.push(AppManagerResolvedSizeDto {
+            app_id: item.id.clone(),
+            size_bytes,
+            size_accuracy,
+            size_computed_at,
+        });
+    }
+
+    if !resolved.is_empty() {
+        let runtime = app_index_runtime();
+        let mut guard = runtime
+            .cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        for value in &resolved {
+            if let Some(item) = guard
+                .items
+                .iter_mut()
+                .find(|candidate| candidate.id == value.app_id)
+            {
+                item.size_bytes = value.size_bytes;
+                item.size_accuracy = value.size_accuracy;
+                item.size_computed_at = value.size_computed_at;
+                item.fingerprint = fingerprint_for_app(item);
+            }
+        }
+    }
+
+    Ok(AppManagerResolveSizesResultDto { items: resolved })
 }
 
 pub fn refresh_managed_apps_index(app: &dyn LauncherHost) -> AppResult<AppManagerActionResultDto> {
@@ -175,11 +259,26 @@ pub fn get_managed_app_detail(
     Ok(build_app_detail(item))
 }
 
+pub fn get_managed_app_detail_core(
+    app: &dyn LauncherHost,
+    query: AppManagerDetailQueryDto,
+) -> AppResult<ManagedAppDetailDto> {
+    get_managed_app_detail(app, query)
+}
+
+pub fn get_managed_app_detail_heavy(
+    app: &dyn LauncherHost,
+    input: AppManagerResidueScanInputDto,
+) -> AppResult<AppManagerResidueScanResultDto> {
+    scan_managed_app_residue(app, input)
+}
+
 pub fn scan_managed_app_residue(
     app: &dyn LauncherHost,
     input: AppManagerResidueScanInputDto,
 ) -> AppResult<AppManagerResidueScanResultDto> {
     cleanup_stale_scan_cache();
+    let scan_mode = input.mode.unwrap_or(AppManagerResidueScanMode::Deep);
     let cache = load_or_refresh_index(app, false)?;
     let item = cache
         .items
@@ -188,13 +287,24 @@ pub fn scan_managed_app_residue(
         .cloned()
         .ok_or_else(|| app_error(AppManagerErrorCode::NotFound, "应用不存在或索引已过期"))?;
 
-    let result = build_residue_scan_result(&item);
+    let cache_key = scan_cache_key(item.id.as_str(), scan_mode);
+    let cached = {
+        let scan_cache = residue_scan_cache()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        scan_cache.get(cache_key.as_str()).map(|entry| entry.result.clone())
+    };
+    if let Some(result) = cached {
+        return Ok(result);
+    }
+
+    let result = build_residue_scan_result(&item, scan_mode);
     {
         let mut scan_cache = residue_scan_cache()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         scan_cache.insert(
-            item.id.clone(),
+            cache_key,
             ResidueScanCacheEntry {
                 refreshed_at: Instant::now(),
                 result: result.clone(),
@@ -221,10 +331,11 @@ pub fn cleanup_managed_app_residue(
         let scan_cache = residue_scan_cache()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let deep_key = scan_cache_key(item.id.as_str(), AppManagerResidueScanMode::Deep);
         scan_cache
-            .get(item.id.as_str())
+            .get(deep_key.as_str())
             .map(|entry| entry.result.clone())
-            .unwrap_or_else(|| build_residue_scan_result(&item))
+            .unwrap_or_else(|| build_residue_scan_result(&item, AppManagerResidueScanMode::Deep))
     };
 
     let result = execute_cleanup_plan(&item, &scan_result, input)?;
@@ -249,10 +360,11 @@ pub fn export_managed_app_scan_result(
         let scan_cache = residue_scan_cache()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let deep_key = scan_cache_key(item.id.as_str(), AppManagerResidueScanMode::Deep);
         scan_cache
-            .get(item.id.as_str())
+            .get(deep_key.as_str())
             .map(|entry| entry.result.clone())
-            .unwrap_or_else(|| build_residue_scan_result(&item))
+            .unwrap_or_else(|| build_residue_scan_result(&item, AppManagerResidueScanMode::Deep))
     };
     let detail = build_app_detail(item.clone());
 

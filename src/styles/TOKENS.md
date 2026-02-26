@@ -54,3 +54,12 @@ pnpm tokens:check
 1. 先加 token，再替换类名，最后清理旧写法。
 2. 先改高频复用组件（Button/Input/Select），再改页面级业务样式。
 3. 每次迁移后执行 `pnpm lint && pnpm build && pnpm tokens:check`。
+
+## 7. 滚动条 Token
+
+1. 滚动条样式统一由 `theme.css` 的全局 token 控制，禁止在业务组件单独定义 `::-webkit-scrollbar*`。
+2. 尺寸 token：
+   `--scrollbar-size`、`--scrollbar-radius`、`--scrollbar-thumb-min-size`。
+3. 颜色与阴影 token：
+   `--color-scrollbar-thumb`、`--color-scrollbar-thumb-hover`、`--color-scrollbar-thumb-active`、`--color-scrollbar-thumb-edge`、`--shadow-scrollbar-thumb`。
+4. 轨道（track）应保持透明，默认 thumb 隐藏；仅在 hover/focus/active 交互态显现液态玻璃效果。

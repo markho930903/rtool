@@ -4,9 +4,11 @@ import type { ChoiceOrientation, UiSize } from "@/components/ui/types";
 import { cx } from "@/components/ui/utils";
 
 type RadioSize = Extract<UiSize, "sm" | "default" | "md">;
+export type RadioVariant = "default" | "card";
 
 export interface RadioProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "type" | "size"> {
   size?: RadioSize;
+  variant?: RadioVariant;
   label?: ReactNode;
   description?: ReactNode;
   wrapperClassName?: string;
@@ -19,8 +21,20 @@ const sizeClassMap: Record<RadioSize, string> = {
 };
 
 export const Radio = forwardRef<HTMLInputElement, RadioProps>(function Radio(props, ref) {
-  const { size = "default", label, description, wrapperClassName, className, disabled, children, ...rest } = props;
+  const {
+    size = "default",
+    variant = "default",
+    label,
+    description,
+    wrapperClassName,
+    className,
+    disabled,
+    children,
+    ...rest
+  } = props;
   const finalLabel = label ?? children;
+  const isCard = variant === "card";
+  const checked = Boolean(rest.checked);
   const inputClassName = cx(
     "m-0 shrink-0 rounded-full border border-border-strong bg-surface text-accent accent-accent",
     "outline-none focus-visible:ring-2 focus-visible:ring-accent/55 focus-visible:ring-offset-1 focus-visible:ring-offset-app",
@@ -34,7 +48,16 @@ export const Radio = forwardRef<HTMLInputElement, RadioProps>(function Radio(pro
   }
 
   return (
-    <label className={cx("inline-flex items-start gap-2 text-sm text-text-secondary", wrapperClassName)}>
+    <label
+      className={cx(
+        isCard
+          ? "inline-flex min-h-10 items-center gap-2 overflow-visible rounded-lg border border-border-glass bg-surface-glass-soft px-3 py-2 text-xs text-text-secondary shadow-inset-soft transition-colors duration-150 hover:border-border-glass-strong hover:bg-surface-glass"
+          : "inline-flex items-start gap-2 text-sm text-text-secondary",
+        isCard && checked ? "border-accent/70 bg-accent/10 text-text-primary" : null,
+        disabled ? "cursor-not-allowed opacity-60" : null,
+        wrapperClassName,
+      )}
+    >
       <input {...rest} ref={ref} type="radio" disabled={disabled} className={inputClassName} />
       <span className="inline-flex flex-col gap-0.5">
         {finalLabel ? <span>{finalLabel}</span> : null}
@@ -59,6 +82,7 @@ export interface RadioGroupProps {
   onValueChange?: (value: string) => void;
   orientation?: ChoiceOrientation;
   size?: RadioSize;
+  variant?: RadioVariant;
   disabled?: boolean;
   className?: string;
   optionClassName?: string;
@@ -78,6 +102,7 @@ export function RadioGroup(props: RadioGroupProps) {
     onValueChange,
     orientation = "vertical",
     size = "default",
+    variant = "default",
     disabled = false,
     className,
     optionClassName,
@@ -106,6 +131,7 @@ export function RadioGroup(props: RadioGroupProps) {
             onChange={() => handleChange(option.value)}
             disabled={optionDisabled}
             size={size}
+            variant={variant}
             label={option.label}
             description={option.description}
             wrapperClassName={optionClassName}

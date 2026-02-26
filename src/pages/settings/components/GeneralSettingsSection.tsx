@@ -217,7 +217,9 @@ export default function GeneralSettingsSection(props: GeneralSettingsSectionProp
             {props.state.localeCatalogLoading ? <LoadingIndicator text={t("common:status.loading")} /> : null}
           </div>
 
-          {props.state.localeCatalogError ? <p className="m-0 text-xs text-danger">{props.state.localeCatalogError}</p> : null}
+          {props.state.localeCatalogError ? (
+            <p className="m-0 text-xs text-danger">{props.state.localeCatalogError}</p>
+          ) : null}
           {props.state.importMessage ? (
             <p className={`m-0 text-xs ${props.state.importMessage.isError ? "text-danger" : "text-text-secondary"}`}>
               {props.state.importMessage.text}

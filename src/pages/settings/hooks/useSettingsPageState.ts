@@ -663,7 +663,8 @@ export function useSettingsPageState(): UseSettingsPageStateResult {
     logMinLevel === "warn" ||
     logMinLevel === "error";
 
-  const loggingInvalid = !validMinLevel || logKeepDaysInvalid || logHighFreqWindowInvalid || logHighFreqMaxPerKeyInvalid;
+  const loggingInvalid =
+    !validMinLevel || logKeepDaysInvalid || logHighFreqWindowInvalid || logHighFreqMaxPerKeyInvalid;
 
   const loggingUnchanged =
     loggingConfig !== null &&
@@ -674,20 +675,28 @@ export function useSettingsPageState(): UseSettingsPageStateResult {
     loggingConfig.highFreqMaxPerKey === parsedHighFreqMaxPerKey &&
     loggingConfig.allowRawView === logAllowRawView;
 
-  const parsedTransferCleanupDays = useMemo(() => parsePositiveInt(transferAutoCleanupDaysInput), [transferAutoCleanupDaysInput]);
+  const parsedTransferCleanupDays = useMemo(
+    () => parsePositiveInt(transferAutoCleanupDaysInput),
+    [transferAutoCleanupDaysInput],
+  );
   const transferDirInvalid = transferDefaultDirInput.trim().length === 0;
   const transferCleanupInvalid =
     parsedTransferCleanupDays === null || parsedTransferCleanupDays < 1 || parsedTransferCleanupDays > 365;
 
   const parsedLauncherDepth = useMemo(() => parsePositiveInt(launcherDepthInput), [launcherDepthInput]);
-  const parsedLauncherItemsPerRoot = useMemo(() => parsePositiveInt(launcherItemsPerRootInput), [launcherItemsPerRootInput]);
+  const parsedLauncherItemsPerRoot = useMemo(
+    () => parsePositiveInt(launcherItemsPerRootInput),
+    [launcherItemsPerRootInput],
+  );
   const parsedLauncherTotalItems = useMemo(() => parsePositiveInt(launcherTotalItemsInput), [launcherTotalItemsInput]);
   const parsedLauncherRefresh = useMemo(() => parsePositiveInt(launcherRefreshInput), [launcherRefreshInput]);
   const launcherRoots = useMemo(() => parseLineArray(launcherRootsInput), [launcherRootsInput]);
   const launcherExcludes = useMemo(() => parseLineArray(launcherExcludeInput), [launcherExcludeInput]);
 
   const launcherDepthInvalid =
-    parsedLauncherDepth === null || parsedLauncherDepth < MIN_LAUNCHER_DEPTH || parsedLauncherDepth > MAX_LAUNCHER_DEPTH;
+    parsedLauncherDepth === null ||
+    parsedLauncherDepth < MIN_LAUNCHER_DEPTH ||
+    parsedLauncherDepth > MAX_LAUNCHER_DEPTH;
   const launcherItemsPerRootInvalid =
     parsedLauncherItemsPerRoot === null ||
     parsedLauncherItemsPerRoot < MIN_LAUNCHER_ITEMS_PER_ROOT ||
@@ -703,7 +712,11 @@ export function useSettingsPageState(): UseSettingsPageStateResult {
   const launcherRootsInvalid = launcherRoots.length === 0;
 
   const launcherInvalid =
-    launcherRootsInvalid || launcherDepthInvalid || launcherItemsPerRootInvalid || launcherTotalItemsInvalid || launcherRefreshInvalid;
+    launcherRootsInvalid ||
+    launcherDepthInvalid ||
+    launcherItemsPerRootInvalid ||
+    launcherTotalItemsInvalid ||
+    launcherRefreshInvalid;
 
   const launcherUnchanged =
     launcherSettings !== null &&
@@ -969,14 +982,21 @@ export function useSettingsPageState(): UseSettingsPageStateResult {
       const message = saveError instanceof Error ? saveError.message : String(saveError);
       const isDiskLowError = message.includes("clipboard_disk_space_low");
       setSaveMessage({
-        text: isDiskLowError ? t("clipboard.saveFailedDiskLow", { minMb: 512 }) : t("clipboard.saveFailed", { message }),
+        text: isDiskLowError
+          ? t("clipboard.saveFailedDiskLow", { minMb: 512 })
+          : t("clipboard.saveFailed", { message }),
         isError: true,
       });
     }
   };
 
   const handleSaveLogging = async () => {
-    if (!validMinLevel || parsedKeepDays === null || parsedHighFreqWindowMs === null || parsedHighFreqMaxPerKey === null) {
+    if (
+      !validMinLevel ||
+      parsedKeepDays === null ||
+      parsedHighFreqWindowMs === null ||
+      parsedHighFreqMaxPerKey === null
+    ) {
       setLoggingSaveMessage({ text: t("logging.saveFailedInput"), isError: true });
       return;
     }

@@ -3,10 +3,14 @@ import type {
   AppManagerCleanupInput,
   AppManagerCleanupResult,
   AppManagerExportScanResult,
+  AppManagerResolveSizesInput,
+  AppManagerResolveSizesResult,
   AppManagerResidueScanResult,
+  AppManagerSnapshotMeta,
   ManagedAppDetail,
   AppManagerPage,
   AppManagerQuery,
+  AppManagerResidueScanMode,
   AppManagerStartupUpdateInput,
   AppManagerUninstallInput,
 } from "@/components/app-manager/types";
@@ -17,7 +21,10 @@ import type {
   AppManagerExportScanResultDto,
   AppManagerPageDto,
   AppManagerQueryDto,
+  AppManagerResolveSizesInputDto,
+  AppManagerResolveSizesResultDto,
   AppManagerResidueScanResultDto,
+  AppManagerSnapshotMetaDto,
   AppManagerStartupUpdateInputDto,
   AppManagerUninstallInputDto,
   ManagedAppDetailDto,
@@ -31,6 +38,20 @@ export async function appManagerList(query?: AppManagerQuery): Promise<AppManage
   return dto as AppManagerPage;
 }
 
+export async function appManagerListSnapshotMeta(): Promise<AppManagerSnapshotMeta> {
+  const dto = await invokeWithLog<AppManagerSnapshotMetaDto>("app_manager_list_snapshot_meta");
+  return dto as AppManagerSnapshotMeta;
+}
+
+export async function appManagerResolveSizes(
+  input: AppManagerResolveSizesInput,
+): Promise<AppManagerResolveSizesResult> {
+  const dto = await invokeWithLog<AppManagerResolveSizesResultDto>("app_manager_resolve_sizes", {
+    input: input as AppManagerResolveSizesInputDto,
+  });
+  return dto as AppManagerResolveSizesResult;
+}
+
 export async function appManagerRefreshIndex(): Promise<AppManagerActionResult> {
   const dto = await invokeWithLog<AppManagerActionResultDto>("app_manager_refresh_index");
   return dto as AppManagerActionResult;
@@ -41,8 +62,25 @@ export async function appManagerGetDetail(appId: string): Promise<ManagedAppDeta
   return dto as ManagedAppDetail;
 }
 
+export async function appManagerGetDetailCore(appId: string): Promise<ManagedAppDetail> {
+  const dto = await invokeWithLog<ManagedAppDetailDto>("app_manager_get_detail_core", { query: { appId } });
+  return dto as ManagedAppDetail;
+}
+
+export async function appManagerGetDetailHeavy(
+  appId: string,
+  mode: AppManagerResidueScanMode = "deep",
+): Promise<AppManagerResidueScanResult> {
+  const dto = await invokeWithLog<AppManagerResidueScanResultDto>("app_manager_get_detail_heavy", {
+    input: { appId, mode },
+  });
+  return dto as AppManagerResidueScanResult;
+}
+
 export async function appManagerScanResidue(appId: string): Promise<AppManagerResidueScanResult> {
-  const dto = await invokeWithLog<AppManagerResidueScanResultDto>("app_manager_scan_residue", { input: { appId } });
+  const dto = await invokeWithLog<AppManagerResidueScanResultDto>("app_manager_scan_residue", {
+    input: { appId, mode: "deep" },
+  });
   return dto as AppManagerResidueScanResult;
 }
 

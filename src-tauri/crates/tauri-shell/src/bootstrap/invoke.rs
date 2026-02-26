@@ -3,7 +3,11 @@ pub(crate) fn with_invoke_handler(
 ) -> tauri::Builder<tauri::Wry> {
     builder.invoke_handler(tauri::generate_handler![
         crate::features::app_manager::commands::app_manager_list,
+        crate::features::app_manager::commands::app_manager_list_snapshot_meta,
+        crate::features::app_manager::commands::app_manager_resolve_sizes,
         crate::features::app_manager::commands::app_manager_get_detail,
+        crate::features::app_manager::commands::app_manager_get_detail_core,
+        crate::features::app_manager::commands::app_manager_get_detail_heavy,
         crate::features::app_manager::commands::app_manager_scan_residue,
         crate::features::app_manager::commands::app_manager_cleanup,
         crate::features::app_manager::commands::app_manager_export_scan_result,

@@ -102,8 +102,16 @@ export type AppManagerIdentitySource = "bundle_id" | "registry" | "path";
 export type AppManagerPageDto = {
   items: Array<ManagedAppDto>;
   nextCursor: string | null;
+  totalCount: number;
   indexedAt: number;
   revision: number;
+  indexState: AppManagerIndexState;
+};
+
+export type AppManagerSnapshotMetaDto = {
+  indexedAt: number;
+  revision: number;
+  totalCount: number;
   indexState: AppManagerIndexState;
 };
 
@@ -152,6 +160,14 @@ export type AppManagerResidueKind =
   | "preferences"
   | "logs"
   | "startup"
+  | "app_script"
+  | "container"
+  | "group_container"
+  | "saved_state"
+  | "webkit_data"
+  | "launch_agent"
+  | "launch_daemon"
+  | "helper_tool"
   | "app_data"
   | "registry_key"
   | "registry_value"
@@ -160,16 +176,37 @@ export type AppManagerResidueKind =
 export type AppManagerResidueMatchReason =
   | "related_root"
   | "bundle_id"
+  | "extension_bundle"
+  | "entitlement_group"
+  | "identifier_pattern"
+  | "keyword_token"
   | "startup_label"
   | "startup_shortcut"
   | "uninstall_registry"
   | "startup_registry"
   | "run_registry";
 
-export type AppManagerResidueScanInputDto = { appId: string };
+export type AppManagerResidueScanMode = "quick" | "deep";
+
+export type AppManagerResidueScanInputDto = {
+  appId: string;
+  mode: AppManagerResidueScanMode | null;
+};
+
+export type AppManagerResolveSizesInputDto = { appIds: Array<string> };
+
+export type AppManagerResolvedSizeDto = {
+  appId: string;
+  sizeBytes: number | null;
+  sizeAccuracy: AppManagerSizeAccuracy;
+  sizeComputedAt: number | null;
+};
+
+export type AppManagerResolveSizesResultDto = { items: Array<AppManagerResolvedSizeDto> };
 
 export type AppManagerResidueScanResultDto = {
   appId: string;
+  scanMode: AppManagerResidueScanMode;
   totalSizeBytes: number;
   groups: Array<AppManagerResidueGroupDto>;
   warnings: Array<AppManagerScanWarningDto>;
@@ -326,7 +363,11 @@ export type CommandKey =
   | "transfer_clear_history"
   | "transfer_open_download_dir"
   | "app_manager_list"
+  | "app_manager_list_snapshot_meta"
+  | "app_manager_resolve_sizes"
   | "app_manager_get_detail"
+  | "app_manager_get_detail_core"
+  | "app_manager_get_detail_heavy"
   | "app_manager_scan_residue"
   | "app_manager_cleanup"
   | "app_manager_export_scan_result"
@@ -642,7 +683,6 @@ export type ManagedAppDto = {
   riskLevel: AppManagerRiskLevel;
   fingerprint: string;
 };
-
 
 export type ReloadLocalesResult = {
   success: boolean;

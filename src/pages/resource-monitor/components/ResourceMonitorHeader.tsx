@@ -20,11 +20,17 @@ export default function ResourceMonitorHeader(props: ResourceMonitorHeaderProps)
 
   return (
     <section className="ui-glass-panel-strong rounded-2xl p-4">
-      <div className="font-mono ui-text-micro uppercase tracking-ui-wider text-text-muted">rtool / resource monitor</div>
+      <div className="font-mono ui-text-micro uppercase tracking-ui-wider text-text-muted">
+        rtool / resource monitor
+      </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <h1 className="m-0 text-xl font-semibold tracking-tight text-text-primary">{t("header.title")}</h1>
         <span className="ui-glass-chip px-2 py-0.5 font-mono ui-text-micro uppercase tracking-ui-wide text-accent">
-          {props.loading && !props.initialized ? t("status.booting") : props.error ? t("status.degraded") : t("status.online")}
+          {props.loading && !props.initialized
+            ? t("status.booting")
+            : props.error
+              ? t("status.degraded")
+              : t("status.online")}
         </span>
       </div>
       <p className="mt-2 text-sm text-text-secondary">{t("header.subtitle")}</p>

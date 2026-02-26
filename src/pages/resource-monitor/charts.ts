@@ -88,12 +88,7 @@ function clampRangeWidth(range: [number, number], maxSpan: number): [number, num
   return normalizeRange([nextStart, nextEnd]);
 }
 
-function resolveVisibleCount(
-  width: number,
-  pixelsPerUnit: number,
-  minCount: number,
-  maxCount: number,
-): number {
+function resolveVisibleCount(width: number, pixelsPerUnit: number, minCount: number, maxCount: number): number {
   return clamp(Math.floor(width / pixelsPerUnit), minCount, maxCount);
 }
 

@@ -380,7 +380,9 @@ export function useResourceMonitorData(): UseResourceMonitorDataResult {
 
   const moduleChartData = useMemo(
     () =>
-      buildModuleChartData(visibleAttributionSnapshots, moduleTopIds, formatTimeLabel, (moduleId) => t(`module.${moduleId}`)),
+      buildModuleChartData(visibleAttributionSnapshots, moduleTopIds, formatTimeLabel, (moduleId) =>
+        t(`module.${moduleId}`),
+      ),
     [formatTimeLabel, moduleTopIds, t, visibleAttributionSnapshots],
   );
 
@@ -397,7 +399,10 @@ export function useResourceMonitorData(): UseResourceMonitorDataResult {
   }, [visibleAttributionSnapshots]);
 
   const crateChartData = useMemo(
-    () => buildCrateChartData(visibleAttributionSnapshots, crateTopIds, formatTimeLabel, (crateId) => t(`crate.${crateId}`)),
+    () =>
+      buildCrateChartData(visibleAttributionSnapshots, crateTopIds, formatTimeLabel, (crateId) =>
+        t(`crate.${crateId}`),
+      ),
     [crateTopIds, formatTimeLabel, t, visibleAttributionSnapshots],
   );
 
@@ -448,7 +453,14 @@ export function useResourceMonitorData(): UseResourceMonitorDataResult {
         hint: t("metric.activeModules.hint"),
       },
     ];
-  }, [moduleStats, overview?.processCpuPercent, overview?.processMemoryBytes, overview?.systemTotalMemoryBytes, overview?.systemUsedMemoryBytes, t]);
+  }, [
+    moduleStats,
+    overview?.processCpuPercent,
+    overview?.processMemoryBytes,
+    overview?.systemTotalMemoryBytes,
+    overview?.systemUsedMemoryBytes,
+    t,
+  ]);
 
   const analysisRows = useMemo<ResourceAnalysisRow[]>(
     () =>

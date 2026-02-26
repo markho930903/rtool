@@ -68,7 +68,12 @@ export default function TransferSettingsSection(props: TransferSettingsSectionPr
           <Button
             size="default"
             variant="primary"
-            disabled={props.state.loading || props.state.saving || props.state.transferDirInvalid || props.state.transferCleanupInvalid}
+            disabled={
+              props.state.loading ||
+              props.state.saving ||
+              props.state.transferDirInvalid ||
+              props.state.transferCleanupInvalid
+            }
             onClick={() => {
               void props.state.onSave();
             }}

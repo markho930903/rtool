@@ -163,15 +163,5 @@ export function useWindowLayoutPersistence(options: UseWindowLayoutPersistenceOp
       disposed = true;
       cleanup?.();
     };
-  }, [
-    appWindow,
-    enabled,
-    onPersisted,
-    onRestored,
-    persistOnInit,
-    persistThrottleMs,
-    resolveBounds,
-    scope,
-    storageKey,
-  ]);
+  }, [appWindow, enabled, onPersisted, onRestored, persistOnInit, persistThrottleMs, resolveBounds, scope, storageKey]);
 }

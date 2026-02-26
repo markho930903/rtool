@@ -370,7 +370,8 @@ pub(super) fn execute_cleanup_plan(
         let mut scan_cache = residue_scan_cache()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        scan_cache.remove(app_item.id.as_str());
+        scan_cache.remove(format!("{}|quick", app_item.id).as_str());
+        scan_cache.remove(format!("{}|deep", app_item.id).as_str());
     }
     Ok(AppManagerCleanupResultDto {
         app_id: app_item.id.clone(),

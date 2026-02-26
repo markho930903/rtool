@@ -32,7 +32,10 @@ export default function SettingsSidebar(props: SettingsSidebarProps) {
               aria-current={active ? "page" : undefined}
             >
               <div className="flex items-start gap-2.5">
-                <span className={`settings-nav-icon btn-icon mt-0.5 shrink-0 text-[1rem] ${item.icon}`} aria-hidden="true" />
+                <span
+                  className={`settings-nav-icon btn-icon mt-0.5 shrink-0 text-[1rem] ${item.icon}`}
+                  aria-hidden="true"
+                />
                 <div className="min-w-0">
                   <div className="text-sm font-semibold">{item.label}</div>
                   <div className="mt-0.5 text-xs text-text-muted">{item.description}</div>

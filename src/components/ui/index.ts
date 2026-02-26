@@ -14,7 +14,7 @@ export { Checkbox } from "@/components/ui/checkbox";
 export type { CheckboxProps } from "@/components/ui/checkbox";
 
 export { Radio, RadioGroup } from "@/components/ui/radio";
-export type { RadioGroupProps, RadioOption, RadioProps } from "@/components/ui/radio";
+export type { RadioGroupProps, RadioOption, RadioProps, RadioVariant } from "@/components/ui/radio";
 
 export { Switch, SwitchField } from "@/components/ui/switch";
 export type { SwitchFieldProps, SwitchProps } from "@/components/ui/switch";

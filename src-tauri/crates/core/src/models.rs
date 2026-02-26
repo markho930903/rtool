@@ -301,6 +301,15 @@ impl Default for AppManagerQueryDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AppManagerSnapshotMetaDto {
+    pub indexed_at: i64,
+    pub revision: u64,
+    pub total_count: u64,
+    pub index_state: AppManagerIndexState,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AppManagerCapabilitiesDto {
     pub startup: bool,
     pub uninstall: bool,
@@ -363,6 +372,14 @@ pub enum AppManagerResidueKind {
     Preferences,
     Logs,
     Startup,
+    AppScript,
+    Container,
+    GroupContainer,
+    SavedState,
+    WebkitData,
+    LaunchAgent,
+    LaunchDaemon,
+    HelperTool,
     AppData,
     RegistryKey,
     RegistryValue,
@@ -378,6 +395,14 @@ impl AppManagerResidueKind {
             Self::Preferences => "preferences",
             Self::Logs => "logs",
             Self::Startup => "startup",
+            Self::AppScript => "app_script",
+            Self::Container => "container",
+            Self::GroupContainer => "group_container",
+            Self::SavedState => "saved_state",
+            Self::WebkitData => "webkit_data",
+            Self::LaunchAgent => "launch_agent",
+            Self::LaunchDaemon => "launch_daemon",
+            Self::HelperTool => "helper_tool",
             Self::AppData => "app_data",
             Self::RegistryKey => "registry_key",
             Self::RegistryValue => "registry_value",
@@ -558,6 +583,10 @@ pub enum AppManagerUninstallKind {
 pub enum AppManagerResidueMatchReason {
     RelatedRoot,
     BundleId,
+    ExtensionBundle,
+    EntitlementGroup,
+    IdentifierPattern,
+    KeywordToken,
     StartupLabel,
     StartupShortcut,
     UninstallRegistry,
@@ -615,6 +644,7 @@ impl AppManagerCategory {
 pub struct AppManagerPageDto {
     pub items: Vec<ManagedAppDto>,
     pub next_cursor: Option<String>,
+    pub total_count: u64,
     pub indexed_at: i64,
     pub revision: u64,
     pub index_state: AppManagerIndexState,
@@ -685,6 +715,37 @@ pub struct ManagedAppDetailDto {
 #[serde(rename_all = "camelCase")]
 pub struct AppManagerResidueScanInputDto {
     pub app_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<AppManagerResidueScanMode>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AppManagerResidueScanMode {
+    Quick,
+    Deep,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppManagerResolveSizesInputDto {
+    pub app_ids: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppManagerResolvedSizeDto {
+    pub app_id: String,
+    pub size_bytes: Option<u64>,
+    pub size_accuracy: AppManagerSizeAccuracy,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub size_computed_at: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppManagerResolveSizesResultDto {
+    pub items: Vec<AppManagerResolvedSizeDto>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -772,6 +833,7 @@ impl AppManagerScanWarningDetailCode {
 #[serde(rename_all = "camelCase")]
 pub struct AppManagerResidueScanResultDto {
     pub app_id: String,
+    pub scan_mode: AppManagerResidueScanMode,
     pub total_size_bytes: u64,
     pub groups: Vec<AppManagerResidueGroupDto>,
     pub warnings: Vec<AppManagerScanWarningDto>,

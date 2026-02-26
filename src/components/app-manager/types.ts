@@ -20,6 +20,14 @@ export type AppManagerResidueKind =
   | "preferences"
   | "logs"
   | "startup"
+  | "app_script"
+  | "container"
+  | "group_container"
+  | "saved_state"
+  | "webkit_data"
+  | "launch_agent"
+  | "launch_daemon"
+  | "helper_tool"
   | "app_data"
   | "registry_key"
   | "registry_value"
@@ -29,6 +37,10 @@ export type AppManagerRiskLevel = "low" | "medium" | "high";
 export type AppManagerResidueMatchReason =
   | "related_root"
   | "bundle_id"
+  | "extension_bundle"
+  | "entitlement_group"
+  | "identifier_pattern"
+  | "keyword_token"
   | "startup_label"
   | "startup_shortcut"
   | "uninstall_registry"
@@ -114,8 +126,16 @@ export interface AppManagerQuery {
 export interface AppManagerPage {
   items: ManagedApp[];
   nextCursor: string | null;
+  totalCount: number;
   indexedAt: number;
   revision: number;
+  indexState: AppManagerIndexState;
+}
+
+export interface AppManagerSnapshotMeta {
+  indexedAt: number;
+  revision: number;
+  totalCount: number;
   indexState: AppManagerIndexState;
 }
 
@@ -201,9 +221,27 @@ export interface AppManagerScanWarning {
 
 export interface AppManagerResidueScanResult {
   appId: string;
+  scanMode: AppManagerResidueScanMode;
   totalSizeBytes: number;
   groups: AppManagerResidueGroup[];
   warnings: AppManagerScanWarning[];
+}
+
+export type AppManagerResidueScanMode = "quick" | "deep";
+
+export interface AppManagerResolveSizesInput {
+  appIds: string[];
+}
+
+export interface AppManagerResolvedSize {
+  appId: string;
+  sizeBytes: number | null;
+  sizeAccuracy: AppManagerSizeAccuracy;
+  sizeComputedAt: number | null;
+}
+
+export interface AppManagerResolveSizesResult {
+  items: AppManagerResolvedSize[];
 }
 
 export interface AppManagerCleanupInput {

@@ -3,13 +3,11 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { HashRouter, useLocation, useNavigate, useRoutes } from "react-router";
 
-import type { AppManagerIndexUpdatedPayload } from "@/components/app-manager/types";
 import type { ClipboardSyncPayload } from "@/components/clipboard/types";
 import type { TransferPeer, TransferProgressSnapshot } from "@/components/transfer/types";
 import { useLocaleStore } from "@/i18n/store";
 import { useLayoutStore } from "@/layouts/layout.store";
 import { routes } from "@/routers";
-import { useAppManagerStore } from "@/stores/app-manager.store";
 import { useClipboardStore } from "@/stores/clipboard.store";
 import { useTransferStore } from "@/stores/transfer.store";
 import { useThemeStore } from "@/theme/store";
@@ -22,7 +20,6 @@ function AppEventBridge() {
   const applyTransferPeerSync = useTransferStore((state) => state.applyPeerSync);
   const applyTransferSessionSync = useTransferStore((state) => state.applySessionSync);
   const refreshTransferHistory = useTransferStore((state) => state.refreshHistory);
-  const handleAppManagerIndexUpdated = useAppManagerStore((state) => state.handleIndexUpdated);
 
   useEffect(() => {
     currentRouteRef.current = `${location.pathname}${location.search}`;
@@ -34,7 +31,6 @@ function AppEventBridge() {
     let unlistenTransferPeerSync: UnlistenFn | undefined;
     let unlistenTransferSessionSync: UnlistenFn | undefined;
     let unlistenTransferHistorySync: UnlistenFn | undefined;
-    let unlistenAppManagerIndexUpdated: UnlistenFn | undefined;
 
     const setup = async () => {
       const currentWindow = getCurrentWindow();
@@ -81,19 +77,6 @@ function AppEventBridge() {
         }
         void refreshTransferHistory();
       });
-
-      unlistenAppManagerIndexUpdated = await listen<AppManagerIndexUpdatedPayload>(
-        "rtool://app-manager/index-updated",
-        (event) => {
-          if (currentWindow.label !== "main") {
-            return;
-          }
-          if (!event.payload) {
-            return;
-          }
-          handleAppManagerIndexUpdated(event.payload, currentRouteRef.current.startsWith("/app-manager"));
-        },
-      );
     };
 
     void setup();
@@ -104,16 +87,8 @@ function AppEventBridge() {
       unlistenTransferPeerSync?.();
       unlistenTransferSessionSync?.();
       unlistenTransferHistorySync?.();
-      unlistenAppManagerIndexUpdated?.();
     };
-  }, [
-    applySync,
-    applyTransferPeerSync,
-    applyTransferSessionSync,
-    handleAppManagerIndexUpdated,
-    navigate,
-    refreshTransferHistory,
-  ]);
+  }, [applySync, applyTransferPeerSync, applyTransferSessionSync, navigate, refreshTransferHistory]);
 
   useEffect(() => {
     const currentWindow = getCurrentWindow();

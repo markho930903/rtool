@@ -11,13 +11,13 @@ use app_core::models::{
     AppManagerPathType, AppManagerPlatform, AppManagerQueryDto, AppManagerResidueConfidence,
     AppManagerResidueGroupDto, AppManagerResidueItemDto, AppManagerResidueKind,
     AppManagerResidueMatchReason, AppManagerResidueScanInputDto, AppManagerResidueScanMode,
-    AppManagerResidueScanResultDto, AppManagerResolveSizesInputDto, AppManagerResolveSizesResultDto,
-    AppManagerResolvedSizeDto, AppManagerRiskLevel, AppManagerScanWarningCode,
-    AppManagerScanWarningDetailCode, AppManagerScanWarningDto, AppManagerScope,
-    AppManagerSizeAccuracy, AppManagerSnapshotMetaDto, AppManagerSource, AppManagerStartupScope,
-    AppManagerStartupUpdateInputDto, AppManagerUninstallInputDto, AppManagerUninstallKind,
-    AppReadonlyReasonCode, AppRelatedRootDto, AppSizeSummaryDto, ManagedAppDetailDto,
-    ManagedAppDto,
+    AppManagerResidueScanResultDto, AppManagerResolveSizesInputDto,
+    AppManagerResolveSizesResultDto, AppManagerResolvedSizeDto, AppManagerRiskLevel,
+    AppManagerScanWarningCode, AppManagerScanWarningDetailCode, AppManagerScanWarningDto,
+    AppManagerScope, AppManagerSizeAccuracy, AppManagerSnapshotMetaDto, AppManagerSource,
+    AppManagerStartupScope, AppManagerStartupUpdateInputDto, AppManagerUninstallInputDto,
+    AppManagerUninstallKind, AppReadonlyReasonCode, AppRelatedRootDto, AppSizeSummaryDto,
+    ManagedAppDetailDto, ManagedAppDto,
 };
 use app_core::{AppError, AppResult, ResultExt};
 #[cfg(target_os = "macos")]

@@ -2,6 +2,7 @@ use crate::app::state::AppState;
 use crate::constants::TRAY_ICON_ID;
 use crate::platform::clipboard_watcher::start_clipboard_watcher;
 use crate::platform::native_ui::{apply_locale_to_native_ui, tray};
+use app_application::{ApplicationServices, RuntimeState, UserSettingsApplicationService};
 use app_clipboard::service::ClipboardService;
 use app_core::{
     AppResult,
@@ -9,13 +10,11 @@ use app_core::{
     models::UserSettingsDto,
 };
 use app_infra::{db, logging};
-use app_launcher_app::launcher::index::start_background_indexer;
 use app_resource_monitor::{MonitorOptions, initialize_global_monitor, start_sampling};
 use app_transfer::service::{TransferService, TransferTask, TransferTaskSpawner};
 use std::error::Error;
-use std::path::Path;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Instant;
 use tauri::Manager;
 use tauri::tray::TrayIconBuilder;
@@ -35,38 +34,15 @@ impl TransferTaskSpawner for TauriTransferTaskSpawner {
 fn locale_state_from_settings(settings: &UserSettingsDto) -> AppLocaleState {
     let preference = normalize_locale_preference(settings.locale.preference.as_str())
         .unwrap_or_else(|| "system".to_string());
-    AppLocaleState::new(
-        preference.clone(),
-        resolve_locale(&preference),
-    )
-}
-
-fn cleanup_legacy_db_files(legacy_db_path: &Path) {
-    let mut paths = vec![legacy_db_path.to_path_buf()];
-    paths.push(PathBuf::from(format!("{}-wal", legacy_db_path.display())));
-    paths.push(PathBuf::from(format!("{}-shm", legacy_db_path.display())));
-
-    for path in paths {
-        if let Err(error) = std::fs::remove_file(&path)
-            && error.kind() != std::io::ErrorKind::NotFound
-        {
-            log_warn_fallback(&format!(
-                "legacy_db_cleanup_failed: path={}, error={}",
-                path.display(),
-                error
-            ));
-        }
-    }
+    AppLocaleState::new(preference.clone(), resolve_locale(&preference))
 }
 
 async fn init_database(app: &tauri::App) -> Result<(PathBuf, db::DbConn), Box<dyn Error>> {
     let app_data_dir = app.path().app_data_dir()?;
     std::fs::create_dir_all(&app_data_dir)?;
-    let legacy_db_path = app_data_dir.join("rtool.db");
     let db_path = app_data_dir.join("rtool-turso.db");
     let db_conn = db::open_db(&db_path).await?;
     db::init_db(&db_conn).await?;
-    cleanup_legacy_db_files(&legacy_db_path);
     Ok((db_path, db_conn))
 }
 
@@ -122,15 +98,10 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn Error>> {
     let (db_path, db_conn) = db_result?;
 
     let settings_stage_started_at = Instant::now();
-    let settings_result: Result<UserSettingsDto, Box<dyn Error>> = tauri::async_runtime::block_on(
-        async {
-            crate::features::user_settings::store::migrate_legacy_clipboard_settings_from_db(
-                &db_conn,
-            )
-            .await
-            .map_err(Into::into)
-        },
-    );
+    let settings_result: Result<UserSettingsDto, Box<dyn Error>> =
+        UserSettingsApplicationService::default()
+            .load_or_init()
+            .map_err(Into::into);
     log_setup_stage(
         "user_settings_ready",
         settings_stage_started_at,
@@ -237,16 +208,18 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn Error>> {
 
     start_clipboard_watcher(app_handle.clone(), clipboard_service.clone());
     let initial_resolved_locale = initial_locale_state.resolved.clone();
-    let locale_state = Arc::new(Mutex::new(initial_locale_state));
+    let runtime_state = RuntimeState::new(initial_locale_state, Instant::now());
+    let app_services = ApplicationServices::new(
+        db_conn.clone(),
+        clipboard_service.clone(),
+        transfer_service.clone(),
+    );
+    let launcher_service = app_services.launcher.clone();
 
     app.manage(AppState {
         db_path,
-        db_conn: db_conn.clone(),
-        clipboard_service,
-        transfer_service,
-        locale_state,
-        clipboard_window_compact: Arc::new(Mutex::new(false)),
-        started_at: Instant::now(),
+        app_services,
+        runtime_state,
     });
 
     let monitor_stage_started_at = Instant::now();
@@ -260,7 +233,7 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn Error>> {
     }
     log_setup_stage("resource_monitor_init", monitor_stage_started_at, true);
 
-    start_background_indexer(db_conn);
+    launcher_service.start_background_indexer();
     apply_locale_to_native_ui(&app_handle, &initial_resolved_locale);
     log_setup_stage("setup_total", setup_started_at, transfer_stage_ok);
 

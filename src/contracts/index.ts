@@ -340,6 +340,7 @@ export type CommandKey =
   | "app_reload_locales"
   | "app_import_locale_file"
   | "dashboard_snapshot"
+  | "app_get_health_snapshot"
   | "resource_monitor_snapshot"
   | "resource_monitor_history"
   | "resource_monitor_reset_session"
@@ -378,6 +379,23 @@ export type CommandKey =
   | "app_manager_reveal_path";
 
 export type DashboardSnapshotDto = { sampledAt: number; app: AppRuntimeInfoDto; system: SystemInfoDto };
+
+export type TransferDiscoveryTaskStatusDto = { broadcast: boolean; listen: boolean; peerSync: boolean };
+
+export type TransferRuntimeStatusDto = {
+  listenerStarted: boolean;
+  discoveryEnabled: boolean;
+  discoveryRunning: boolean;
+  discoveryTasks: TransferDiscoveryTaskStatusDto;
+};
+
+export type LauncherRuntimeStatusDto = { started: boolean; building: boolean };
+
+export type AppHealthSnapshotDto = {
+  sampledAt: number;
+  transfer: TransferRuntimeStatusDto;
+  launcher: LauncherRuntimeStatusDto;
+};
 
 export type ResourceModuleIdDto =
   | "launcher"

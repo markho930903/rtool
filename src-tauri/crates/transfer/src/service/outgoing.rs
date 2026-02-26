@@ -80,7 +80,7 @@ impl TransferService {
                     .with_context("sessionId", state.session.id.clone()));
             }
 
-            Self::process_outgoing_iteration(
+            self.process_outgoing_iteration(
                 &mut writer,
                 &mut reader,
                 &mut state,

@@ -112,6 +112,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "application"
+version = "0.1.0"
+dependencies = [
+ "clipboard",
+ "core",
+ "infra",
+ "launcher-app",
+ "resource-monitor",
+ "serde_json",
+ "sysinfo",
+ "tracing",
+ "transfer",
+]
+
+[[package]]
 name = "arbitrary"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -894,8 +909,6 @@ name = "core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "arboard",
- "libsql",
  "serde",
  "serde_json",
  "tracing",
@@ -5088,6 +5101,7 @@ version = "0.1.0"
 dependencies = [
  "active-win-pos-rs",
  "anyhow",
+ "application",
  "arboard",
  "base64 0.22.1",
  "blake3",

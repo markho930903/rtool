@@ -4,10 +4,11 @@ import { getChartThemeConfig, type ChartTooltipTheme } from "@/theme/chartTheme"
 
 const HISTORY_PIXELS_PER_POINT = 8;
 const HISTORY_MIN_VISIBLE_POINTS = 20;
-const HISTORY_MAX_VISIBLE_POINTS = 120;
+const HISTORY_MAX_VISIBLE_POINTS = 60;
 const GROUPED_PIXELS_PER_BUCKET = 24;
-const GROUPED_MIN_VISIBLE_BUCKETS = 4;
-const GROUPED_MAX_VISIBLE_BUCKETS = 40;
+const GROUPED_MIN_VISIBLE_BUCKETS = 8;
+const GROUPED_MAX_VISIBLE_BUCKETS = 16;
+const MIN_ZOOM_VISIBLE_ITEMS = 8;
 const MIN_SLIDER_SPAN = 0.01;
 const SLIDER_FILTER_EVENT = "sliderX:filter";
 const DEFAULT_MIN_WIDTH = 320;
@@ -66,16 +67,19 @@ function normalizeRange(value: [number, number]): [number, number] {
   return start <= end ? [start, end] : [end, start];
 }
 
-function clampRangeWidth(range: [number, number], maxSpan: number): [number, number] {
+function clampRangeWidth(range: [number, number], minSpan: number, maxSpan: number): [number, number] {
   const [start, end] = normalizeRange(range);
+  const safeMinSpan = clamp(minSpan, MIN_SLIDER_SPAN, maxSpan);
+  const safeMaxSpan = Math.max(safeMinSpan, maxSpan);
   const span = end - start;
-  if (span <= maxSpan) {
+  const targetSpan = clamp(span, safeMinSpan, safeMaxSpan);
+  if (targetSpan === span) {
     return [start, end];
   }
 
   const center = (start + end) / 2;
-  let nextStart = center - maxSpan / 2;
-  let nextEnd = center + maxSpan / 2;
+  let nextStart = center - targetSpan / 2;
+  let nextEnd = center + targetSpan / 2;
   if (nextStart < 0) {
     nextEnd -= nextStart;
     nextStart = 0;
@@ -104,6 +108,13 @@ function resolveMaxSpan(
   }
   const visibleCount = resolveVisibleCount(width, pixelsPerUnit, minCount, maxCount);
   return clamp(visibleCount / totalCount, MIN_SLIDER_SPAN, 1);
+}
+
+function resolveMinSpan(totalCount: number, minVisibleCount: number, maxSpan: number): number {
+  if (totalCount <= 0) {
+    return MIN_SLIDER_SPAN;
+  }
+  return clamp(minVisibleCount / totalCount, MIN_SLIDER_SPAN, maxSpan);
 }
 
 function ratioFromDomainSelection(selection: unknown, domain: string[]): [number, number] | null {
@@ -136,9 +147,9 @@ function resolveLatestRange(maxSpan: number): [number, number] {
   return normalizeRange([Math.max(0, 1 - maxSpan), 1]);
 }
 
-function alignRangeToLatest(range: [number, number], maxSpan: number): [number, number] {
+function alignRangeToLatest(range: [number, number], minSpan: number, maxSpan: number): [number, number] {
   const normalized = normalizeRange(range);
-  const span = clamp(normalized[1] - normalized[0], MIN_SLIDER_SPAN, maxSpan);
+  const span = clamp(normalized[1] - normalized[0], minSpan, maxSpan);
   return resolveLatestRange(span);
 }
 
@@ -271,16 +282,20 @@ export function createHistoryChart(
   data: HistoryChartDatum[],
 ): ChartController<HistoryChartDatum> {
   const themeConfig = getChartThemeConfig();
-  const getMaxSpan = (nextData: HistoryChartDatum[]) =>
-    resolveMaxSpan(
-      countUniqueXLabels(nextData),
+  const getSpanLimits = (nextData: HistoryChartDatum[]) => {
+    const totalCount = countUniqueXLabels(nextData);
+    const nextMaxSpan = resolveMaxSpan(
+      totalCount,
       Math.max(element.clientWidth, DEFAULT_MIN_WIDTH),
       HISTORY_PIXELS_PER_POINT,
       HISTORY_MIN_VISIBLE_POINTS,
       HISTORY_MAX_VISIBLE_POINTS,
     );
+    const nextMinSpan = resolveMinSpan(totalCount, MIN_ZOOM_VISIBLE_ITEMS, nextMaxSpan);
+    return { minSpan: nextMinSpan, maxSpan: nextMaxSpan };
+  };
   let domain = buildTimeDomain(data);
-  let maxSpan = getMaxSpan(data);
+  let { minSpan, maxSpan } = getSpanLimits(data);
   let currentRange = resolveLatestRange(maxSpan);
 
   const chart = new Chart({
@@ -322,7 +337,7 @@ export function createHistoryChart(
     if (!nextRange) {
       return;
     }
-    currentRange = clampRangeWidth(nextRange, maxSpan);
+    currentRange = clampRangeWidth(nextRange, minSpan, maxSpan);
   };
 
   chart.on(SLIDER_FILTER_EVENT, onSliderFilter);
@@ -346,8 +361,8 @@ export function createHistoryChart(
   return {
     update(nextData) {
       domain = buildTimeDomain(nextData);
-      maxSpan = getMaxSpan(nextData);
-      currentRange = alignRangeToLatest(currentRange, maxSpan);
+      ({ minSpan, maxSpan } = getSpanLimits(nextData));
+      currentRange = alignRangeToLatest(currentRange, minSpan, maxSpan);
       line.slider(buildSliderConfig(currentRange));
       void line.changeData(nextData).then(() => {
         tooltip.refresh();
@@ -368,16 +383,20 @@ export function createGroupedBarChart(
   height = 280,
 ): ChartController<GroupedBarChartDatum> {
   const themeConfig = getChartThemeConfig();
-  const getMaxSpan = (nextData: GroupedBarChartDatum[]) =>
-    resolveMaxSpan(
-      countUniqueXLabels(nextData),
+  const getSpanLimits = (nextData: GroupedBarChartDatum[]) => {
+    const totalCount = countUniqueXLabels(nextData);
+    const nextMaxSpan = resolveMaxSpan(
+      totalCount,
       Math.max(element.clientWidth, DEFAULT_MIN_WIDTH),
       GROUPED_PIXELS_PER_BUCKET,
       GROUPED_MIN_VISIBLE_BUCKETS,
       GROUPED_MAX_VISIBLE_BUCKETS,
     );
+    const nextMinSpan = resolveMinSpan(totalCount, MIN_ZOOM_VISIBLE_ITEMS, nextMaxSpan);
+    return { minSpan: nextMinSpan, maxSpan: nextMaxSpan };
+  };
   let domain = buildTimeDomain(data);
-  let maxSpan = getMaxSpan(data);
+  let { minSpan, maxSpan } = getSpanLimits(data);
   let currentRange = resolveLatestRange(maxSpan);
 
   const chart = new Chart({
@@ -419,7 +438,7 @@ export function createGroupedBarChart(
     if (!nextRange) {
       return;
     }
-    currentRange = clampRangeWidth(nextRange, maxSpan);
+    currentRange = clampRangeWidth(nextRange, minSpan, maxSpan);
   };
 
   chart.on(SLIDER_FILTER_EVENT, onSliderFilter);
@@ -443,8 +462,8 @@ export function createGroupedBarChart(
   return {
     update(nextData) {
       domain = buildTimeDomain(nextData);
-      maxSpan = getMaxSpan(nextData);
-      currentRange = alignRangeToLatest(currentRange, maxSpan);
+      ({ minSpan, maxSpan } = getSpanLimits(nextData));
+      currentRange = alignRangeToLatest(currentRange, minSpan, maxSpan);
       interval.slider(buildSliderConfig(currentRange));
       void interval.changeData(nextData).then(() => {
         tooltip.refresh();

@@ -468,7 +468,8 @@ fn push_macos_identifier_templates(
         let base = home.join("Library");
         push_fs_template_candidate(
             candidates,
-            base.join("Application Scripts").join(identifier.value.as_str()),
+            base.join("Application Scripts")
+                .join(identifier.value.as_str()),
             AppManagerScope::User,
             AppManagerResidueKind::AppScript,
             identifier,
@@ -482,14 +483,16 @@ fn push_macos_identifier_templates(
         );
         push_fs_template_candidate(
             candidates,
-            base.join("Group Containers").join(identifier.value.as_str()),
+            base.join("Group Containers")
+                .join(identifier.value.as_str()),
             AppManagerScope::User,
             AppManagerResidueKind::GroupContainer,
             identifier,
         );
         push_fs_template_candidate(
             candidates,
-            base.join("Application Support").join(identifier.value.as_str()),
+            base.join("Application Support")
+                .join(identifier.value.as_str()),
             AppManagerScope::User,
             AppManagerResidueKind::AppSupport,
             identifier,
@@ -655,7 +658,8 @@ fn push_windows_identifier_templates(
     if let Some(home) = home_dir() {
         push_fs_template_candidate(
             candidates,
-            home.join("AppData/LocalLow").join(identifier.value.as_str()),
+            home.join("AppData/LocalLow")
+                .join(identifier.value.as_str()),
             AppManagerScope::User,
             AppManagerResidueKind::AppData,
             identifier,

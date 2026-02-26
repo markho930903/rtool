@@ -192,7 +192,7 @@ fn default_root_candidates_should_cover_all_platform_profiles() {
 }
 
 #[tokio::test]
-async fn load_or_init_settings_should_force_scope_policy_roots_migration() {
+async fn load_or_init_settings_should_preserve_existing_roots_and_update_scope_policy_version() {
     let (db_conn, db_path) = setup_temp_db("launcher-scope-policy").await;
 
     let custom = LauncherSearchSettingsRecord {
@@ -212,11 +212,10 @@ async fn load_or_init_settings_should_force_scope_policy_roots_migration() {
         .await
         .expect("seed scope state");
 
-    let migrated = load_or_init_settings(&db_conn)
+    let loaded = load_or_init_settings(&db_conn)
         .await
-        .expect("migrate settings");
-    let expected = LauncherSearchSettingsRecord::default().normalize();
-    assert_eq!(migrated, expected);
+        .expect("load settings");
+    assert_eq!(loaded, custom);
 
     let stored_state = get_app_setting(&db_conn, LAUNCHER_SCOPE_POLICY_VERSION_KEY)
         .await
@@ -227,7 +226,7 @@ async fn load_or_init_settings_should_force_scope_policy_roots_migration() {
     );
 
     let second = load_or_init_settings(&db_conn).await.expect("second read");
-    assert_eq!(second, migrated);
+    assert_eq!(second, loaded);
 
     let _ = fs::remove_file(db_path);
 }

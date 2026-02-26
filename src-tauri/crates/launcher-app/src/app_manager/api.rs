@@ -81,7 +81,9 @@ pub fn list_managed_apps(
     })
 }
 
-pub fn list_managed_apps_snapshot_meta(app: &dyn LauncherHost) -> AppResult<AppManagerSnapshotMetaDto> {
+pub fn list_managed_apps_snapshot_meta(
+    app: &dyn LauncherHost,
+) -> AppResult<AppManagerSnapshotMetaDto> {
     let cache = load_or_refresh_index(app, false)?;
     Ok(AppManagerSnapshotMetaDto {
         indexed_at: cache.indexed_at,
@@ -106,24 +108,29 @@ pub fn resolve_managed_app_sizes(
     }
 
     let mut resolved = Vec::new();
-    for item in cache.items.iter().filter(|candidate| wanted.contains(candidate.id.as_str())) {
+    for item in cache
+        .items
+        .iter()
+        .filter(|candidate| wanted.contains(candidate.id.as_str()))
+    {
         let size_path = resolve_app_size_path(Path::new(item.path.as_str()));
         let exact_size_bytes = exact_path_size_bytes(size_path.as_path());
-        let (size_bytes, size_accuracy, size_computed_at) = if let Some(size_bytes) = exact_size_bytes {
-            (
-                Some(size_bytes),
-                AppManagerSizeAccuracy::Exact,
-                Some(now_unix_seconds()),
-            )
-        } else if let Some(size_bytes) = try_get_path_size_bytes(size_path.as_path()) {
-            (
-                Some(size_bytes),
-                AppManagerSizeAccuracy::Estimated,
-                Some(now_unix_seconds()),
-            )
-        } else {
-            (None, AppManagerSizeAccuracy::Estimated, None)
-        };
+        let (size_bytes, size_accuracy, size_computed_at) =
+            if let Some(size_bytes) = exact_size_bytes {
+                (
+                    Some(size_bytes),
+                    AppManagerSizeAccuracy::Exact,
+                    Some(now_unix_seconds()),
+                )
+            } else if let Some(size_bytes) = try_get_path_size_bytes(size_path.as_path()) {
+                (
+                    Some(size_bytes),
+                    AppManagerSizeAccuracy::Estimated,
+                    Some(now_unix_seconds()),
+                )
+            } else {
+                (None, AppManagerSizeAccuracy::Estimated, None)
+            };
         resolved.push(AppManagerResolvedSizeDto {
             app_id: item.id.clone(),
             size_bytes,
@@ -292,7 +299,9 @@ pub fn scan_managed_app_residue(
         let scan_cache = residue_scan_cache()
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        scan_cache.get(cache_key.as_str()).map(|entry| entry.result.clone())
+        scan_cache
+            .get(cache_key.as_str())
+            .map(|entry| entry.result.clone())
     };
     if let Some(result) = cached {
         return Ok(result);

@@ -210,6 +210,16 @@ export default function HomePage() {
     [getModuleStatusItems, t],
   );
 
+  const moduleStateClassName = (state: "online" | "booting" | "degraded") => {
+    if (state === "degraded") {
+      return "border-danger/45 bg-danger/14 text-danger";
+    }
+    if (state === "booting") {
+      return "border-border-glass bg-surface-glass-soft text-text-secondary";
+    }
+    return "border-accent/45 bg-accent/14 text-accent";
+  };
+
   return (
     <div className="space-y-3 pb-2">
       <section className="ui-glass-panel-strong rounded-2xl p-4">
@@ -319,8 +329,10 @@ export default function HomePage() {
                   <div className="text-sm font-medium text-text-primary">{item.name}</div>
                   <div className="mt-0.5 text-xs text-text-muted">{item.detail}</div>
                 </div>
-                <span className="ui-glass-chip border-accent/45 bg-accent/14 font-mono ui-text-micro uppercase text-accent">
-                  {item.state}
+                <span
+                  className={`ui-glass-chip font-mono ui-text-micro uppercase ${moduleStateClassName(item.state)}`}
+                >
+                  {t(`status.${item.state}`)}
                 </span>
               </article>
             ))}

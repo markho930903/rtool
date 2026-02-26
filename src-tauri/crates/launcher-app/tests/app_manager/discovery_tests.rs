@@ -22,16 +22,10 @@ fn discovery_pattern_matching_contract() {
         Some(DiscoveryPatternMatchKind::PrefixOrSuffix)
     );
     assert_eq!(
-        match_pattern(
-            "5a4re8sf68.com.tencent.xinwechat",
-            "com.tencent.xinwechat"
-        ),
+        match_pattern("5a4re8sf68.com.tencent.xinwechat", "com.tencent.xinwechat"),
         Some(DiscoveryPatternMatchKind::PrefixOrSuffix)
     );
-    assert_eq!(
-        match_pattern("short", "com.tencent.xinwechat"),
-        None
-    );
+    assert_eq!(match_pattern("short", "com.tencent.xinwechat"), None);
 }
 
 #[test]
@@ -50,8 +44,7 @@ fn discovery_token_overlap_contract() {
 fn discovery_finds_exact_contains_and_token_matches() {
     let root = unique_temp_dir("rtool-discovery-match");
     fs::create_dir_all(root.join("com.tencent.xinWeChat")).expect("create exact dir");
-    fs::create_dir_all(root.join("5A4RE8SF68.com.tencent.xinWeChat"))
-        .expect("create team dir");
+    fs::create_dir_all(root.join("5A4RE8SF68.com.tencent.xinWeChat")).expect("create team dir");
     fs::create_dir_all(root.join("wechat.tencent.cache")).expect("create token dir");
 
     let identifiers = vec![
@@ -84,11 +77,15 @@ fn discovery_finds_exact_contains_and_token_matches() {
         .collect::<Vec<_>>();
 
     assert!(
-        paths.iter().any(|path| path.ends_with("com.tencent.xinWeChat")),
+        paths
+            .iter()
+            .any(|path| path.ends_with("com.tencent.xinWeChat")),
         "should match exact bundle id directory"
     );
     assert!(
-        paths.iter().any(|path| path.ends_with("5A4RE8SF68.com.tencent.xinWeChat")),
+        paths
+            .iter()
+            .any(|path| path.ends_with("5A4RE8SF68.com.tencent.xinWeChat")),
         "should match entitlement group directory"
     );
     assert!(

@@ -5,24 +5,24 @@ use app_clipboard::service::{
 use app_core::i18n::{SYSTEM_LOCALE_PREFERENCE, normalize_locale_preference};
 use app_core::models::{
     UserClipboardSettingsDto, UserClipboardSettingsUpdateInputDto, UserGlassProfileDto,
-    UserGlassProfileUpdateInputDto, UserLayoutSettingsUpdateInputDto, UserLocaleSettingsUpdateInputDto,
-    UserSettingsDto, UserSettingsUpdateInputDto, UserThemeGlassSettingsUpdateInputDto,
-    UserThemeSettingsUpdateInputDto,
+    UserGlassProfileUpdateInputDto, UserLayoutSettingsUpdateInputDto,
+    UserLocaleSettingsUpdateInputDto, UserSettingsDto, UserSettingsUpdateInputDto,
+    UserThemeGlassSettingsUpdateInputDto, UserThemeSettingsUpdateInputDto,
 };
 use app_core::{AppError, AppResult};
-use app_infra::db::{
-    self, CLIPBOARD_MAX_ITEMS_KEY, CLIPBOARD_MAX_TOTAL_SIZE_MB_KEY,
-    CLIPBOARD_SIZE_CLEANUP_ENABLED_KEY, DbConn,
-};
-use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::thread;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const SETTINGS_DIR_NAME: &str = ".rtool";
 const SETTINGS_FILE_NAME: &str = "setting.json";
+const SETTINGS_FILE_LOCK_NAME: &str = "setting.json.lock";
+const SETTINGS_FILE_LOCK_TIMEOUT_MS: u64 = 2_000;
+const SETTINGS_FILE_LOCK_RETRY_MS: u64 = 25;
+const SETTINGS_FILE_LOCK_STALE_SECS: u64 = 300;
 
 const GLASS_OPACITY_MIN: u32 = 0;
 const GLASS_OPACITY_MAX: u32 = 100;
@@ -39,6 +39,115 @@ const DEFAULT_LAYOUT_PREFERENCE: &str = "topbar";
 fn settings_lock() -> &'static Mutex<()> {
     static SETTINGS_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     SETTINGS_LOCK.get_or_init(|| Mutex::new(()))
+}
+
+struct SettingsFileLock {
+    path: PathBuf,
+    _file: fs::File,
+}
+
+impl Drop for SettingsFileLock {
+    fn drop(&mut self) {
+        if let Err(error) = fs::remove_file(&self.path)
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!(
+                event = "user_settings_lock_release_failed",
+                detail = %error,
+                lock_path = %self.path.to_string_lossy()
+            );
+        }
+    }
+}
+
+fn settings_file_lock_path(path: &Path) -> PathBuf {
+    path.with_file_name(SETTINGS_FILE_LOCK_NAME)
+}
+
+fn cleanup_stale_settings_file_lock(lock_path: &Path) {
+    let metadata = match fs::metadata(lock_path) {
+        Ok(value) => value,
+        Err(_) => return,
+    };
+    let modified = match metadata.modified() {
+        Ok(value) => value,
+        Err(_) => return,
+    };
+    let age = match SystemTime::now().duration_since(modified) {
+        Ok(value) => value,
+        Err(_) => Duration::from_secs(0),
+    };
+    if age < Duration::from_secs(SETTINGS_FILE_LOCK_STALE_SECS) {
+        return;
+    }
+
+    match fs::remove_file(lock_path) {
+        Ok(_) => {
+            tracing::warn!(
+                event = "user_settings_stale_lock_removed",
+                lock_path = %lock_path.to_string_lossy(),
+                stale_secs = age.as_secs()
+            );
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            tracing::warn!(
+                event = "user_settings_stale_lock_cleanup_failed",
+                detail = %error,
+                lock_path = %lock_path.to_string_lossy()
+            );
+        }
+    }
+}
+
+fn acquire_settings_file_lock(path: &Path) -> AppResult<SettingsFileLock> {
+    let parent = path.parent().ok_or_else(|| {
+        AppError::new(
+            "user_settings_path_invalid",
+            "用户设置路径无效，无法获取文件锁",
+        )
+    })?;
+    fs::create_dir_all(parent).map_err(|error| {
+        AppError::new("user_settings_dir_create_failed", "创建用户设置目录失败")
+            .with_source(error)
+            .with_context("path", parent.to_string_lossy().to_string())
+    })?;
+
+    let lock_path = settings_file_lock_path(path);
+    let started_at = Instant::now();
+    loop {
+        match fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&lock_path)
+        {
+            Ok(file) => {
+                return Ok(SettingsFileLock {
+                    path: lock_path,
+                    _file: file,
+                });
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                cleanup_stale_settings_file_lock(lock_path.as_path());
+                if started_at.elapsed() >= Duration::from_millis(SETTINGS_FILE_LOCK_TIMEOUT_MS) {
+                    return Err(AppError::new(
+                        "user_settings_lock_acquire_failed",
+                        "获取用户设置文件锁超时",
+                    )
+                    .with_context("path", lock_path.to_string_lossy().to_string()));
+                }
+                thread::sleep(Duration::from_millis(SETTINGS_FILE_LOCK_RETRY_MS));
+            }
+            Err(error) => {
+                return Err(AppError::new(
+                    "user_settings_lock_acquire_failed",
+                    "获取用户设置文件锁失败",
+                )
+                .with_source(error)
+                .with_context("path", lock_path.to_string_lossy().to_string()));
+            }
+        }
+    }
 }
 
 fn home_dir() -> Option<PathBuf> {
@@ -66,7 +175,7 @@ fn home_dir() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-pub(crate) fn settings_file_path() -> AppResult<PathBuf> {
+pub fn settings_file_path() -> AppResult<PathBuf> {
     let home = home_dir().ok_or_else(|| {
         AppError::new(
             "user_settings_home_dir_unavailable",
@@ -104,17 +213,16 @@ fn clamp_profile(profile: &mut UserGlassProfileDto) {
         .clamp(GLASS_BRIGHTNESS_MIN, GLASS_BRIGHTNESS_MAX);
 }
 
-fn normalize_clipboard_settings(
-    settings: UserClipboardSettingsDto,
-) -> UserClipboardSettingsDto {
+fn normalize_clipboard_settings(settings: UserClipboardSettingsDto) -> UserClipboardSettingsDto {
     UserClipboardSettingsDto {
         max_items: settings
             .max_items
             .clamp(CLIPBOARD_MAX_ITEMS_MIN, CLIPBOARD_MAX_ITEMS_MAX),
         size_cleanup_enabled: settings.size_cleanup_enabled,
-        max_total_size_mb: settings
-            .max_total_size_mb
-            .clamp(CLIPBOARD_MAX_TOTAL_SIZE_MB_MIN, CLIPBOARD_MAX_TOTAL_SIZE_MB_MAX),
+        max_total_size_mb: settings.max_total_size_mb.clamp(
+            CLIPBOARD_MAX_TOTAL_SIZE_MB_MIN,
+            CLIPBOARD_MAX_TOTAL_SIZE_MB_MAX,
+        ),
     }
 }
 
@@ -162,27 +270,22 @@ fn write_settings_file(path: &Path, settings: &UserSettingsDto) -> AppResult<()>
     match fs::rename(&temp_path, path) {
         Ok(_) => Ok(()),
         Err(rename_error) => {
-            if path.exists() {
-                fs::remove_file(path).map_err(|error| {
-                    let _ = fs::remove_file(&temp_path);
-                    AppError::new("user_settings_replace_failed", "替换用户设置文件失败")
-                        .with_source(error)
-                        .with_context("path", path.to_string_lossy().to_string())
-                })?;
-                fs::rename(&temp_path, path).map_err(|error| {
-                    let _ = fs::remove_file(&temp_path);
-                    AppError::new("user_settings_replace_failed", "替换用户设置文件失败")
-                        .with_source(error)
-                        .with_context("path", path.to_string_lossy().to_string())
-                })
-            } else {
+            fs::copy(&temp_path, path).map_err(|error| {
                 let _ = fs::remove_file(&temp_path);
-                Err(
-                    AppError::new("user_settings_write_failed", "写入用户设置文件失败")
-                        .with_source(rename_error)
-                        .with_context("path", path.to_string_lossy().to_string()),
+                AppError::new(
+                    "user_settings_atomic_replace_failed",
+                    "替换用户设置文件失败",
                 )
-            }
+                .with_source(error)
+                .with_context("path", path.to_string_lossy().to_string())
+                .with_context("rename_error", rename_error.to_string())
+            })?;
+            fs::remove_file(&temp_path).map_err(|error| {
+                AppError::new("user_settings_temp_cleanup_failed", "清理临时设置文件失败")
+                    .with_source(error)
+                    .with_context("path", temp_path.to_string_lossy().to_string())
+            })?;
+            Ok(())
         }
     }
 }
@@ -380,101 +483,7 @@ fn apply_update(
     Ok(())
 }
 
-fn parse_legacy_bool(value: &str) -> Option<bool> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "true" | "1" => Some(true),
-        "false" | "0" => Some(false),
-        _ => None,
-    }
-}
-
-fn merge_legacy_clipboard_settings(
-    current: &UserClipboardSettingsDto,
-    legacy_values: &HashMap<String, String>,
-) -> Option<UserClipboardSettingsDto> {
-    let mut next = current.clone();
-    let mut touched = false;
-
-    if let Some(raw) = legacy_values.get(CLIPBOARD_MAX_ITEMS_KEY)
-        && let Ok(value) = raw.parse::<u32>()
-    {
-        next.max_items = value;
-        touched = true;
-    }
-
-    if let Some(raw) = legacy_values.get(CLIPBOARD_SIZE_CLEANUP_ENABLED_KEY)
-        && let Some(value) = parse_legacy_bool(raw)
-    {
-        next.size_cleanup_enabled = value;
-        touched = true;
-    }
-
-    if let Some(raw) = legacy_values.get(CLIPBOARD_MAX_TOTAL_SIZE_MB_KEY)
-        && let Ok(value) = raw.parse::<u32>()
-    {
-        next.max_total_size_mb = value;
-        touched = true;
-    }
-
-    if !touched {
-        return None;
-    }
-
-    Some(normalize_clipboard_settings(next))
-}
-
-pub(crate) async fn migrate_legacy_clipboard_settings_from_db(
-    db_conn: &DbConn,
-) -> AppResult<UserSettingsDto> {
-    let legacy_keys = [
-        CLIPBOARD_MAX_ITEMS_KEY,
-        CLIPBOARD_SIZE_CLEANUP_ENABLED_KEY,
-        CLIPBOARD_MAX_TOTAL_SIZE_MB_KEY,
-    ];
-    let legacy_values = db::get_app_settings_batch(db_conn, &legacy_keys).await?;
-    if legacy_values.is_empty() {
-        return load_or_init_user_settings();
-    }
-
-    let mut migrated = false;
-    let settings = {
-        let guard = settings_lock().lock();
-        let _guard = match guard {
-            Ok(value) => value,
-            Err(poisoned) => poisoned.into_inner(),
-        };
-
-        let path = settings_file_path()?;
-        let mut settings = load_or_init_unlocked(path.as_path())?;
-        if let Some(next_clipboard) =
-            merge_legacy_clipboard_settings(&settings.clipboard, &legacy_values)
-        {
-            settings.clipboard = next_clipboard;
-            settings = normalize_settings(settings);
-            write_settings_file(path.as_path(), &settings)?;
-            migrated = true;
-        }
-        settings
-    };
-
-    db::delete_app_settings(db_conn, &legacy_keys).await?;
-
-    if migrated {
-        tracing::info!(
-            event = "clipboard_settings_migrated_to_user_settings",
-            migrated_key_count = legacy_values.len() as u32
-        );
-    } else {
-        tracing::info!(
-            event = "clipboard_settings_legacy_keys_cleared_without_migration",
-            legacy_key_count = legacy_values.len() as u32
-        );
-    }
-
-    Ok(settings)
-}
-
-pub(crate) fn load_or_init_user_settings() -> AppResult<UserSettingsDto> {
+pub fn load_or_init_user_settings() -> AppResult<UserSettingsDto> {
     let guard = settings_lock().lock();
     let _guard = match guard {
         Ok(value) => value,
@@ -482,12 +491,11 @@ pub(crate) fn load_or_init_user_settings() -> AppResult<UserSettingsDto> {
     };
 
     let path = settings_file_path()?;
+    let _file_lock = acquire_settings_file_lock(path.as_path())?;
     load_or_init_unlocked(path.as_path())
 }
 
-pub(crate) fn update_user_settings(
-    input: UserSettingsUpdateInputDto,
-) -> AppResult<UserSettingsDto> {
+pub fn update_user_settings(input: UserSettingsUpdateInputDto) -> AppResult<UserSettingsDto> {
     let guard = settings_lock().lock();
     let _guard = match guard {
         Ok(value) => value,
@@ -495,13 +503,14 @@ pub(crate) fn update_user_settings(
     };
 
     let path = settings_file_path()?;
+    let _file_lock = acquire_settings_file_lock(path.as_path())?;
     let mut settings = load_or_init_unlocked(path.as_path())?;
     apply_update(&mut settings, &input)?;
     write_settings_file(path.as_path(), &settings)?;
     Ok(settings)
 }
 
-pub(crate) fn update_locale_preference(preference: &str) -> AppResult<UserSettingsDto> {
+pub fn update_locale_preference(preference: &str) -> AppResult<UserSettingsDto> {
     let update = UserSettingsUpdateInputDto {
         locale: Some(UserLocaleSettingsUpdateInputDto {
             preference: Some(preference.to_string()),
@@ -509,56 +518,4 @@ pub(crate) fn update_locale_preference(preference: &str) -> AppResult<UserSettin
         ..Default::default()
     };
     update_user_settings(update)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn legacy_map(entries: &[(&str, &str)]) -> HashMap<String, String> {
-        entries
-            .iter()
-            .map(|(key, value)| (key.to_string(), value.to_string()))
-            .collect()
-    }
-
-    #[test]
-    fn should_merge_legacy_clipboard_settings_with_normalization() {
-        let current = UserClipboardSettingsDto::default();
-        let legacy_values = legacy_map(&[
-            (CLIPBOARD_MAX_ITEMS_KEY, "999999"),
-            (CLIPBOARD_SIZE_CLEANUP_ENABLED_KEY, "0"),
-            (CLIPBOARD_MAX_TOTAL_SIZE_MB_KEY, "1"),
-        ]);
-
-        let merged =
-            merge_legacy_clipboard_settings(&current, &legacy_values).expect("should merge values");
-
-        assert_eq!(merged.max_items, CLIPBOARD_MAX_ITEMS_MAX);
-        assert!(!merged.size_cleanup_enabled);
-        assert_eq!(merged.max_total_size_mb, CLIPBOARD_MAX_TOTAL_SIZE_MB_MIN);
-    }
-
-    #[test]
-    fn should_ignore_invalid_legacy_clipboard_values() {
-        let current = UserClipboardSettingsDto::default();
-        let legacy_values = legacy_map(&[
-            (CLIPBOARD_MAX_ITEMS_KEY, "abc"),
-            (CLIPBOARD_SIZE_CLEANUP_ENABLED_KEY, "maybe"),
-            (CLIPBOARD_MAX_TOTAL_SIZE_MB_KEY, "xyz"),
-        ]);
-
-        assert!(merge_legacy_clipboard_settings(&current, &legacy_values).is_none());
-    }
-
-    #[test]
-    fn should_parse_legacy_bool_variants() {
-        assert_eq!(parse_legacy_bool("true"), Some(true));
-        assert_eq!(parse_legacy_bool("TRUE"), Some(true));
-        assert_eq!(parse_legacy_bool("1"), Some(true));
-        assert_eq!(parse_legacy_bool("false"), Some(false));
-        assert_eq!(parse_legacy_bool("False"), Some(false));
-        assert_eq!(parse_legacy_bool("0"), Some(false));
-        assert_eq!(parse_legacy_bool("unknown"), None);
-    }
 }

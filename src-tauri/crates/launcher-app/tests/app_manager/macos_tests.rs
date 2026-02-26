@@ -44,9 +44,9 @@ fn has_root_path(roots: &[RelatedRootSpec], expected: &Path) -> bool {
 
 fn has_candidate_path(candidates: &[ResidueCandidate], expected: &Path) -> bool {
     let expected_key = normalize_path_key(expected.to_string_lossy().as_ref());
-    candidates
-        .iter()
-        .any(|candidate| normalize_path_key(candidate.path.to_string_lossy().as_ref()) == expected_key)
+    candidates.iter().any(|candidate| {
+        normalize_path_key(candidate.path.to_string_lossy().as_ref()) == expected_key
+    })
 }
 
 fn unique_temp_dir(prefix: &str) -> PathBuf {
@@ -172,15 +172,18 @@ fn quick_templates_include_scripts_containers_and_group_containers() {
     let home = home_dir().expect("home dir should exist");
     assert!(has_candidate_path(
         candidates.as_slice(),
-        home.join("Library/Application Scripts/com.tencent.xinWeChat").as_path()
+        home.join("Library/Application Scripts/com.tencent.xinWeChat")
+            .as_path()
     ));
     assert!(has_candidate_path(
         candidates.as_slice(),
-        home.join("Library/Containers/com.tencent.xinWeChat").as_path()
+        home.join("Library/Containers/com.tencent.xinWeChat")
+            .as_path()
     ));
     assert!(has_candidate_path(
         candidates.as_slice(),
-        home.join("Library/Group Containers/com.tencent.xinWeChat").as_path()
+        home.join("Library/Group Containers/com.tencent.xinWeChat")
+            .as_path()
     ));
 }
 
@@ -204,7 +207,10 @@ fn discovery_matches_team_prefixed_group_container() {
     );
     assert!(
         result.candidates.iter().any(|candidate| {
-            candidate.path.to_string_lossy().ends_with("5A4RE8SF68.com.tencent.xinWeChat")
+            candidate
+                .path
+                .to_string_lossy()
+                .ends_with("5A4RE8SF68.com.tencent.xinWeChat")
         }),
         "deep discovery should include team-prefixed group container path"
     );

@@ -12,11 +12,6 @@ use app_core::models::{
     TransferSettingsDto, TransferUpdateSettingsInputDto,
 };
 use app_core::{AppError, AppResult, InvokeError, ResultExt};
-use app_transfer::service::TransferService;
-
-fn ensure_transfer_bootstrapped(service: &TransferService) -> AppResult<()> {
-    service.ensure_bootstrapped()
-}
 
 fn open_path(path: &str) -> AppResult<()> {
     let trimmed = path.trim();
@@ -68,7 +63,7 @@ pub fn transfer_get_settings(
         "transfer_get_settings",
         request_id,
         window_label,
-        move || Ok::<_, InvokeError>(state.transfer_service.get_settings()),
+        move || Ok::<_, InvokeError>(state.app_services.transfer.get_settings()),
     )
 }
 
@@ -76,11 +71,17 @@ pub fn transfer_get_settings(
 pub async fn transfer_update_settings(
     state: State<'_, AppState>,
     input: TransferUpdateSettingsInputDto,
-    _request_id: Option<String>,
-    _window_label: Option<String>,
+    request_id: Option<String>,
+    window_label: Option<String>,
 ) -> Result<TransferSettingsDto, InvokeError> {
-    let service = state.transfer_service.clone();
-    service.update_settings(input).await.map_err(Into::into)
+    let service = state.app_services.transfer.clone();
+    run_command_async(
+        "transfer_update_settings",
+        request_id,
+        window_label,
+        move || async move { service.update_settings(input).await },
+    )
+    .await
 }
 
 #[tauri::command]
@@ -93,19 +94,24 @@ pub fn transfer_generate_pairing_code(
         "transfer_generate_pairing_code",
         request_id,
         window_label,
-        move || Ok::<_, InvokeError>(state.transfer_service.generate_pairing_code()),
+        move || Ok::<_, InvokeError>(state.app_services.transfer.generate_pairing_code()),
     )
 }
 
 #[tauri::command]
 pub async fn transfer_start_discovery(
     state: State<'_, AppState>,
-    _request_id: Option<String>,
-    _window_label: Option<String>,
+    request_id: Option<String>,
+    window_label: Option<String>,
 ) -> Result<(), InvokeError> {
-    let service = state.transfer_service.clone();
-    ensure_transfer_bootstrapped(&service)?;
-    service.start_discovery().map_err(Into::into)
+    let service = state.app_services.transfer.clone();
+    run_command_async(
+        "transfer_start_discovery",
+        request_id,
+        window_label,
+        move || async move { service.start_discovery() },
+    )
+    .await
 }
 
 #[tauri::command]
@@ -119,7 +125,7 @@ pub fn transfer_stop_discovery(
         request_id,
         window_label,
         move || {
-            state.transfer_service.stop_discovery();
+            state.app_services.transfer.stop_discovery();
             Ok::<_, InvokeError>(())
         },
     )
@@ -128,81 +134,102 @@ pub fn transfer_stop_discovery(
 #[tauri::command]
 pub async fn transfer_list_peers(
     state: State<'_, AppState>,
-    _request_id: Option<String>,
-    _window_label: Option<String>,
+    request_id: Option<String>,
+    window_label: Option<String>,
 ) -> Result<Vec<TransferPeerDto>, InvokeError> {
-    let service = state.transfer_service.clone();
-    ensure_transfer_bootstrapped(&service)?;
-    service.list_peers().await.map_err(Into::into)
+    let service = state.app_services.transfer.clone();
+    run_command_async(
+        "transfer_list_peers",
+        request_id,
+        window_label,
+        move || async move { service.list_peers().await },
+    )
+    .await
 }
 
 #[tauri::command]
 pub async fn transfer_send_files(
     state: State<'_, AppState>,
     input: TransferSendFilesInputDto,
-    _request_id: Option<String>,
-    _window_label: Option<String>,
+    request_id: Option<String>,
+    window_label: Option<String>,
 ) -> Result<TransferSessionDto, InvokeError> {
-    let service = state.transfer_service.clone();
-    ensure_transfer_bootstrapped(&service)?;
-    service.send_files(input).await.map_err(Into::into)
+    let service = state.app_services.transfer.clone();
+    run_command_async(
+        "transfer_send_files",
+        request_id,
+        window_label,
+        move || async move { service.send_files(input).await },
+    )
+    .await
 }
 
 #[tauri::command]
 pub async fn transfer_pause_session(
     state: State<'_, AppState>,
     session_id: String,
-    _request_id: Option<String>,
-    _window_label: Option<String>,
+    request_id: Option<String>,
+    window_label: Option<String>,
 ) -> Result<(), InvokeError> {
-    let service = state.transfer_service.clone();
-    service
-        .pause_session(session_id.as_str())
-        .await
-        .map_err(Into::into)
+    let service = state.app_services.transfer.clone();
+    run_command_async(
+        "transfer_pause_session",
+        request_id,
+        window_label,
+        move || async move { service.pause_session(session_id.as_str()).await },
+    )
+    .await
 }
 
 #[tauri::command]
 pub async fn transfer_resume_session(
     state: State<'_, AppState>,
     session_id: String,
-    _request_id: Option<String>,
-    _window_label: Option<String>,
+    request_id: Option<String>,
+    window_label: Option<String>,
 ) -> Result<(), InvokeError> {
-    let service = state.transfer_service.clone();
-    service
-        .resume_session(session_id.as_str())
-        .await
-        .map_err(Into::into)
+    let service = state.app_services.transfer.clone();
+    run_command_async(
+        "transfer_resume_session",
+        request_id,
+        window_label,
+        move || async move { service.resume_session(session_id.as_str()).await },
+    )
+    .await
 }
 
 #[tauri::command]
 pub async fn transfer_cancel_session(
     state: State<'_, AppState>,
     session_id: String,
-    _request_id: Option<String>,
-    _window_label: Option<String>,
+    request_id: Option<String>,
+    window_label: Option<String>,
 ) -> Result<(), InvokeError> {
-    let service = state.transfer_service.clone();
-    service
-        .cancel_session(session_id.as_str())
-        .await
-        .map_err(Into::into)
+    let service = state.app_services.transfer.clone();
+    run_command_async(
+        "transfer_cancel_session",
+        request_id,
+        window_label,
+        move || async move { service.cancel_session(session_id.as_str()).await },
+    )
+    .await
 }
 
 #[tauri::command]
 pub async fn transfer_retry_session(
     state: State<'_, AppState>,
     session_id: String,
-    _request_id: Option<String>,
-    _window_label: Option<String>,
+    request_id: Option<String>,
+    window_label: Option<String>,
 ) -> Result<TransferSessionDto, InvokeError> {
-    let service = state.transfer_service.clone();
-    ensure_transfer_bootstrapped(&service)?;
-    service
-        .retry_session(session_id.as_str())
-        .await
-        .map_err(Into::into)
+    let service = state.app_services.transfer.clone();
+    run_command_async(
+        "transfer_retry_session",
+        request_id,
+        window_label,
+        move || async move { service.retry_session(session_id.as_str()).await },
+    )
+    .await
 }
 
 #[tauri::command]
@@ -212,7 +239,7 @@ pub async fn transfer_list_history(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<TransferHistoryPageDto, InvokeError> {
-    let service = state.transfer_service.clone();
+    let service = state.app_services.transfer.clone();
     run_command_async(
         "transfer_list_history",
         request_id,
@@ -229,7 +256,7 @@ pub async fn transfer_clear_history(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<(), InvokeError> {
-    let service = state.transfer_service.clone();
+    let service = state.app_services.transfer.clone();
     run_command_async(
         "transfer_clear_history",
         request_id,
@@ -251,8 +278,13 @@ pub fn transfer_open_download_dir(
         request_id,
         window_label,
         move || {
-            let resolved =
-                path.unwrap_or_else(|| state.transfer_service.get_settings().default_download_dir);
+            let resolved = path.unwrap_or_else(|| {
+                state
+                    .app_services
+                    .transfer
+                    .get_settings()
+                    .default_download_dir
+            });
             open_path(resolved.as_str())
         },
     )

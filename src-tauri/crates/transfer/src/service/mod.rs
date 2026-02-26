@@ -1,7 +1,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -13,10 +13,11 @@ use tokio::time::{Instant, MissedTickBehavior, interval, sleep};
 
 use anyhow::Context;
 use app_core::models::{
-    TransferClearHistoryInputDto, TransferDirection, TransferFileDto, TransferFileInputDto,
-    TransferHistoryFilterDto, TransferHistoryPageDto, TransferPairingCodeDto, TransferPeerDto,
-    TransferPeerTrustLevel, TransferProgressSnapshotDto, TransferSendFilesInputDto,
-    TransferSessionDto, TransferSettingsDto, TransferStatus, TransferUpdateSettingsInputDto,
+    TransferClearHistoryInputDto, TransferDirection, TransferDiscoveryTaskStatusDto,
+    TransferFileDto, TransferFileInputDto, TransferHistoryFilterDto, TransferHistoryPageDto,
+    TransferPairingCodeDto, TransferPeerDto, TransferPeerTrustLevel, TransferProgressSnapshotDto,
+    TransferRuntimeStatusDto, TransferSendFilesInputDto, TransferSessionDto, TransferSettingsDto,
+    TransferStatus, TransferUpdateSettingsInputDto,
 };
 use app_core::{AppError, AppResult, ResultExt};
 use app_infra::db::DbConn;
@@ -28,9 +29,10 @@ use app_infra::transfer::discovery::{
 };
 use app_infra::transfer::preview::build_preview;
 use app_infra::transfer::protocol::{
-    AckFrameItem, CAPABILITY_ACK_BATCH, CAPABILITY_CODEC_BIN, CAPABILITY_PIPELINE, FrameCodec,
-    ManifestFileFrame, MissingChunkFrame, PROTOCOL_VERSION, TransferFrame, derive_proof,
-    derive_session_key, random_hex, read_frame, read_frame_from, write_frame, write_frame_to,
+    AckFrameItem, CAPABILITY_ACK_BATCH, CAPABILITY_CODEC_BIN, CAPABILITY_FLOW_CONTROL,
+    CAPABILITY_PIPELINE, CAPABILITY_RESUME_CHECKPOINT, FrameCodec, ManifestFileFrame,
+    MissingChunkFrame, PROTOCOL_VERSION, TransferFrame, derive_proof, derive_session_key,
+    random_hex, read_frame, read_frame_from, write_frame, write_frame_to,
 };
 use app_infra::transfer::resume::{
     chunk_count, completed_bytes, empty_bitmap, mark_chunk_done, missing_chunks,
@@ -115,6 +117,13 @@ fn write_lock<'a, T>(
     }
 }
 
+fn normalize_flow_control_mode(value: &str) -> &'static str {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "fixed" => "fixed",
+        _ => "adaptive",
+    }
+}
+
 #[derive(Debug, Clone)]
 struct PairCodeEntry {
     code: String,
@@ -127,6 +136,13 @@ struct RuntimeSessionControl {
     canceled: Arc<AtomicBool>,
 }
 
+#[derive(Debug, Default)]
+struct DiscoveryTaskSet {
+    broadcast: Option<JoinHandle<()>>,
+    listen: Option<JoinHandle<()>>,
+    peer_sync: Option<JoinHandle<()>>,
+}
+
 #[derive(Clone)]
 pub struct TransferService {
     event_sink: Arc<dyn TransferEventSink>,
@@ -137,12 +153,14 @@ pub struct TransferService {
     settings: Arc<RwLock<TransferSettingsDto>>,
     peers: PeerMap,
     discovery_stop: Arc<AtomicBool>,
-    discovery_tasks: Arc<Mutex<Vec<JoinHandle<()>>>>,
+    discovery_tasks: Arc<Mutex<DiscoveryTaskSet>>,
     listener_started: Arc<AtomicBool>,
     pair_code: Arc<RwLock<Option<PairCodeEntry>>>,
     session_controls: Arc<RwLock<HashMap<String, RuntimeSessionControl>>>,
     session_pair_codes: Arc<RwLock<HashMap<String, String>>>,
     session_last_emit_ms: Arc<RwLock<HashMap<String, i64>>>,
+    total_chunks_sent: Arc<AtomicU64>,
+    total_chunks_retransmit: Arc<AtomicU64>,
 }
 
 impl TransferService {
@@ -166,12 +184,14 @@ impl TransferService {
             settings: Arc::new(RwLock::new(settings)),
             peers: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
             discovery_stop: Arc::new(AtomicBool::new(false)),
-            discovery_tasks: Arc::new(Mutex::new(Vec::new())),
+            discovery_tasks: Arc::new(Mutex::new(DiscoveryTaskSet::default())),
             listener_started: Arc::new(AtomicBool::new(false)),
             pair_code: Arc::new(RwLock::new(None)),
             session_controls: Arc::new(RwLock::new(HashMap::new())),
             session_pair_codes: Arc::new(RwLock::new(HashMap::new())),
             session_last_emit_ms: Arc::new(RwLock::new(HashMap::new())),
+            total_chunks_sent: Arc::new(AtomicU64::new(0)),
+            total_chunks_retransmit: Arc::new(AtomicU64::new(0)),
         };
 
         let _ = cleanup_expired(&service.db_conn, now_millis()).await;
@@ -202,7 +222,8 @@ impl TransferService {
         &self,
         input: TransferUpdateSettingsInputDto,
     ) -> AppResult<TransferSettingsDto> {
-        let mut next = self.get_settings();
+        let previous = self.get_settings();
+        let mut next = previous.clone();
 
         if let Some(value) = input.default_download_dir {
             let trimmed = value.trim();
@@ -220,6 +241,9 @@ impl TransferService {
         if let Some(value) = input.max_inflight_chunks {
             next.max_inflight_chunks = value.clamp(1, 64);
         }
+        if let Some(value) = input.flow_control_mode {
+            next.flow_control_mode = normalize_flow_control_mode(value.as_str()).to_string();
+        }
         if let Some(value) = input.chunk_size_kb {
             next.chunk_size_kb = value.clamp(64, 4096);
         }
@@ -236,8 +260,14 @@ impl TransferService {
             next.pairing_required = value;
         }
 
+        let discovery_toggle = (previous.discovery_enabled, next.discovery_enabled);
         save_settings(&self.db_conn, &next).await?;
         *write_lock(self.settings.as_ref(), "settings") = next.clone();
+        match discovery_toggle {
+            (false, true) => self.start_discovery()?,
+            (true, false) => self.stop_discovery(),
+            _ => {}
+        }
         Ok(next)
     }
 
@@ -273,7 +303,9 @@ impl TransferService {
         )?;
 
         let created_session_id = prepared.session.id.clone();
-        ensure_session_exists(&self.db_conn, created_session_id.as_str()).await
+        ensure_session_exists(&self.db_conn, created_session_id.as_str())
+            .await
+            .map_err(AppError::from)
     }
 
     pub async fn retry_session(&self, session_id: &str) -> AppResult<TransferSessionDto> {
@@ -325,7 +357,9 @@ impl TransferService {
         &self,
         filter: TransferHistoryFilterDto,
     ) -> AppResult<TransferHistoryPageDto> {
-        list_history(&self.db_conn, &filter).await
+        list_history(&self.db_conn, &filter)
+            .await
+            .map_err(AppError::from)
     }
 
     pub async fn clear_history(&self, input: TransferClearHistoryInputDto) -> AppResult<()> {
@@ -334,6 +368,23 @@ impl TransferService {
         app_infra::transfer::store::clear_history(&self.db_conn, all, older_than_days).await?;
         self.emit_history_sync(if all { "clear_all" } else { "clear_expired" });
         Ok(())
+    }
+
+    pub(super) fn mark_chunk_sent(&self) {
+        self.total_chunks_sent.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub(super) fn mark_chunk_retransmit(&self) {
+        self.total_chunks_retransmit.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub(super) fn retransmit_ratio(&self) -> f64 {
+        let sent = self.total_chunks_sent.load(Ordering::Relaxed);
+        if sent == 0 {
+            return 0.0;
+        }
+        let retransmit = self.total_chunks_retransmit.load(Ordering::Relaxed);
+        retransmit as f64 / sent as f64
     }
 }
 

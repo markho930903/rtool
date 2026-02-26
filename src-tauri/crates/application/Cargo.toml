@@ -1,0 +1,18 @@
+[package]
+name = "application"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "app_application"
+
+[dependencies]
+app_core = { workspace = true }
+app_clipboard = { workspace = true }
+app_infra = { workspace = true }
+app_launcher_app = { workspace = true }
+app_resource_monitor = { workspace = true }
+app_transfer = { workspace = true }
+serde_json = { workspace = true }
+sysinfo = { workspace = true }
+tracing = { workspace = true }

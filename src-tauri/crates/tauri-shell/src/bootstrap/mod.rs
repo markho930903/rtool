@@ -6,7 +6,7 @@ use crate::constants::{
     SHORTCUT_LAUNCHER_FALLBACK, SHORTCUT_LAUNCHER_PRIMARY,
 };
 use crate::platform::native_ui::shortcuts;
-use app_launcher_app::launcher::index::stop_background_indexer;
+use app_application::LauncherApplicationService;
 use setup::{log_error_fallback, log_warn_fallback};
 use tauri_plugin_global_shortcut::ShortcutState;
 
@@ -112,7 +112,7 @@ impl AppBootstrap {
                 event,
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
             ) {
-                stop_background_indexer();
+                LauncherApplicationService::stop_background_indexer();
             }
         });
     }

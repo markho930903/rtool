@@ -287,18 +287,6 @@ impl From<anyhow::Error> for AppError {
     }
 }
 
-impl From<libsql::Error> for AppError {
-    fn from(value: libsql::Error) -> Self {
-        Self::new("db_error", "数据库操作失败").with_source(value)
-    }
-}
-
-impl From<arboard::Error> for AppError {
-    fn from(value: arboard::Error) -> Self {
-        Self::new("clipboard_error", "剪贴板操作失败").with_source(value)
-    }
-}
-
 impl From<Box<dyn StdError + Send + Sync + 'static>> for AppError {
     fn from(value: Box<dyn StdError + Send + Sync + 'static>) -> Self {
         Self::new("clipboard_error", "剪贴板操作失败").with_boxed_source(value)

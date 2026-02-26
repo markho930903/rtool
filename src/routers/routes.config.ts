@@ -82,6 +82,12 @@ const ROUTE_CONFIG: AppRouteConfig[] = [
       icon: "i-noto:outbox-tray",
       order: 2,
     },
+    homeModule: {
+      nameKey: "module.transfer.name",
+      detailKey: "module.transfer.detail",
+      state: "online",
+      order: 4,
+    },
   },
   {
     id: "logs",
@@ -110,7 +116,7 @@ const ROUTE_CONFIG: AppRouteConfig[] = [
       nameKey: "layout:nav.appManager",
       detailKey: "app_manager:desc",
       state: "online",
-      order: 4,
+      order: 5,
     },
   },
   {
@@ -128,7 +134,7 @@ const ROUTE_CONFIG: AppRouteConfig[] = [
       nameKey: "module.resourceMonitor.name",
       detailKey: "module.resourceMonitor.detail",
       state: "online",
-      order: 5,
+      order: 6,
     },
   },
   {

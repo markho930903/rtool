@@ -11,10 +11,12 @@ use wincode::{SchemaRead, SchemaWrite};
 use anyhow::Context;
 use app_core::{AppError, AppResult, ResultExt};
 
-pub const PROTOCOL_VERSION: u16 = 2;
+pub const PROTOCOL_VERSION: u16 = 3;
 pub const CAPABILITY_CODEC_BIN: &str = "codec-bin";
 pub const CAPABILITY_ACK_BATCH: &str = "ack-batch";
 pub const CAPABILITY_PIPELINE: &str = "pipeline";
+pub const CAPABILITY_FLOW_CONTROL: &str = "flow-control";
+pub const CAPABILITY_RESUME_CHECKPOINT: &str = "resume-checkpoint";
 
 const FRAME_MAX_BYTES: usize = 16 * 1024 * 1024;
 const MODE_PLAIN_BIN: u8 = 2;
@@ -98,14 +100,6 @@ pub enum TransferFrame {
         session_id: String,
         missing_chunks: Vec<MissingChunkFrame>,
     },
-    Chunk {
-        session_id: String,
-        file_id: String,
-        chunk_index: u32,
-        total_chunks: u32,
-        hash: String,
-        data: String,
-    },
     ChunkBinary {
         session_id: String,
         file_id: String,
@@ -113,13 +107,6 @@ pub enum TransferFrame {
         total_chunks: u32,
         hash: String,
         data: Vec<u8>,
-    },
-    Ack {
-        session_id: String,
-        file_id: String,
-        chunk_index: u32,
-        ok: bool,
-        error: Option<String>,
     },
     AckBatch {
         session_id: String,
@@ -177,14 +164,6 @@ enum TransferFrameBinary {
         session_id: String,
         missing_chunks: Vec<MissingChunkFrame>,
     },
-    Chunk {
-        session_id: String,
-        file_id: String,
-        chunk_index: u32,
-        total_chunks: u32,
-        hash: String,
-        data: String,
-    },
     ChunkBinary {
         session_id: String,
         file_id: String,
@@ -192,13 +171,6 @@ enum TransferFrameBinary {
         total_chunks: u32,
         hash: String,
         data: Vec<u8>,
-    },
-    Ack {
-        session_id: String,
-        file_id: String,
-        chunk_index: u32,
-        ok: bool,
-        error: Option<String>,
     },
     AckBatch {
         session_id: String,
@@ -276,21 +248,6 @@ impl From<&TransferFrame> for TransferFrameBinary {
                 session_id: session_id.clone(),
                 missing_chunks: missing_chunks.clone(),
             },
-            TransferFrame::Chunk {
-                session_id,
-                file_id,
-                chunk_index,
-                total_chunks,
-                hash,
-                data,
-            } => Self::Chunk {
-                session_id: session_id.clone(),
-                file_id: file_id.clone(),
-                chunk_index: *chunk_index,
-                total_chunks: *total_chunks,
-                hash: hash.clone(),
-                data: data.clone(),
-            },
             TransferFrame::ChunkBinary {
                 session_id,
                 file_id,
@@ -305,19 +262,6 @@ impl From<&TransferFrame> for TransferFrameBinary {
                 total_chunks: *total_chunks,
                 hash: hash.clone(),
                 data: data.clone(),
-            },
-            TransferFrame::Ack {
-                session_id,
-                file_id,
-                chunk_index,
-                ok,
-                error,
-            } => Self::Ack {
-                session_id: session_id.clone(),
-                file_id: file_id.clone(),
-                chunk_index: *chunk_index,
-                ok: *ok,
-                error: error.clone(),
             },
             TransferFrame::AckBatch { session_id, items } => Self::AckBatch {
                 session_id: session_id.clone(),
@@ -401,21 +345,6 @@ impl From<TransferFrameBinary> for TransferFrame {
                 session_id,
                 missing_chunks,
             },
-            TransferFrameBinary::Chunk {
-                session_id,
-                file_id,
-                chunk_index,
-                total_chunks,
-                hash,
-                data,
-            } => Self::Chunk {
-                session_id,
-                file_id,
-                chunk_index,
-                total_chunks,
-                hash,
-                data,
-            },
             TransferFrameBinary::ChunkBinary {
                 session_id,
                 file_id,
@@ -430,19 +359,6 @@ impl From<TransferFrameBinary> for TransferFrame {
                 total_chunks,
                 hash,
                 data,
-            },
-            TransferFrameBinary::Ack {
-                session_id,
-                file_id,
-                chunk_index,
-                ok,
-                error,
-            } => Self::Ack {
-                session_id,
-                file_id,
-                chunk_index,
-                ok,
-                error,
             },
             TransferFrameBinary::AckBatch { session_id, items } => {
                 Self::AckBatch { session_id, items }

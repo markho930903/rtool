@@ -1021,6 +1021,7 @@ pub struct TransferSettingsDto {
     pub default_download_dir: String,
     pub max_parallel_files: u32,
     pub max_inflight_chunks: u32,
+    pub flow_control_mode: String,
     pub chunk_size_kb: u32,
     pub auto_cleanup_days: u32,
     pub resume_enabled: bool,
@@ -1032,12 +1033,33 @@ pub struct TransferSettingsDto {
     pub ack_flush_interval_ms: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransferDiscoveryTaskStatusDto {
+    pub broadcast: bool,
+    pub listen: bool,
+    pub peer_sync: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransferRuntimeStatusDto {
+    pub listener_started: bool,
+    pub discovery_enabled: bool,
+    pub discovery_running: bool,
+    pub discovery_tasks: TransferDiscoveryTaskStatusDto,
+    pub protocol_version: u16,
+    pub flow_control_mode: String,
+    pub retransmit_ratio: f64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct TransferUpdateSettingsInputDto {
     pub default_download_dir: Option<String>,
     pub max_parallel_files: Option<u32>,
     pub max_inflight_chunks: Option<u32>,
+    pub flow_control_mode: Option<String>,
     pub chunk_size_kb: Option<u32>,
     pub auto_cleanup_days: Option<u32>,
     pub resume_enabled: Option<bool>,
@@ -1247,6 +1269,10 @@ pub struct TransferSessionDto {
     pub total_bytes: u64,
     pub transferred_bytes: u64,
     pub avg_speed_bps: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rtt_ms_p50: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rtt_ms_p95: Option<u32>,
     pub save_dir: String,
     pub created_at: i64,
     pub started_at: Option<i64>,
@@ -1348,6 +1374,21 @@ pub struct DashboardSnapshotDto {
     pub sampled_at: i64,
     pub app: AppRuntimeInfoDto,
     pub system: SystemInfoDto,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LauncherRuntimeStatusDto {
+    pub started: bool,
+    pub building: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppHealthSnapshotDto {
+    pub sampled_at: i64,
+    pub transfer: TransferRuntimeStatusDto,
+    pub launcher: LauncherRuntimeStatusDto,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

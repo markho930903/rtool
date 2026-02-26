@@ -113,6 +113,8 @@ fn validate_peer_protocol(
         CAPABILITY_CODEC_BIN,
         CAPABILITY_ACK_BATCH,
         CAPABILITY_PIPELINE,
+        CAPABILITY_FLOW_CONTROL,
+        CAPABILITY_RESUME_CHECKPOINT,
     ] {
         if !peer_capabilities.iter().any(|value| value == capability) {
             return Err(AppError::new(

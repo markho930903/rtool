@@ -6,7 +6,6 @@ use app_core::i18n_catalog::{
     reload_overlays,
 };
 use app_core::{AppError, InvokeError};
-use app_launcher_app::launcher::service::invalidate_launcher_cache;
 use tauri::{AppHandle, State};
 
 fn map_i18n_error(error: anyhow::Error) -> AppError {
@@ -34,7 +33,7 @@ pub fn app_reload_locales(
 ) -> Result<ReloadLocalesResult, InvokeError> {
     run_command_sync("app_reload_locales", request_id, window_label, move || {
         let output = reload_overlays().map_err(map_i18n_error)?;
-        invalidate_launcher_cache();
+        state.app_services.launcher.invalidate_cache();
         let resolved_locale = state.resolved_locale();
         crate::apply_locale_to_native_ui(&app, &resolved_locale);
         Ok::<ReloadLocalesResult, AppError>(output)
@@ -67,7 +66,7 @@ pub fn app_import_locale_file(
             )
             .map_err(map_i18n_error)?;
 
-            invalidate_launcher_cache();
+            state.app_services.launcher.invalidate_cache();
             let resolved_locale = state.resolved_locale();
             crate::apply_locale_to_native_ui(&app, &resolved_locale);
             Ok::<ImportLocaleResult, AppError>(output)

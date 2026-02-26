@@ -51,6 +51,8 @@ impl TransferService {
             total_bytes,
             transferred_bytes: 0,
             avg_speed_bps: 0,
+            rtt_ms_p50: None,
+            rtt_ms_p95: None,
             save_dir: manifest.save_dir.clone(),
             created_at: now_millis(),
             started_at: Some(now_millis()),

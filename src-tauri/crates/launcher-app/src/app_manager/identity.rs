@@ -197,13 +197,11 @@ pub(super) fn apply_entitlements_from_text(
         }
     }
 
-    if let Some(team_id) = plist_string_value(entitlements, "com.apple.developer.team-identifier")
-    {
+    if let Some(team_id) = plist_string_value(entitlements, "com.apple.developer.team-identifier") {
         push_unique(&mut profile.team_ids, team_id.as_str());
     }
 
-    if let Some(application_identifier) =
-        plist_string_value(entitlements, "application-identifier")
+    if let Some(application_identifier) = plist_string_value(entitlements, "application-identifier")
         && let Some(team_id) = application_identifier.split('.').next()
     {
         push_unique(&mut profile.team_ids, team_id);

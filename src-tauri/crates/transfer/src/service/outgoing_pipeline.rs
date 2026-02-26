@@ -165,6 +165,7 @@ impl TransferService {
 
     #[allow(clippy::too_many_arguments)]
     pub(super) async fn fill_inflight_window<W>(
+        &self,
         writer: &mut W,
         session: &TransferSessionDto,
         session_key: &[u8; 32],
@@ -209,6 +210,7 @@ impl TransferService {
                 data: bytes,
             };
             write_frame_to(writer, &frame, Some(session_key), codec).await?;
+            self.mark_chunk_sent();
             inflight.insert(
                 (file_idx, chunk_index),
                 InflightChunk {
@@ -226,6 +228,7 @@ impl TransferService {
     }
 
     pub(super) async fn process_outgoing_iteration<R, W>(
+        &self,
         writer: &mut W,
         reader: &mut R,
         state: &mut OutgoingLoopState,
@@ -238,7 +241,7 @@ impl TransferService {
         R: tokio::io::AsyncRead + Unpin,
         W: tokio::io::AsyncWrite + Unpin,
     {
-        Self::fill_inflight_window(
+        self.fill_inflight_window(
             writer,
             &state.session,
             session_key,
@@ -260,7 +263,7 @@ impl TransferService {
         )
         .await?;
         if !ack_items.is_empty() {
-            Self::apply_ack_items(
+            self.apply_ack_items(
                 &mut state.session,
                 writer,
                 session_key,
@@ -280,7 +283,7 @@ impl TransferService {
         }
 
         let timeout_chunks = Self::collect_timeout_chunks(&state.inflight);
-        Self::requeue_timeout_chunks(
+        self.requeue_timeout_chunks(
             &state.session,
             peer_address,
             timeout_chunks,
@@ -378,20 +381,6 @@ impl TransferService {
     ) -> AppResult<Vec<AckFrameItem>> {
         let mut ack_items = Vec::<AckFrameItem>::new();
         match frame {
-            TransferFrame::Ack {
-                session_id: ack_session_id,
-                file_id,
-                chunk_index,
-                ok,
-                error,
-            } if ack_session_id == session_id => {
-                ack_items.push(AckFrameItem {
-                    file_id,
-                    chunk_index,
-                    ok,
-                    error,
-                });
-            }
             TransferFrame::AckBatch {
                 session_id: ack_session_id,
                 items,
@@ -434,6 +423,7 @@ impl TransferService {
 
     #[allow(clippy::too_many_arguments)]
     pub(super) async fn apply_ack_items<W>(
+        &self,
         session: &mut TransferSessionDto,
         writer: &mut W,
         session_key: &[u8; 32],
@@ -536,6 +526,7 @@ impl TransferService {
                     .with_context("peerAddress", peer_address.to_string()));
                 }
                 *retransmit_chunks = retransmit_chunks.saturating_add(1);
+                self.mark_chunk_retransmit();
                 tracing::warn!(
                     event = "transfer_chunk_requeue_failed_ack",
                     session_id = session.id,
@@ -563,6 +554,7 @@ impl TransferService {
     }
 
     pub(super) fn requeue_timeout_chunks(
+        &self,
         session: &TransferSessionDto,
         peer_address: &str,
         timeout_chunks: Vec<(usize, u32)>,
@@ -585,6 +577,7 @@ impl TransferService {
                     .with_context("peerAddress", peer_address.to_string()));
                 }
                 *retransmit_chunks = retransmit_chunks.saturating_add(1);
+                self.mark_chunk_retransmit();
                 tracing::warn!(
                     event = "transfer_chunk_requeue_timeout",
                     session_id = session.id,
@@ -614,6 +607,8 @@ mod tests {
             total_bytes: 100,
             transferred_bytes: 40,
             avg_speed_bps: 10,
+            rtt_ms_p50: None,
+            rtt_ms_p95: None,
             save_dir: "/tmp".to_string(),
             created_at: 0,
             started_at: Some(0),
@@ -747,17 +742,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn poll_outgoing_ack_items_should_parse_single_ack_frame() {
+    async fn poll_outgoing_ack_items_should_parse_single_ack_batch_item() {
         let (mut reader, mut writer) = tokio::io::duplex(4096);
         let session_key = [9u8; 32];
         write_frame_to(
             &mut writer,
-            &TransferFrame::Ack {
+            &TransferFrame::AckBatch {
                 session_id: "session-1".to_string(),
-                file_id: "file-1".to_string(),
-                chunk_index: 3,
-                ok: true,
-                error: None,
+                items: vec![AckFrameItem {
+                    file_id: "file-1".to_string(),
+                    chunk_index: 3,
+                    ok: true,
+                    error: None,
+                }],
             },
             Some(&session_key),
             FrameCodec::Bin,
@@ -782,17 +779,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn poll_outgoing_ack_items_should_ignore_mismatched_session_ack_frame() {
+    async fn poll_outgoing_ack_items_should_ignore_mismatched_session_ack_batch() {
         let (mut reader, mut writer) = tokio::io::duplex(4096);
         let session_key = [5u8; 32];
         write_frame_to(
             &mut writer,
-            &TransferFrame::Ack {
+            &TransferFrame::AckBatch {
                 session_id: "session-other".to_string(),
-                file_id: "file-1".to_string(),
-                chunk_index: 4,
-                ok: true,
-                error: None,
+                items: vec![AckFrameItem {
+                    file_id: "file-1".to_string(),
+                    chunk_index: 4,
+                    ok: true,
+                    error: None,
+                }],
             },
             Some(&session_key),
             FrameCodec::Bin,
@@ -848,14 +847,16 @@ mod tests {
     }
 
     #[test]
-    fn collect_ack_items_from_frame_should_collect_single_ack() {
+    fn collect_ack_items_from_frame_should_collect_single_ack_batch_item() {
         let ack_items = TransferService::collect_ack_items_from_frame(
-            TransferFrame::Ack {
+            TransferFrame::AckBatch {
                 session_id: "session-1".to_string(),
-                file_id: "file-1".to_string(),
-                chunk_index: 2,
-                ok: true,
-                error: None,
+                items: vec![AckFrameItem {
+                    file_id: "file-1".to_string(),
+                    chunk_index: 2,
+                    ok: true,
+                    error: None,
+                }],
             },
             "session-1",
             "127.0.0.1:9527",
@@ -901,12 +902,14 @@ mod tests {
     #[test]
     fn collect_ack_items_from_frame_should_ignore_mismatched_session_ack() {
         let ack_items = TransferService::collect_ack_items_from_frame(
-            TransferFrame::Ack {
+            TransferFrame::AckBatch {
                 session_id: "session-other".to_string(),
-                file_id: "file-1".to_string(),
-                chunk_index: 2,
-                ok: true,
-                error: None,
+                items: vec![AckFrameItem {
+                    file_id: "file-1".to_string(),
+                    chunk_index: 2,
+                    ok: true,
+                    error: None,
+                }],
             },
             "session-1",
             "127.0.0.1:9527",

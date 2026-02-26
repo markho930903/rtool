@@ -39,9 +39,7 @@ impl DiscoveryPatternMatchKind {
     }
 }
 
-pub(super) fn discover_residue_candidates(
-    profile: &ResidueIdentityProfile,
-) -> DiscoveryResult {
+pub(super) fn discover_residue_candidates(profile: &ResidueIdentityProfile) -> DiscoveryResult {
     let identifiers = profile_identifiers(profile);
     if identifiers.is_empty() && profile.token_aliases.is_empty() {
         return DiscoveryResult::default();
@@ -95,9 +93,7 @@ fn scan_discovery_root(
             continue;
         }
 
-        if let Some((match_kind, identifier)) =
-            best_pattern_match(name, identifiers)
-        {
+        if let Some((match_kind, identifier)) = best_pattern_match(name, identifiers) {
             result.candidates.push(ResidueCandidate {
                 path,
                 scope: root.scope,
@@ -108,8 +104,7 @@ fn scan_discovery_root(
                 confidence: match_kind.confidence(),
                 evidence: vec![format!(
                     "discovery_pattern:{:?}:{}",
-                    match_kind,
-                    identifier.value
+                    match_kind, identifier.value
                 )],
                 risk_level: AppManagerRiskLevel::Low,
                 recommended: true,

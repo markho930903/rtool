@@ -10,6 +10,8 @@
   "module.clipboard.detail": "Alt + V 普通窗口，Alt + Shift + V 简洁模式",
   "module.tools.name": "工具箱",
   "module.tools.detail": "Base64 / 正则 / 时间戳",
+  "module.transfer.name": "传输",
+  "module.transfer.detail": "点对点文件传输与发现服务",
   "module.resourceMonitor.name": "资源监控",
   "module.resourceMonitor.detail": "模块级 CPU/内存与耗时分析",
   "memory.noData": "暂无内存采样数据",

@@ -107,6 +107,8 @@ impl TransferService {
             CAPABILITY_CODEC_BIN.to_string(),
             CAPABILITY_ACK_BATCH.to_string(),
             CAPABILITY_PIPELINE.to_string(),
+            CAPABILITY_FLOW_CONTROL.to_string(),
+            CAPABILITY_RESUME_CHECKPOINT.to_string(),
         ]
     }
 
@@ -167,7 +169,7 @@ impl TransferService {
         writer: &mut W,
         session_id: &str,
         ack_buffer: &mut Vec<AckFrameItem>,
-        ack_batch_enabled: bool,
+        _ack_batch_enabled: bool,
         session_key: &[u8; 32],
         codec: FrameCodec,
     ) -> AppResult<()>
@@ -178,35 +180,16 @@ impl TransferService {
             return Ok(());
         }
 
-        if ack_batch_enabled {
-            write_frame_to(
-                writer,
-                &TransferFrame::AckBatch {
-                    session_id: session_id.to_string(),
-                    items: std::mem::take(ack_buffer),
-                },
-                Some(session_key),
-                codec,
-            )
-            .await?;
-            return Ok(());
-        }
-
-        for item in std::mem::take(ack_buffer) {
-            write_frame_to(
-                writer,
-                &TransferFrame::Ack {
-                    session_id: session_id.to_string(),
-                    file_id: item.file_id,
-                    chunk_index: item.chunk_index,
-                    ok: item.ok,
-                    error: item.error,
-                },
-                Some(session_key),
-                codec,
-            )
-            .await?;
-        }
+        write_frame_to(
+            writer,
+            &TransferFrame::AckBatch {
+                session_id: session_id.to_string(),
+                items: std::mem::take(ack_buffer),
+            },
+            Some(session_key),
+            codec,
+        )
+        .await?;
         Ok(())
     }
 

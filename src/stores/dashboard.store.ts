@@ -1,7 +1,12 @@
 import { create } from "zustand";
 
 import { getHomeModuleRouteConfig, type AppRouteId } from "@/routers/routes.config";
-import { fetchDashboardSnapshot, type DashboardSnapshot } from "@/services/dashboard.service";
+import {
+  fetchAppHealthSnapshot,
+  fetchDashboardSnapshot,
+  type AppHealthSnapshot,
+  type DashboardSnapshot,
+} from "@/services/dashboard.service";
 
 const POLLING_INTERVAL_MS = 3000;
 const HISTORY_LIMIT = 20;
@@ -19,11 +24,12 @@ export interface DashboardModuleStatusItem {
   id: AppRouteId;
   nameKey: string;
   detailKey: string;
-  state: "online";
+  state: "online" | "booting" | "degraded";
 }
 
 interface DashboardState {
   snapshot: DashboardSnapshot | null;
+  healthSnapshot: AppHealthSnapshot | null;
   history: DashboardHistoryPoint[];
   loading: boolean;
   error: string | null;
@@ -54,6 +60,7 @@ function appendHistory(history: DashboardHistoryPoint[], nextPoint: DashboardHis
 
 export const useDashboardStore = create<DashboardStore>((set, get) => ({
   snapshot: null,
+  healthSnapshot: null,
   history: [],
   loading: false,
   error: null,
@@ -72,10 +79,14 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
       }
 
       try {
-        const snapshot = await fetchDashboardSnapshot();
+        const [snapshot, healthSnapshot] = await Promise.all([
+          fetchDashboardSnapshot(),
+          fetchAppHealthSnapshot(),
+        ]);
         const nextHistoryPoint = toHistoryPoint(snapshot);
         set((state) => ({
           snapshot,
+          healthSnapshot,
           history: appendHistory(state.history, nextHistoryPoint),
           loading: false,
           error: null,
@@ -111,11 +122,33 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
     pollingTimer = null;
   },
   getModuleStatusItems() {
-    return getHomeModuleRouteConfig().map((item) => ({
-      id: item.id,
-      nameKey: item.nameKey,
-      detailKey: item.detailKey,
-      state: item.state,
-    }));
+    const health = get().healthSnapshot;
+    return getHomeModuleRouteConfig().map((item) => {
+      if (item.id === "launcher" && health) {
+        const state: DashboardModuleStatusItem["state"] =
+          health.launcher.started && !health.launcher.building ? "online" : "booting";
+        return {
+          id: item.id,
+          nameKey: item.nameKey,
+          detailKey: item.detailKey,
+          state,
+        };
+      }
+      if (item.id === "transfer" && health) {
+        const state: DashboardModuleStatusItem["state"] = health.transfer.listenerStarted ? "online" : "degraded";
+        return {
+          id: item.id,
+          nameKey: item.nameKey,
+          detailKey: item.detailKey,
+          state,
+        };
+      }
+      return {
+        id: item.id,
+        nameKey: item.nameKey,
+        detailKey: item.detailKey,
+        state: item.state,
+      };
+    });
   },
 }));

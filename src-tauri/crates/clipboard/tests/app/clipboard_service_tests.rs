@@ -20,8 +20,8 @@ async fn should_load_default_clipboard_settings() {
         db_path.clone(),
         UserClipboardSettingsDto::default(),
     )
-        .await
-        .expect("new clipboard service");
+    .await
+    .expect("new clipboard service");
 
     let settings = service.get_settings();
     assert_eq!(settings.max_items, CLIPBOARD_MAX_ITEMS_DEFAULT);

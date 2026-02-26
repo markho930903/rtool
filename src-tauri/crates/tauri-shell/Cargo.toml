@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 app_core = { workspace = true }
+app_application = { workspace = true }
 app_infra = { workspace = true }
 app_launcher_app = { workspace = true }
 app_clipboard = { workspace = true }

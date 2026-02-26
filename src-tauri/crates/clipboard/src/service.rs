@@ -43,9 +43,10 @@ impl ClipboardRuntimeSettings {
                 .max_items
                 .clamp(CLIPBOARD_MAX_ITEMS_MIN, CLIPBOARD_MAX_ITEMS_MAX),
             size_cleanup_enabled: value.size_cleanup_enabled,
-            max_total_size_mb: value
-                .max_total_size_mb
-                .clamp(CLIPBOARD_MAX_TOTAL_SIZE_MB_MIN, CLIPBOARD_MAX_TOTAL_SIZE_MB_MAX),
+            max_total_size_mb: value.max_total_size_mb.clamp(
+                CLIPBOARD_MAX_TOTAL_SIZE_MB_MIN,
+                CLIPBOARD_MAX_TOTAL_SIZE_MB_MAX,
+            ),
         }
     }
 }
@@ -264,7 +265,9 @@ impl ClipboardService {
     }
 
     pub async fn list(&self, filter: ClipboardFilterDto) -> AppResult<Vec<ClipboardItemDto>> {
-        db::list_clipboard_items(&self.db_conn, &filter).await
+        db::list_clipboard_items(&self.db_conn, &filter)
+            .await
+            .map_err(AppError::from)
     }
 
     pub async fn pin(&self, id: String, pinned: bool) -> AppResult<ClipboardItemDto> {

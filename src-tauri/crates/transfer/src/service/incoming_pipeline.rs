@@ -426,10 +426,6 @@ impl TransferService {
         W: tokio::io::AsyncWrite + Unpin,
     {
         match frame {
-            TransferFrame::Chunk { .. } => Err(AppError::new(
-                "transfer_protocol_frame_invalid",
-                "不支持文本分块帧，请升级到二进制协议",
-            )),
             TransferFrame::ChunkBinary {
                 session_id: incoming_session_id,
                 file_id,

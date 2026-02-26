@@ -60,7 +60,7 @@ export const useResourceMonitorStore = create<ResourceMonitorStore>((set, get) =
   snapshot: null,
   history: [],
   lastUpdatedAt: null,
-  historyWindowMinutes: 30,
+  historyWindowMinutes: 5,
 
   async initialize() {
     if (get().initialized) {

@@ -5,7 +5,9 @@ impl TransferService {
         &self,
         session_id: &str,
     ) -> AppResult<TransferSessionDto> {
-        ensure_session_exists(&self.db_conn, session_id).await
+        ensure_session_exists(&self.db_conn, session_id)
+            .await
+            .map_err(AppError::from)
     }
 
     pub(super) async fn get_file_bitmap_async(
@@ -13,21 +15,27 @@ impl TransferService {
         session_id: &str,
         file_id: &str,
     ) -> AppResult<Option<Vec<u8>>> {
-        get_file_bitmap(&self.db_conn, session_id, file_id).await
+        get_file_bitmap(&self.db_conn, session_id, file_id)
+            .await
+            .map_err(AppError::from)
     }
 
     pub(super) async fn upsert_files_batch_async(
         &self,
         items: &[TransferFilePersistItem],
     ) -> AppResult<()> {
-        upsert_files_batch(&self.db_conn, items).await
+        upsert_files_batch(&self.db_conn, items)
+            .await
+            .map_err(AppError::from)
     }
 
     pub(super) async fn upsert_session_progress_async(
         &self,
         session: &TransferSessionDto,
     ) -> AppResult<()> {
-        upsert_session_progress(&self.db_conn, session).await
+        upsert_session_progress(&self.db_conn, session)
+            .await
+            .map_err(AppError::from)
     }
 
     pub(super) async fn insert_or_update_file_async(
@@ -35,7 +43,9 @@ impl TransferService {
         file: &TransferFileDto,
         completed_bitmap: &[u8],
     ) -> AppResult<()> {
-        insert_or_update_file(&self.db_conn, file, completed_bitmap).await
+        insert_or_update_file(&self.db_conn, file, completed_bitmap)
+            .await
+            .map_err(AppError::from)
     }
 
     pub(super) async fn validate_pair_code(

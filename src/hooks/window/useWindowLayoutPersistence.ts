@@ -1,6 +1,6 @@
 import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
-import { useEffect } from "react";
 
+import { useAsyncEffect } from "@/hooks/useAsyncEffect";
 import type { StoredWindowLayout, WindowLayoutBounds } from "@/hooks/window/window-layout.types";
 import { clampStoredWindowLayout, parseStoredWindowLayout } from "@/hooks/window/window-layout.utils";
 import { runRecoverable } from "@/services/recoverable";
@@ -39,129 +39,123 @@ export function useWindowLayoutPersistence(options: UseWindowLayoutPersistenceOp
     onPersisted,
   } = options;
 
-  useEffect(() => {
-    if (!enabled) {
-      return;
-    }
+  useAsyncEffect(
+    async ({ stack }) => {
+      if (!enabled) {
+        return;
+      }
 
-    let persistTimer: number | null = null;
+      let persistTimer: number | null = null;
 
-    const persistLayout = async () => {
-      const result = await runRecoverable(
-        async () => {
-          const [size, position] = await Promise.all([appWindow.outerSize(), appWindow.outerPosition()]);
-          const layout: StoredWindowLayout = {
-            width: size.width,
-            height: size.height,
-            x: position.x,
-            y: position.y,
-          };
-          window.localStorage.setItem(storageKey, JSON.stringify(layout));
-          return layout;
-        },
-        {
+      const persistLayout = async () => {
+        const result = await runRecoverable(
+          async () => {
+            const [size, position] = await Promise.all([appWindow.outerSize(), appWindow.outerPosition()]);
+            const layout: StoredWindowLayout = {
+              width: size.width,
+              height: size.height,
+              x: position.x,
+              y: position.y,
+            };
+            window.localStorage.setItem(storageKey, JSON.stringify(layout));
+            return layout;
+          },
+          {
+            scope,
+            action: "persist_window_layout",
+            message: "persist layout failed",
+            metadata: { storageKey },
+          },
+        );
+
+        if (!result.ok) {
+          return;
+        }
+
+        onPersisted?.(result.data);
+      };
+
+      const schedulePersistLayout = () => {
+        if (persistTimer !== null) {
+          window.clearTimeout(persistTimer);
+        }
+
+        persistTimer = window.setTimeout(() => {
+          persistTimer = null;
+          void persistLayout();
+        }, persistThrottleMs);
+      };
+
+      stack.add(() => {
+        if (persistTimer !== null) {
+          window.clearTimeout(persistTimer);
+          persistTimer = null;
+        }
+      }, "clear-persist-timer");
+
+      const restoreLayout = async () => {
+        const stored = parseStoredWindowLayout(window.localStorage.getItem(storageKey));
+        if (!stored) {
+          return;
+        }
+
+        const boundsResult = await runRecoverable(() => resolveBounds(stored), {
           scope,
-          action: "persist_window_layout",
-          message: "persist layout failed",
+          action: "resolve_window_bounds",
+          message: "resolve window bounds failed",
           metadata: { storageKey },
-        },
-      );
+        });
 
-      if (!result.ok) {
-        return;
-      }
+        if (!boundsResult.ok || !boundsResult.data) {
+          return;
+        }
 
-      onPersisted?.(result.data);
-    };
+        const next = clampStoredWindowLayout(stored, boundsResult.data);
+        const applyResult = await runRecoverable(
+          async () => {
+            await appWindow.setSize(new PhysicalSize(next.width, next.height));
+            await appWindow.setPosition(new PhysicalPosition(next.x, next.y));
+            return next;
+          },
+          {
+            scope,
+            action: "restore_window_layout",
+            message: "restore layout failed",
+            metadata: { storageKey, next },
+          },
+        );
 
-    const schedulePersistLayout = () => {
-      if (persistTimer !== null) {
-        window.clearTimeout(persistTimer);
-      }
+        if (!applyResult.ok) {
+          return;
+        }
 
-      persistTimer = window.setTimeout(() => {
-        persistTimer = null;
-        void persistLayout();
-      }, persistThrottleMs);
-    };
+        onRestored?.(applyResult.data, boundsResult.data);
+      };
 
-    const restoreLayout = async () => {
-      const stored = parseStoredWindowLayout(window.localStorage.getItem(storageKey));
-      if (!stored) {
-        return;
-      }
-
-      const boundsResult = await runRecoverable(() => resolveBounds(stored), {
-        scope,
-        action: "resolve_window_bounds",
-        message: "resolve window bounds failed",
-        metadata: { storageKey },
-      });
-
-      if (!boundsResult.ok || !boundsResult.data) {
-        return;
-      }
-
-      const next = clampStoredWindowLayout(stored, boundsResult.data);
-      const applyResult = await runRecoverable(
-        async () => {
-          await appWindow.setSize(new PhysicalSize(next.width, next.height));
-          await appWindow.setPosition(new PhysicalPosition(next.x, next.y));
-          return next;
-        },
-        {
-          scope,
-          action: "restore_window_layout",
-          message: "restore layout failed",
-          metadata: { storageKey, next },
-        },
-      );
-
-      if (!applyResult.ok) {
-        return;
-      }
-
-      onRestored?.(applyResult.data, boundsResult.data);
-    };
-
-    const setup = async () => {
       await restoreLayout();
 
       const unlistenMoved = await appWindow.onMoved(() => {
         schedulePersistLayout();
       });
+      stack.add(unlistenMoved, "onMoved");
 
       const unlistenResized = await appWindow.onResized(() => {
         schedulePersistLayout();
       });
+      stack.add(unlistenResized, "onResized");
 
       if (persistOnInit) {
         void persistLayout();
       }
-
-      return () => {
-        if (persistTimer !== null) {
-          window.clearTimeout(persistTimer);
-          persistTimer = null;
+    },
+    [appWindow, enabled, onPersisted, onRestored, persistOnInit, persistThrottleMs, resolveBounds, scope, storageKey],
+    {
+      scope: `window-layout:${scope}`,
+      onError: (error) => {
+        if (import.meta.env.DEV) {
+          console.warn(`[${scope}] window layout setup failed`, error);
         }
-        unlistenMoved();
-        unlistenResized();
-      };
-    };
-
-    let cleanup: (() => void) | undefined;
-    let disposed = false;
-    void setup().then((fn) => {
-      if (disposed) {
-        fn?.();
-        return;
-      }
-      cleanup = fn;
-    });
-
-    return () => {
-      disposed = true;
-      cleanup?.();
-    };
-  }, [appWindow, enabled, onPersisted, onRestored, persistOnInit, persistThrottleMs, resolveBounds, scope, storageKey]);
+      },
+    },
+  );
 }

@@ -329,9 +329,7 @@ export default function HomePage() {
                   <div className="text-sm font-medium text-text-primary">{item.name}</div>
                   <div className="mt-0.5 text-xs text-text-muted">{item.detail}</div>
                 </div>
-                <span
-                  className={`ui-glass-chip font-mono ui-text-micro uppercase ${moduleStateClassName(item.state)}`}
-                >
+                <span className={`ui-glass-chip font-mono ui-text-micro uppercase ${moduleStateClassName(item.state)}`}>
                   {t(`status.${item.state}`)}
                 </span>
               </article>

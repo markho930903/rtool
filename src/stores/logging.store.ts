@@ -11,6 +11,7 @@ import {
   type LogLevel,
   type LoggingConfig,
 } from "@/services/logging.service";
+import { safeUnlisten } from "@/services/tauri-event";
 
 const QUERY_LIMIT = 100;
 const MAX_STREAM_ITEMS = 2000;
@@ -220,22 +221,27 @@ export const useLoggingStore = create<LoggingStore>((set, get) => ({
       return;
     }
 
-    streamUnlisten = await subscribeLogStream((entry) => {
-      const { filters, config } = get();
-      if (config && !config.realtimeEnabled) {
-        return;
-      }
+    try {
+      streamUnlisten = await subscribeLogStream((entry) => {
+        const { filters, config } = get();
+        if (config && !config.realtimeEnabled) {
+          return;
+        }
 
-      if (!entryMatchesFilters(entry, filters)) {
-        return;
-      }
+        if (!entryMatchesFilters(entry, filters)) {
+          return;
+        }
 
-      set((state) => ({
-        items: mergeStreamEntry(state.items, entry),
-      }));
-    });
+        set((state) => ({
+          items: mergeStreamEntry(state.items, entry),
+        }));
+      });
 
-    set({ streamConnected: true });
+      set({ streamConnected: true, error: null });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      set({ streamConnected: false, error: message });
+    }
   },
 
   stopStream() {
@@ -245,7 +251,7 @@ export const useLoggingStore = create<LoggingStore>((set, get) => ({
 
     const release = streamUnlisten;
     streamUnlisten = null;
-    release();
+    safeUnlisten(release, "logging-store:stream");
     set({ streamConnected: false });
   },
 

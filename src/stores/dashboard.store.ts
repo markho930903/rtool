@@ -79,10 +79,7 @@ export const useDashboardStore = create<DashboardStore>((set, get) => ({
       }
 
       try {
-        const [snapshot, healthSnapshot] = await Promise.all([
-          fetchDashboardSnapshot(),
-          fetchAppHealthSnapshot(),
-        ]);
+        const [snapshot, healthSnapshot] = await Promise.all([fetchDashboardSnapshot(), fetchAppHealthSnapshot()]);
         const nextHistoryPoint = toHistoryPoint(snapshot);
         set((state) => ({
           snapshot,

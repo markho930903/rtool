@@ -112,21 +112,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "application"
-version = "0.1.0"
-dependencies = [
- "clipboard",
- "core",
- "infra",
- "launcher-app",
- "resource-monitor",
- "serde_json",
- "sysinfo",
- "tracing",
- "transfer",
-]
-
-[[package]]
 name = "arbitrary"
 version = "1.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -807,23 +792,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "clipboard"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arboard",
- "base64 0.22.1",
- "blake3",
- "core",
- "image",
- "infra",
- "serde_json",
- "sysinfo",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "clipboard-rs"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -902,16 +870,6 @@ checksum = "4ddef33a339a91ea89fb53151bd0a4689cfce27055c291dfa69945475d22c747"
 dependencies = [
  "time",
  "version_check",
-]
-
-[[package]]
-name = "core"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "serde",
- "serde_json",
- "tracing",
 ]
 
 [[package]]
@@ -1252,6 +1210,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "domain"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arboard",
+ "base64 0.22.1",
+ "blake3",
+ "foundation",
+ "image",
+ "libsql",
+ "rand 0.10.0",
+ "regex",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tauri",
+ "tokio",
+ "tracing",
+ "uuid",
+ "walkdir",
+]
+
+[[package]]
 name = "dpi"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1537,6 +1518,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
 dependencies = [
  "percent-encoding",
+]
+
+[[package]]
+name = "foundation"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "base64 0.22.1",
+ "blake3",
+ "chacha20poly1305",
+ "libsql",
+ "rand 0.10.0",
+ "regex",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tokio",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "uuid",
+ "walkdir",
+ "wincode",
+ "zip",
 ]
 
 [[package]]
@@ -2396,30 +2401,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "infra"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "blake3",
- "chacha20poly1305",
- "core",
- "libsql",
- "rand 0.10.0",
- "regex",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "uuid",
- "walkdir",
- "wincode",
- "zip",
-]
-
-[[package]]
 name = "inout"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2597,25 +2578,6 @@ dependencies = [
  "html5ever",
  "indexmap 2.13.0",
  "selectors",
-]
-
-[[package]]
-name = "launcher-app"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "core",
- "infra",
- "libsql",
- "regex",
- "serde",
- "serde_json",
- "tauri",
- "tokio",
- "tracing",
- "uuid",
- "walkdir",
 ]
 
 [[package]]
@@ -4215,15 +4177,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "resource-monitor"
-version = "0.1.0"
-dependencies = [
- "core",
- "sysinfo",
- "tracing",
-]
-
-[[package]]
 name = "rgb"
 version = "0.8.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4233,12 +4186,12 @@ checksum = "0c6a884d2998352bb4daf0183589aec883f16a6da1f4dde84d8e2e9a5409a1ce"
 name = "rtool"
 version = "0.1.0"
 dependencies = [
+ "shell",
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard",
  "tauri-plugin-global-shortcut",
  "tauri-plugin-opener",
- "tauri-shell",
 ]
 
 [[package]]
@@ -4564,6 +4517,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f40ca3c46823713e0d4209592e8d6e826aa57e928f09752619fc696c499637f6"
 dependencies = [
  "lazy_static",
+]
+
+[[package]]
+name = "shell"
+version = "0.1.0"
+dependencies = [
+ "active-win-pos-rs",
+ "anyhow",
+ "arboard",
+ "base64 0.22.1",
+ "blake3",
+ "domain",
+ "foundation",
+ "image",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tauri",
+ "tauri-plugin-clipboard",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-opener",
+ "tokio",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "usecase",
 ]
 
 [[package]]
@@ -5096,36 +5075,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tauri-shell"
-version = "0.1.0"
-dependencies = [
- "active-win-pos-rs",
- "anyhow",
- "application",
- "arboard",
- "base64 0.22.1",
- "blake3",
- "clipboard",
- "core",
- "image",
- "infra",
- "launcher-app",
- "resource-monitor",
- "serde",
- "serde_json",
- "sysinfo",
- "tauri",
- "tauri-plugin-clipboard",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-opener",
- "tokio",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "transfer",
-]
-
-[[package]]
 name = "tauri-utils"
 version = "2.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5570,23 +5519,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "transfer"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "base64 0.22.1",
- "blake3",
- "core",
- "infra",
- "rand 0.10.0",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
 name = "tray-icon"
 version = "0.21.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5735,6 +5667,17 @@ dependencies = [
  "serde",
  "unic-ucd-ident",
  "url",
+]
+
+[[package]]
+name = "usecase"
+version = "0.1.0"
+dependencies = [
+ "domain",
+ "foundation",
+ "serde_json",
+ "sysinfo",
+ "tracing",
 ]
 
 [[package]]

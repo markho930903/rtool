@@ -1,10 +1,11 @@
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { HashRouter, useLocation, useNavigate, useRoutes } from "react-router";
 
 import type { ClipboardSyncPayload } from "@/components/clipboard/types";
 import type { TransferPeer, TransferProgressSnapshot } from "@/components/transfer/types";
+import { useAsyncEffect } from "@/hooks/useAsyncEffect";
 import { useLocaleStore } from "@/i18n/store";
 import { useLayoutStore } from "@/layouts/layout.store";
 import { routes } from "@/routers";
@@ -25,20 +26,16 @@ function AppEventBridge() {
     currentRouteRef.current = `${location.pathname}${location.search}`;
   }, [location.pathname, location.search]);
 
-  useEffect(() => {
-    let unlistenClipboardSync: UnlistenFn | undefined;
-    let unlistenMainNavigate: UnlistenFn | undefined;
-    let unlistenTransferPeerSync: UnlistenFn | undefined;
-    let unlistenTransferSessionSync: UnlistenFn | undefined;
-    let unlistenTransferHistorySync: UnlistenFn | undefined;
-
-    const setup = async () => {
+  useAsyncEffect(
+    async ({ stack }) => {
       const currentWindow = getCurrentWindow();
-      unlistenClipboardSync = await listen<ClipboardSyncPayload>("rtool://clipboard/sync", (event) => {
+
+      const unlistenClipboardSync = await listen<ClipboardSyncPayload>("rtool://clipboard/sync", (event) => {
         applySync(event.payload ?? {});
       });
+      stack.add(unlistenClipboardSync, "clipboard-sync");
 
-      unlistenMainNavigate = await listen<{ route: string }>("rtool://main/navigate", (event) => {
+      const unlistenMainNavigate = await listen<{ route: string }>("rtool://main/navigate", (event) => {
         if (currentWindow.label !== "main") {
           return;
         }
@@ -53,15 +50,17 @@ function AppEventBridge() {
 
         navigate(event.payload.route);
       });
+      stack.add(unlistenMainNavigate, "main-navigate");
 
-      unlistenTransferPeerSync = await listen<TransferPeer[]>("rtool://transfer/peer_sync", (event) => {
+      const unlistenTransferPeerSync = await listen<TransferPeer[]>("rtool://transfer/peer_sync", (event) => {
         if (currentWindow.label !== "main") {
           return;
         }
         applyTransferPeerSync(event.payload ?? []);
       });
+      stack.add(unlistenTransferPeerSync, "transfer-peer-sync");
 
-      unlistenTransferSessionSync = await listen<TransferProgressSnapshot>("rtool://transfer/session_sync", (event) => {
+      const unlistenTransferSessionSync = await listen<TransferProgressSnapshot>("rtool://transfer/session_sync", (event) => {
         if (currentWindow.label !== "main") {
           return;
         }
@@ -70,25 +69,26 @@ function AppEventBridge() {
         }
         applyTransferSessionSync(event.payload);
       });
+      stack.add(unlistenTransferSessionSync, "transfer-session-sync");
 
-      unlistenTransferHistorySync = await listen("rtool://transfer/history_sync", () => {
+      const unlistenTransferHistorySync = await listen("rtool://transfer/history_sync", () => {
         if (currentWindow.label !== "main") {
           return;
         }
         void refreshTransferHistory();
       });
-    };
-
-    void setup();
-
-    return () => {
-      unlistenClipboardSync?.();
-      unlistenMainNavigate?.();
-      unlistenTransferPeerSync?.();
-      unlistenTransferSessionSync?.();
-      unlistenTransferHistorySync?.();
-    };
-  }, [applySync, applyTransferPeerSync, applyTransferSessionSync, navigate, refreshTransferHistory]);
+      stack.add(unlistenTransferHistorySync, "transfer-history-sync");
+    },
+    [applySync, applyTransferPeerSync, applyTransferSessionSync, navigate, refreshTransferHistory],
+    {
+      scope: "app-event-bridge",
+      onError: (error) => {
+        if (import.meta.env.DEV) {
+          console.warn("[app-event-bridge] setup failed", error);
+        }
+      },
+    },
+  );
 
   useEffect(() => {
     const currentWindow = getCurrentWindow();

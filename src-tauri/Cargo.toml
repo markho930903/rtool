@@ -1,13 +1,9 @@
 [workspace]
 members = [
-    "crates/core",
-    "crates/application",
-    "crates/infra",
-    "crates/tauri-shell",
-    "crates/launcher-app",
-    "crates/clipboard",
-    "crates/transfer",
-    "crates/resource-monitor",
+    "crates/foundation",
+    "crates/domain",
+    "crates/usecase",
+    "crates/shell",
 ]
 resolver = "2"
 
@@ -39,14 +35,10 @@ walkdir = "2.5.0"
 wincode = { version = "0.4.4", features = ["derive"] }
 zip = { version = "8.1.0", default-features = false, features = ["deflate"] }
 
-app_core = { package = "core", path = "crates/core" }
-app_application = { package = "application", path = "crates/application" }
-app_infra = { package = "infra", path = "crates/infra" }
-app_launcher_app = { package = "launcher-app", path = "crates/launcher-app" }
-app_clipboard = { package = "clipboard", path = "crates/clipboard" }
-app_transfer = { package = "transfer", path = "crates/transfer" }
-app_tauri_shell = { package = "tauri-shell", path = "crates/tauri-shell" }
-app_resource_monitor = { package = "resource-monitor", path = "crates/resource-monitor" }
+foundation = { path = "crates/foundation" }
+domain = { path = "crates/domain" }
+usecase = { path = "crates/usecase" }
+shell = { path = "crates/shell" }
 
 [package]
 name = "rtool"
@@ -63,7 +55,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { workspace = true }
 
 [dependencies]
-app_tauri_shell = { workspace = true }
+shell = { workspace = true }
 tauri = { workspace = true }
 tauri-plugin-opener = { workspace = true }
 tauri-plugin-global-shortcut = { workspace = true }

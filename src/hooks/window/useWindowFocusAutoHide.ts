@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useRef } from "react";
+
+import { useAsyncEffect } from "@/hooks/useAsyncEffect";
 
 interface WindowFocusChangeEvent {
   payload: boolean;
@@ -43,12 +45,14 @@ export function useWindowFocusAutoHide(options: UseWindowFocusAutoHideOptions): 
     }, delayMs);
   }, [appWindow, cancelScheduledHide, delayMs, shouldSkipHide]);
 
-  useEffect(() => {
-    if (!enabled) {
-      return;
-    }
+  useAsyncEffect(
+    async ({ stack }) => {
+      if (!enabled) {
+        return;
+      }
 
-    const setup = async () => {
+      stack.add(cancelScheduledHide, "cancel-timer");
+
       const unlistenFocus = await appWindow.onFocusChanged(({ payload: focused }) => {
         if (!focused) {
           scheduleHide();
@@ -58,28 +62,18 @@ export function useWindowFocusAutoHide(options: UseWindowFocusAutoHideOptions): 
         cancelScheduledHide();
         onFocus?.();
       });
-
-      return () => {
-        unlistenFocus();
-      };
-    };
-
-    let cleanup: (() => void) | undefined;
-    let disposed = false;
-    void setup().then((fn) => {
-      if (disposed) {
-        fn?.();
-        return;
-      }
-      cleanup = fn;
-    });
-
-    return () => {
-      disposed = true;
-      cleanup?.();
-      cancelScheduledHide();
-    };
-  }, [appWindow, cancelScheduledHide, enabled, onFocus, scheduleHide]);
+      stack.add(unlistenFocus, "onFocusChanged");
+    },
+    [appWindow, cancelScheduledHide, enabled, onFocus, scheduleHide],
+    {
+      scope: "window-focus-auto-hide",
+      onError: (error) => {
+        if (import.meta.env.DEV) {
+          console.warn("[window-focus-auto-hide] setup failed", error);
+        }
+      },
+    },
+  );
 
   return { cancelScheduledHide };
 }

@@ -1,4 +1,4 @@
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
@@ -10,6 +10,7 @@ import type {
   ManagedApp,
   ManagedAppDetail,
 } from "@/components/app-manager/types";
+import { useAsyncEffect } from "@/hooks/useAsyncEffect";
 import {
   appManagerCleanup,
   appManagerGetDetailCore,
@@ -334,13 +335,12 @@ export function useAppManagerController() {
         }
         setListError(error instanceof Error ? error.message : String(error));
       } finally {
-        if (requestSeq !== listRequestSeqRef.current) {
-          return;
-        }
-        if (replace) {
-          setLoading(false);
-        } else {
-          setLoadingMore(false);
+        if (requestSeq === listRequestSeqRef.current) {
+          if (replace) {
+            setLoading(false);
+          } else {
+            setLoadingMore(false);
+          }
         }
       }
     },
@@ -438,10 +438,9 @@ export function useAppManagerController() {
         }
         setDetailError(error instanceof Error ? error.message : String(error));
       } finally {
-        if (!isLatest()) {
-          return;
+        if (isLatest()) {
+          setDetailHeavyLoadingById((prev) => ({ ...prev, [appId]: false }));
         }
-        setDetailHeavyLoadingById((prev) => ({ ...prev, [appId]: false }));
       }
     },
     [applyHeavyResult],
@@ -458,11 +457,12 @@ export function useAppManagerController() {
     };
   }, [keyword, loadListFirstPage]);
 
-  useEffect(() => {
-    let unlisten: UnlistenFn | null = null;
-    let disposed = false;
+  useAsyncEffect(
+    async ({ stack }) => {
+      stack.add(() => {
+        listRequestSeqRef.current += 1;
+      }, "invalidate-list-request-seq");
 
-    const setup = async () => {
       const stop = await listen<AppManagerIndexUpdatedPayload>("rtool://app-manager/index-updated", (event) => {
         if (!event.payload) {
           return;
@@ -471,21 +471,18 @@ export function useAppManagerController() {
         setIndexedAt(event.payload.indexedAt);
         void loadListFirstPage(keywordRef.current);
       });
-      if (disposed) {
-        stop();
-        return;
-      }
-      unlisten = stop;
-    };
-
-    void setup();
-
-    return () => {
-      disposed = true;
-      listRequestSeqRef.current += 1;
-      unlisten?.();
-    };
-  }, [loadListFirstPage]);
+      stack.add(stop, "index-updated");
+    },
+    [loadListFirstPage],
+    {
+      scope: "app-manager",
+      onError: (error) => {
+        if (import.meta.env.DEV) {
+          console.warn("[app-manager] event listen setup failed", error);
+        }
+      },
+    },
+  );
 
   useEffect(() => {
     if (!selectedAppId) {
@@ -536,11 +533,12 @@ export function useAppManagerController() {
       app: ManagedApp,
       payload: {
         selectedItemIds: string[];
-        includeMainApp: boolean;
+        includeMainApp?: boolean;
         deleteMode: AppManagerCleanupDeleteMode;
       },
     ) => {
-      if (!payload.includeMainApp && payload.selectedItemIds.length === 0) {
+      const includeMainApp = payload.includeMainApp ?? true;
+      if (!includeMainApp && payload.selectedItemIds.length === 0) {
         setCleanupError("请至少选择一个清理项");
         return;
       }
@@ -552,10 +550,10 @@ export function useAppManagerController() {
         const result = await appManagerCleanup({
           appId,
           selectedItemIds: payload.selectedItemIds,
-          includeMainApp: payload.includeMainApp,
+          includeMainApp,
           deleteMode: payload.deleteMode,
           skipOnError: true,
-          confirmedFingerprint: payload.includeMainApp ? app.fingerprint : undefined,
+          confirmedFingerprint: includeMainApp ? app.fingerprint : undefined,
         });
         setCleanupResultByAppId((prev) => ({ ...prev, [appId]: result }));
         setSelectedResidueIdsByAppId((prev) => ({ ...prev, [appId]: [] }));
@@ -587,16 +585,17 @@ export function useAppManagerController() {
     if (!selectedApp || !selectedCleanupResult) {
       return;
     }
+    const retryMainApp = selectedCleanupResult.failed.some((item) => item.itemId === "main-app");
     const retryIds = selectedCleanupResult.failed.map((item) => item.itemId).filter((itemId) => itemId !== "main-app");
-    if (retryIds.length === 0) {
+    if (!retryMainApp && retryIds.length === 0) {
       return;
     }
     const dedupedRetryIds = [...new Set(retryIds)];
     setSelectedResidueIdsByAppId((prev) => ({ ...prev, [selectedApp.id]: dedupedRetryIds }));
-    setIncludeMainByAppId((prev) => ({ ...prev, [selectedApp.id]: false }));
+    setIncludeMainByAppId((prev) => ({ ...prev, [selectedApp.id]: retryMainApp }));
     await runCleanup(selectedApp, {
       selectedItemIds: dedupedRetryIds,
-      includeMainApp: false,
+      includeMainApp: retryMainApp,
       deleteMode: deleteModeByAppIdRef.current[selectedApp.id] ?? "trash",
     });
   }, [runCleanup, selectedApp, selectedCleanupResult]);

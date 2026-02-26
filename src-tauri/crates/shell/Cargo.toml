@@ -1,0 +1,26 @@
+[package]
+name = "shell"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+foundation = { path = "../foundation" }
+domain = { path = "../domain" }
+usecase = { path = "../usecase" }
+anyhow = { workspace = true }
+active-win-pos-rs = { workspace = true }
+arboard = { workspace = true }
+base64 = { workspace = true }
+blake3 = { workspace = true }
+image = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sysinfo = { workspace = true }
+tauri = { workspace = true }
+tauri-plugin-clipboard = { workspace = true }
+tauri-plugin-global-shortcut = { workspace = true }
+tauri-plugin-opener = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-appender = { workspace = true }
+tracing-subscriber = { workspace = true }

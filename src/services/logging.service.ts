@@ -2,6 +2,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 import type { LogConfigDto, LogEntryDto, LogPageDto, LogQueryDto } from "@/contracts";
 import { invokeWithLog } from "@/services/invoke";
+import { safeUnlisten } from "@/services/tauri-event";
 
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error";
 
@@ -92,7 +93,11 @@ export async function exportLogs(query?: LogQuery, outputPath?: string): Promise
 }
 
 export async function subscribeLogStream(onEntry: (entry: LogEntry) => void): Promise<UnlistenFn> {
-  return listen<LogEntryDto>("rtool://logging/stream", (event) => {
+  const unlisten = await listen<LogEntryDto>("rtool://logging/stream", (event) => {
     onEntry(event.payload as LogEntry);
   });
+
+  return () => {
+    safeUnlisten(unlisten, "logging-stream");
+  };
 }

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 
 import { AppDetailPane } from "@/features/app-manager/AppDetailPane";
 import { AppListPane } from "@/features/app-manager/AppListPane";
@@ -14,6 +14,40 @@ function formatIndexedAt(timestamp: number | null): string {
 export function AppManagerShell() {
   const controller = useAppManagerController();
   const indexedAtText = useMemo(() => formatIndexedAt(controller.indexedAt), [controller.indexedAt]);
+  const selectedAppId = controller.selectedApp?.id ?? null;
+  const toggleResidue = controller.toggleResidue;
+  const setIncludeMain = controller.setIncludeMain;
+  const setDeleteMode = controller.setDeleteMode;
+
+  const handleToggleResidue = useCallback(
+    (itemId: string, checked: boolean) => {
+      if (!selectedAppId) {
+        return;
+      }
+      toggleResidue(selectedAppId, itemId, checked);
+    },
+    [selectedAppId, toggleResidue],
+  );
+
+  const handleToggleIncludeMain = useCallback(
+    (checked: boolean) => {
+      if (!selectedAppId) {
+        return;
+      }
+      setIncludeMain(selectedAppId, checked);
+    },
+    [selectedAppId, setIncludeMain],
+  );
+
+  const handleSetDeleteMode = useCallback(
+    (mode: "trash" | "permanent") => {
+      if (!selectedAppId) {
+        return;
+      }
+      setDeleteMode(selectedAppId, mode);
+    },
+    [selectedAppId, setDeleteMode],
+  );
 
   return (
     <section className="h-full min-h-0">
@@ -49,24 +83,9 @@ export function AppManagerShell() {
             cleanupLoading={controller.selectedCleanupLoading}
             cleanupResult={controller.selectedCleanupResult}
             cleanupError={controller.cleanupError}
-            onToggleResidue={(itemId, checked) => {
-              if (!controller.selectedApp) {
-                return;
-              }
-              controller.toggleResidue(controller.selectedApp.id, itemId, checked);
-            }}
-            onToggleIncludeMain={(checked) => {
-              if (!controller.selectedApp) {
-                return;
-              }
-              controller.setIncludeMain(controller.selectedApp.id, checked);
-            }}
-            onSetDeleteMode={(mode) => {
-              if (!controller.selectedApp) {
-                return;
-              }
-              controller.setDeleteMode(controller.selectedApp.id, mode);
-            }}
+            onToggleResidue={handleToggleResidue}
+            onToggleIncludeMain={handleToggleIncludeMain}
+            onSetDeleteMode={handleSetDeleteMode}
             onCleanupNow={controller.cleanupNow}
             onRetryFailed={controller.retryFailed}
             onRevealPath={controller.revealPath}

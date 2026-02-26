@@ -11,6 +11,7 @@ import type { PaletteItem } from "@/components/palette/types";
 import { Button } from "@/components/ui";
 import { useWindowFocusAutoHide } from "@/hooks/window/useWindowFocusAutoHide";
 import { useWindowLayoutPersistence } from "@/hooks/window/useWindowLayoutPersistence";
+import { useAsyncEffect } from "@/hooks/useAsyncEffect";
 import { useLocaleStore } from "@/i18n/store";
 import { useLauncherStore } from "@/stores/launcher.store";
 import { useThemeStore } from "@/theme/store";
@@ -264,12 +265,12 @@ export default function LauncherWindowPage() {
     selectedNode?.scrollIntoView({ block: "nearest" });
   }, [selectedItem?.id]);
 
-  useEffect(() => {
-    if (!enabled) {
-      return;
-    }
+  useAsyncEffect(
+    async ({ stack }) => {
+      if (!enabled) {
+        return;
+      }
 
-    const setup = async () => {
       const unlistenOpened = await listen("rtool://launcher/opened", () => {
         cancelScheduledHide();
         syncAlwaysOnTopState();
@@ -285,6 +286,7 @@ export default function LauncherWindowPage() {
           inputRef.current?.focus();
         }, 40);
       });
+      stack.add(unlistenOpened, "opened");
 
       const onKeyDown = (event: KeyboardEvent) => {
         if (event.key === "Escape") {
@@ -319,40 +321,31 @@ export default function LauncherWindowPage() {
       };
 
       window.addEventListener("keydown", onKeyDown);
-
-      return () => {
-        unlistenOpened();
+      stack.add(() => {
         window.removeEventListener("keydown", onKeyDown);
-      };
-    };
-
-    let cleanup: (() => void) | undefined;
-    let disposed = false;
-
-    void setup().then((fn) => {
-      if (disposed) {
-        fn?.();
-        return;
-      }
-      cleanup = fn;
-    });
-
-    return () => {
-      disposed = true;
-      cleanup?.();
-    };
-  }, [
-    appWindow,
-    cancelScheduledHide,
-    enabled,
-    executeSelected,
-    moveSelection,
-    reset,
-    searchWithBootMark,
-    syncAlwaysOnTopState,
-    syncFromStorage,
-    syncLocaleFromBackend,
-  ]);
+      }, "remove-keydown-listener");
+    },
+    [
+      appWindow,
+      cancelScheduledHide,
+      enabled,
+      executeSelected,
+      moveSelection,
+      reset,
+      searchWithBootMark,
+      syncAlwaysOnTopState,
+      syncFromStorage,
+      syncLocaleFromBackend,
+    ],
+    {
+      scope: "launcher-window",
+      onError: (error) => {
+        if (import.meta.env.DEV) {
+          console.warn("[launcher-window] event setup failed", error);
+        }
+      },
+    },
+  );
 
   useEffect(() => {
     if (!enabled) {

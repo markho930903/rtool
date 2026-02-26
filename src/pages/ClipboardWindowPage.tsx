@@ -7,6 +7,7 @@ import ClipboardPanel from "@/components/clipboard/ClipboardPanelContainer";
 import { useWindowFocusAutoHide } from "@/hooks/window/useWindowFocusAutoHide";
 import { useWindowLayoutPersistence } from "@/hooks/window/useWindowLayoutPersistence";
 import type { StoredWindowLayout, WindowLayoutBounds } from "@/hooks/window/window-layout.types";
+import { useAsyncEffect } from "@/hooks/useAsyncEffect";
 import { useLocaleStore } from "@/i18n/store";
 import { invokeWithLog } from "@/services/invoke";
 import { runRecoverable } from "@/services/recoverable";
@@ -105,29 +106,35 @@ export default function ClipboardWindowPage() {
     },
   });
 
-  useEffect(() => {
-    if (!enabled) {
-      return;
-    }
+  useAsyncEffect(
+    async ({ isDisposed }) => {
+      if (!enabled) {
+        return;
+      }
 
-    let disposed = false;
-    void runRecoverable(() => appWindow.isAlwaysOnTop(), {
-      scope: "clipboard-window",
-      action: "read_always_on_top",
-      message: "read always-on-top failed",
-    }).then((result) => {
-      if (disposed || !result.ok) {
+      const result = await runRecoverable(() => appWindow.isAlwaysOnTop(), {
+        scope: "clipboard-window",
+        action: "read_always_on_top",
+        message: "read always-on-top failed",
+      });
+
+      if (!result.ok || isDisposed()) {
         return;
       }
 
       alwaysOnTopRef.current = result.data;
       setAlwaysOnTop(result.data);
-    });
-
-    return () => {
-      disposed = true;
-    };
-  }, [appWindow, enabled]);
+    },
+    [appWindow, enabled],
+    {
+      scope: "clipboard-window",
+      onError: (error) => {
+        if (import.meta.env.DEV) {
+          console.warn("[clipboard-window] sync always-on-top failed", error);
+        }
+      },
+    },
+  );
 
   useEffect(() => {
     alwaysOnTopRef.current = alwaysOnTop;
@@ -262,12 +269,19 @@ export default function ClipboardWindowPage() {
     });
   }, [alwaysOnTop, appWindow, cancelScheduledHide]);
 
-  useEffect(() => {
-    if (!enabled) {
-      return;
-    }
+  useAsyncEffect(
+    async ({ stack }) => {
+      if (!enabled) {
+        return;
+      }
 
-    const setup = async () => {
+      stack.add(() => {
+        if (modeResizeTimerRef.current !== null) {
+          window.clearTimeout(modeResizeTimerRef.current);
+          modeResizeTimerRef.current = null;
+        }
+      }, "clear-mode-resize-timer");
+
       const unlistenOpened = await listen<ClipboardWindowOpenedPayload>(
         "rtool://clipboard-window/opened",
         ({ payload }) => {
@@ -291,6 +305,7 @@ export default function ClipboardWindowPage() {
           }, 40);
         },
       );
+      stack.add(unlistenOpened, "opened");
 
       const onKeyDown = (event: KeyboardEvent) => {
         if (event.key === "Escape") {
@@ -300,33 +315,22 @@ export default function ClipboardWindowPage() {
       };
 
       window.addEventListener("keydown", onKeyDown);
-      searchInputRef.current?.focus();
-
-      return () => {
-        unlistenOpened();
+      stack.add(() => {
         window.removeEventListener("keydown", onKeyDown);
-      };
-    };
+      }, "remove-keydown-listener");
 
-    let cleanup: (() => void) | undefined;
-    let disposed = false;
-    void setup().then((fn) => {
-      if (disposed) {
-        fn?.();
-        return;
-      }
-      cleanup = fn;
-    });
-
-    return () => {
-      disposed = true;
-      cleanup?.();
-      if (modeResizeTimerRef.current !== null) {
-        window.clearTimeout(modeResizeTimerRef.current);
-        modeResizeTimerRef.current = null;
-      }
-    };
-  }, [appWindow, applyModeSize, cancelScheduledHide, enabled, syncFromStorage, syncLocaleFromBackend]);
+      searchInputRef.current?.focus();
+    },
+    [appWindow, applyModeSize, cancelScheduledHide, enabled, syncFromStorage, syncLocaleFromBackend],
+    {
+      scope: "clipboard-window",
+      onError: (error) => {
+        if (import.meta.env.DEV) {
+          console.warn("[clipboard-window] event setup failed", error);
+        }
+      },
+    },
+  );
 
   const handleDrag = (event: MouseEvent<HTMLElement>) => {
     if (event.button !== 0) {

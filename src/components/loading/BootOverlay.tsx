@@ -1,5 +1,7 @@
 import { useTranslation } from "react-i18next";
 
+import SkeletonComposer, { type SkeletonItemSpec } from "@/components/loading/SkeletonComposer";
+
 export type BootOverlayVariant = "main" | "launcher" | "clipboard";
 
 export interface BootOverlayProps {
@@ -42,6 +44,24 @@ export default function BootOverlay(props: BootOverlayProps) {
   const config = VARIANT_CONFIG[props.variant];
   const title = props.title ?? t("status.loading");
   const subtitle = props.subtitle ?? t(config.subtitleKey);
+  const skeletonItems: SkeletonItemSpec[] = config.skeletonWidths.map((width, index) => ({
+    key: `${props.variant}-skeleton-${index}`,
+    containerClassName: "rounded-full border border-border-muted/65 bg-surface-soft",
+    style: { width },
+    body: [
+      {
+        nodes: [
+          {
+            kind: "block",
+            widthClassName: "w-full",
+            heightClassName: "h-2.5",
+            className: "bg-transparent",
+          },
+        ],
+      },
+    ],
+    shimmerDelayMs: index * 90,
+  }));
 
   return (
     <div
@@ -79,25 +99,13 @@ export default function BootOverlay(props: BootOverlayProps) {
           </div>
         </div>
 
-        <div className="mt-4 space-y-2.5" aria-hidden="true">
-          {config.skeletonWidths.map((width, index) => (
-            <div
-              key={`${props.variant}-${index}`}
-              className="relative h-2.5 overflow-hidden rounded-full border border-border-muted/65 bg-surface-soft"
-              style={{ width }}
-            >
-              <span
-                className="rtool-boot-shimmer-layer absolute inset-y-0 bg-gradient-to-r from-transparent via-shimmer-highlight/30 to-transparent"
-                style={{
-                  left: "-45%",
-                  width: "45%",
-                  animation: "rtool-boot-shimmer 1.2s linear infinite",
-                  animationDelay: `${index * 90}ms`,
-                }}
-              />
-            </div>
-          ))}
-        </div>
+        <SkeletonComposer
+          items={skeletonItems}
+          tone="plain"
+          className="mt-4"
+          gapClassName="space-y-2.5"
+          shimmerClassName="rtool-boot-shimmer-layer absolute inset-y-0 bg-gradient-to-r from-transparent via-shimmer-highlight/30 to-transparent"
+        />
       </div>
     </div>
   );

@@ -6,7 +6,7 @@ import ClipboardFilterBar from "@/components/clipboard/ClipboardFilterBar";
 import ClipboardImagePreview from "@/components/clipboard/ClipboardImagePreview";
 import ClipboardItemCard from "@/components/clipboard/ClipboardItemCard";
 import type { ClipboardItem } from "@/components/clipboard/types";
-import { BootOverlay } from "@/components/loading";
+import { BootOverlay, SkeletonComposer, type SkeletonItemSpec } from "@/components/loading";
 import { Button, Dialog } from "@/components/ui";
 import type { ClipboardActionFeedback } from "@/hooks/clipboard/useClipboardActionFeedback";
 
@@ -49,6 +49,19 @@ interface ClipboardPanelViewProps {
   onClosePreview: () => void;
   onCopyPreviewImage: (id: string) => Promise<void>;
 }
+
+const CLIPBOARD_SKELETON_ITEMS: SkeletonItemSpec[] = Array.from({ length: 6 }, (_, index) => ({
+  key: `clipboard-skeleton-${index}`,
+  body: [
+    {
+      nodes: [
+        { widthClassName: "w-[64%]", heightClassName: "h-3", className: "bg-border-muted/70" },
+        { widthClassName: "w-[82%]", offsetTopClassName: "mt-2", className: "bg-border-muted/55" },
+      ],
+    },
+  ],
+  shimmerDelayMs: index * 80,
+}));
 
 export default function ClipboardPanelView(props: ClipboardPanelViewProps) {
   const { t } = useTranslation(["clipboard", "common"]);
@@ -170,26 +183,7 @@ export default function ClipboardPanelView(props: ClipboardPanelViewProps) {
         >
           <div className="min-h-0 flex-1 space-y-1.5 overflow-auto p-2">
             {props.loading && props.visibleItems.length === 0 ? (
-              <div className="space-y-1.5" aria-hidden="true">
-                {[0, 1, 2, 3, 4, 5].map((index) => (
-                  <div
-                    key={`clipboard-skeleton-${index}`}
-                    className="relative overflow-hidden rounded-md border border-border-muted/65 bg-surface px-2.5 py-2.5"
-                  >
-                    <div className="h-3 w-[64%] rounded bg-border-muted/70" />
-                    <div className="mt-2 h-2.5 w-[82%] rounded bg-border-muted/55" />
-                    <span
-                      className="rtool-boot-shimmer-layer absolute inset-y-0 bg-gradient-to-r from-transparent via-shimmer-highlight/26 to-transparent"
-                      style={{
-                        left: "-45%",
-                        width: "45%",
-                        animation: "rtool-boot-shimmer 1.2s linear infinite",
-                        animationDelay: `${index * 80}ms`,
-                      }}
-                    />
-                  </div>
-                ))}
-              </div>
+              <SkeletonComposer items={CLIPBOARD_SKELETON_ITEMS} gapClassName="space-y-1.5" />
             ) : null}
             {!props.loading && props.visibleItems.length === 0 ? (
               <div className="mt-2 text-[12px] text-text-muted">{t("panel.empty")}</div>

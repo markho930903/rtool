@@ -4,14 +4,14 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { useTranslation } from "react-i18next";
 
 import { AppEntityIcon } from "@/components/icons/AppEntityIcon";
-import { BootOverlay, useBootState } from "@/components/loading";
+import { BootOverlay, SkeletonComposer, type SkeletonItemSpec, useBootState } from "@/components/loading";
 import PaletteInput from "@/components/palette/PaletteInput";
 import PalettePreview from "@/components/palette/PalettePreview";
 import type { PaletteItem } from "@/components/palette/types";
 import { Button } from "@/components/ui";
+import { useAsyncEffect } from "@/hooks/useAsyncEffect";
 import { useWindowFocusAutoHide } from "@/hooks/window/useWindowFocusAutoHide";
 import { useWindowLayoutPersistence } from "@/hooks/window/useWindowLayoutPersistence";
-import { useAsyncEffect } from "@/hooks/useAsyncEffect";
 import { useLocaleStore } from "@/i18n/store";
 import { useLauncherStore } from "@/stores/launcher.store";
 import { useThemeStore } from "@/theme/store";
@@ -29,6 +29,19 @@ interface GroupedCategory {
   label: string;
   items: GroupedItem[];
 }
+
+const LAUNCHER_LIST_SKELETON_ITEMS: SkeletonItemSpec[] = Array.from({ length: 6 }, (_, index) => ({
+  key: `launcher-skeleton-${index}`,
+  body: [
+    {
+      nodes: [
+        { widthClassName: "w-[62%]", heightClassName: "h-3", className: "bg-border-muted/70" },
+        { widthClassName: "w-[78%]", offsetTopClassName: "mt-2", className: "bg-border-muted/55" },
+      ],
+    },
+  ],
+  shimmerDelayMs: index * 80,
+}));
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -415,26 +428,12 @@ export default function LauncherWindowPage() {
               </div>
             ) : null}
             {loading && items.length === 0 ? (
-              <div className="space-y-1.5 p-2">
-                {[0, 1, 2, 3, 4, 5].map((index) => (
-                  <div
-                    key={`launcher-skeleton-${index}`}
-                    className="relative overflow-hidden rounded-md border border-border-muted/65 bg-surface-soft px-2.5 py-2.5"
-                  >
-                    <div className="h-3 w-[62%] rounded bg-border-muted/70" />
-                    <div className="mt-2 h-2.5 w-[78%] rounded bg-border-muted/55" />
-                    <span
-                      className="rtool-boot-shimmer-layer absolute inset-y-0 bg-gradient-to-r from-transparent via-shimmer-highlight/26 to-transparent"
-                      style={{
-                        left: "-45%",
-                        width: "45%",
-                        animation: "rtool-boot-shimmer 1.2s linear infinite",
-                        animationDelay: `${index * 80}ms`,
-                      }}
-                    />
-                  </div>
-                ))}
-              </div>
+              <SkeletonComposer
+                items={LAUNCHER_LIST_SKELETON_ITEMS}
+                className="p-2"
+                gapClassName="space-y-1.5"
+                itemSurfaceClassName="bg-surface-soft"
+              />
             ) : null}
 
             {!loading && groupedItems.length === 0 ? (

@@ -50,13 +50,28 @@ export default function AppManagerPage(): ReactElement {
             cleanupLoading={detail.cleanupLoading}
             cleanupResult={detail.cleanupResult}
             cleanupError={detail.cleanupError}
+            startupLoading={detail.startupLoading}
+            uninstallLoading={detail.uninstallLoading}
+            openHelpLoading={detail.openHelpLoading}
+            exportLoading={detail.exportLoading}
+            openExportDirLoading={detail.openExportDirLoading}
+            exportResult={detail.exportResult}
+            exportError={detail.exportError}
+            actionResult={detail.actionResult}
+            actionError={detail.actionError}
             onToggleResidue={actions.onToggleResidue}
+            onSelectAllResidues={actions.onSelectAllResidues}
             onToggleIncludeMain={actions.onToggleIncludeMain}
             onSetDeleteMode={actions.onSetDeleteMode}
             onCleanupNow={actions.onCleanupNow}
             onRetryFailed={actions.onRetryFailed}
             onRevealPath={actions.onRevealPath}
             onScanAgain={actions.onScanAgain}
+            onToggleStartup={actions.onToggleStartup}
+            onOpenUninstallHelp={actions.onOpenUninstallHelp}
+            onUninstall={actions.onUninstall}
+            onExportScanResult={actions.onExportScanResult}
+            onOpenExportDirectory={actions.onOpenExportDirectory}
           />
         </div>
       </div>

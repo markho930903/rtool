@@ -16,7 +16,7 @@ pub(super) fn build_app_index(app: &dyn LauncherHost) -> AppResult<Vec<ManagedAp
         }
     }
 
-    items.sort_by(|left, right| left.name.cmp(&right.name));
+    sort_managed_apps_for_list(items.as_mut_slice());
     Ok(items)
 }
 

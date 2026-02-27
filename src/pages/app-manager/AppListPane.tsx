@@ -1,4 +1,5 @@
 import { type ReactElement, memo } from "react";
+import { useTranslation } from "react-i18next";
 
 import type { AppManagerIndexState, ManagedApp } from "@/components/app-manager/types";
 import { AppEntityIcon } from "@/components/icons/AppEntityIcon";
@@ -26,11 +27,12 @@ interface AppListRowProps {
   app: ManagedApp;
   selected: boolean;
   onSelect: (appId: string) => void;
+  calculatingText: string;
 }
 
 const AppListRow = memo(function AppListRow(props: AppListRowProps): ReactElement {
-  const { app, selected, onSelect } = props;
-  const sizeText = app.sizeBytes === null ? "计算中..." : formatBytes(app.sizeBytes);
+  const { app, selected, onSelect, calculatingText } = props;
+  const sizeText = app.sizeBytes === null ? calculatingText : formatBytes(app.sizeBytes);
   const rowClassName = selected
     ? "w-full rounded-xl border border-accent/70 bg-accent/10 px-3 py-2.5 text-left transition-colors"
     : "w-full rounded-xl border border-border-glass bg-surface-glass-soft px-3 py-2.5 text-left shadow-inset-soft transition-colors hover:border-accent/45";
@@ -58,6 +60,7 @@ const AppListRow = memo(function AppListRow(props: AppListRowProps): ReactElemen
 });
 
 export function AppListPane(props: AppListPaneProps): ReactElement {
+  const { t } = useTranslation("app_manager");
   const {
     items,
     selectedAppId,
@@ -76,22 +79,23 @@ export function AppListPane(props: AppListPaneProps): ReactElement {
   const isInitialLoading = loading && items.length === 0;
   const showEmptyState = !loading && items.length === 0;
   const refreshIconClassName = `i-lucide:refresh-cw h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`;
+  const calculatingText = t("detail.calculating");
 
   return (
     <aside className="ui-glass-panel flex h-full min-h-0 flex-col">
       <div className="shrink-0 space-y-2.5 border-b border-border-glass px-3 py-3">
         <div className="flex items-start justify-between gap-2">
           <div className="space-y-0.5">
-            <h1 className="m-0 text-base font-semibold text-text-primary">应用管理</h1>
-            <p className="m-0 text-xs text-text-secondary">先加载列表，大小逐步精确补齐</p>
+            <h1 className="m-0 text-base font-semibold text-text-primary">{t("title")}</h1>
+            <p className="m-0 text-xs text-text-secondary">{t("desc")}</p>
           </div>
           <Button
             size="xs"
             variant="secondary"
             disabled={loading}
             onClick={onRefresh}
-            aria-label="刷新应用列表"
-            title="刷新应用列表"
+            aria-label={t("actions.refresh")}
+            title={t("actions.refresh")}
             className="px-2"
           >
             <span className={refreshIconClassName} aria-hidden="true" />
@@ -99,13 +103,13 @@ export function AppListPane(props: AppListPaneProps): ReactElement {
         </div>
         <Input
           value={keyword}
-          placeholder="搜索应用名、路径、发布者"
+          placeholder={t("filters.keywordPlaceholder")}
           onChange={(event) => onKeywordChange(event.currentTarget.value)}
         />
         <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-text-muted">
-          <span>{`已索引: ${indexedAtText}`}</span>
-          <span>{`显示 ${items.length}/${totalCount}`}</span>
-          <span>{`状态: ${indexState}`}</span>
+          <span>{t("meta.indexedAt", { value: indexedAtText })}</span>
+          <span>{t("list.visible", { current: items.length, total: totalCount })}</span>
+          <span>{t("meta.indexState", { value: indexState })}</span>
         </div>
       </div>
 
@@ -113,25 +117,31 @@ export function AppListPane(props: AppListPaneProps): ReactElement {
         <LoadingIndicator
           mode="overlay"
           loading={isInitialLoading}
-          text="加载应用列表中..."
+          text={t("status.loading")}
           containerClassName="min-h-24"
         >
           <>
             {showEmptyState ? (
               <div className="rounded-lg border border-border-glass bg-surface-glass-soft px-3 py-6 text-center text-sm text-text-muted shadow-inset-soft">
-                当前没有匹配的应用
+                {t("status.empty")}
               </div>
             ) : null}
-            <div className="space-y-2">
-              {items.map((app) => (
-                <AppListRow key={app.id} app={app} selected={app.id === selectedAppId} onSelect={onSelect} />
-              ))}
-            </div>
+              <div className="space-y-2">
+                {items.map((app) => (
+                  <AppListRow
+                    key={app.id}
+                    app={app}
+                    selected={app.id === selectedAppId}
+                    onSelect={onSelect}
+                    calculatingText={calculatingText}
+                  />
+                ))}
+              </div>
 
             {hasMore ? (
               <div className="mt-3 flex justify-center">
                 <Button size="default" variant="secondary" disabled={loadingMore} onClick={onLoadMore}>
-                  {loadingMore ? "加载中..." : "加载更多"}
+                  {loadingMore ? t("actions.loadingMore") : t("actions.loadMore")}
                 </Button>
               </div>
             ) : null}

@@ -23,6 +23,7 @@ use protocol::{AppError, AppResult, ResultExt};
 #[cfg(target_os = "macos")]
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::cmp::Ordering;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs;
@@ -226,6 +227,19 @@ fn count_item_changes(previous: &[ManagedAppDto], next: &[ManagedAppDto]) -> u32
     changed.saturating_add(previous_map.len() as u32)
 }
 
+fn compare_managed_app_for_list(left: &ManagedAppDto, right: &ManagedAppDto) -> Ordering {
+    right
+        .startup_enabled
+        .cmp(&left.startup_enabled)
+        .then_with(|| left.source.sort_rank().cmp(&right.source.sort_rank()))
+        .then_with(|| left.name.cmp(&right.name))
+        .then_with(|| left.id.cmp(&right.id))
+}
+
+pub(super) fn sort_managed_apps_for_list(items: &mut [ManagedAppDto]) {
+    items.sort_by(compare_managed_app_for_list);
+}
+
 fn try_bootstrap_index_from_disk(app: &dyn LauncherHost, cache: &mut AppIndexCache) {
     if cache.disk_bootstrapped {
         return;
@@ -243,6 +257,7 @@ fn try_bootstrap_index_from_disk(app: &dyn LauncherHost, cache: &mut AppIndexCac
         return;
     };
     cache.items = snapshot.items;
+    sort_managed_apps_for_list(cache.items.as_mut_slice());
     cache.indexed_at = snapshot.indexed_at;
     cache.revision = snapshot.revision;
     cache.source_fingerprint = snapshot.source_fingerprint;

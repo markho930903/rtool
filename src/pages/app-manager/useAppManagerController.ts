@@ -2,8 +2,10 @@ import { listen } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
+  AppManagerActionResult,
   AppManagerCleanupDeleteMode,
   AppManagerCleanupResult,
+  AppManagerExportScanResult,
   AppManagerIndexUpdatedPayload,
   AppManagerResidueItem,
   AppManagerResidueScanResult,
@@ -13,12 +15,17 @@ import type {
 import { useAsyncEffect } from "@/hooks/useAsyncEffect";
 import {
   appManagerCleanup,
+  appManagerExportScanResult,
   appManagerGetDetailCore,
   appManagerGetDetailHeavy,
   appManagerList,
+  appManagerOpenDirectory,
+  appManagerOpenUninstallHelp,
   appManagerRefreshIndex,
   appManagerResolveSizes,
   appManagerRevealPath,
+  appManagerSetStartup,
+  appManagerUninstall,
 } from "@/services/app-manager.service";
 
 const PAGE_SIZE = 120;
@@ -93,6 +100,15 @@ export function useAppManagerController() {
   const [cleanupLoadingByAppId, setCleanupLoadingByAppId] = useState<Record<string, boolean>>({});
   const [cleanupResultByAppId, setCleanupResultByAppId] = useState<Record<string, AppManagerCleanupResult>>({});
   const [cleanupError, setCleanupError] = useState<string | null>(null);
+  const [startupLoadingByAppId, setStartupLoadingByAppId] = useState<Record<string, boolean>>({});
+  const [uninstallLoadingByAppId, setUninstallLoadingByAppId] = useState<Record<string, boolean>>({});
+  const [openHelpLoadingByAppId, setOpenHelpLoadingByAppId] = useState<Record<string, boolean>>({});
+  const [exportLoadingByAppId, setExportLoadingByAppId] = useState<Record<string, boolean>>({});
+  const [openExportDirLoadingByAppId, setOpenExportDirLoadingByAppId] = useState<Record<string, boolean>>({});
+  const [exportResultByAppId, setExportResultByAppId] = useState<Record<string, AppManagerExportScanResult>>({});
+  const [actionResultByAppId, setActionResultByAppId] = useState<Record<string, AppManagerActionResult>>({});
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const sizeQueueRef = useRef<string[]>([]);
   const sizeQueuedSetRef = useRef<Set<string>>(new Set());
@@ -147,6 +163,11 @@ export function useAppManagerController() {
   useEffect(() => {
     deleteModeByAppIdRef.current = deleteModeByAppId;
   }, [deleteModeByAppId]);
+
+  useEffect(() => {
+    setActionError(null);
+    setExportError(null);
+  }, [selectedAppId]);
 
   const updateSizeState = useCallback((appIds: string[], state: AppSizeState) => {
     setSizeStateByAppId((prev) => {
@@ -282,6 +303,13 @@ export function useAppManagerController() {
         setDeleteModeByAppId((prev) => retainById(prev, keep));
         setCleanupLoadingByAppId((prev) => retainById(prev, keep));
         setCleanupResultByAppId((prev) => retainById(prev, keep));
+        setStartupLoadingByAppId((prev) => retainById(prev, keep));
+        setUninstallLoadingByAppId((prev) => retainById(prev, keep));
+        setOpenHelpLoadingByAppId((prev) => retainById(prev, keep));
+        setExportLoadingByAppId((prev) => retainById(prev, keep));
+        setOpenExportDirLoadingByAppId((prev) => retainById(prev, keep));
+        setExportResultByAppId((prev) => retainById(prev, keep));
+        setActionResultByAppId((prev) => retainById(prev, keep));
       }
 
       const priority = nextItems.slice(0, SIZE_PRIORITY_COUNT).map((item) => item.id);
@@ -506,6 +534,13 @@ export function useAppManagerController() {
   const selectedDeleteMode = selectedApp ? (deleteModeByAppId[selectedApp.id] ?? "trash") : "trash";
   const selectedCleanupResult = selectedApp ? (cleanupResultByAppId[selectedApp.id] ?? null) : null;
   const selectedCleanupLoading = selectedApp ? Boolean(cleanupLoadingByAppId[selectedApp.id]) : false;
+  const selectedStartupLoading = selectedApp ? Boolean(startupLoadingByAppId[selectedApp.id]) : false;
+  const selectedUninstallLoading = selectedApp ? Boolean(uninstallLoadingByAppId[selectedApp.id]) : false;
+  const selectedOpenHelpLoading = selectedApp ? Boolean(openHelpLoadingByAppId[selectedApp.id]) : false;
+  const selectedExportLoading = selectedApp ? Boolean(exportLoadingByAppId[selectedApp.id]) : false;
+  const selectedOpenExportDirLoading = selectedApp ? Boolean(openExportDirLoadingByAppId[selectedApp.id]) : false;
+  const selectedExportResult = selectedApp ? (exportResultByAppId[selectedApp.id] ?? null) : null;
+  const selectedActionResult = selectedApp ? (actionResultByAppId[selectedApp.id] ?? null) : null;
   const selectedDetailError = detailError ?? listError;
 
   const toggleResidue = useCallback((appId: string, itemId: string, checked: boolean) => {
@@ -518,6 +553,11 @@ export function useAppManagerController() {
       }
       return { ...prev, [appId]: [...current] };
     });
+    setSelectionTouchedByUserByAppId((prev) => ({ ...prev, [appId]: true }));
+  }, []);
+
+  const setSelectedResidues = useCallback((appId: string, itemIds: string[]) => {
+    setSelectedResidueIdsByAppId((prev) => ({ ...prev, [appId]: [...new Set(itemIds)] }));
     setSelectionTouchedByUserByAppId((prev) => ({ ...prev, [appId]: true }));
   }, []);
 
@@ -559,6 +599,16 @@ export function useAppManagerController() {
     [selectedAppId, setDeleteMode],
   );
 
+  const selectAllResiduesForSelectedApp = useCallback(
+    (itemIds: string[]) => {
+      if (!selectedAppId) {
+        return;
+      }
+      setSelectedResidues(selectedAppId, itemIds);
+    },
+    [selectedAppId, setSelectedResidues],
+  );
+
   const runCleanup = useCallback(
     async (
       app: ManagedApp,
@@ -570,7 +620,7 @@ export function useAppManagerController() {
     ) => {
       const includeMainApp = payload.includeMainApp ?? true;
       if (!includeMainApp && payload.selectedItemIds.length === 0) {
-        setCleanupError("请至少选择一个清理项");
+        setCleanupError("app_manager_cleanup_selection_required");
         return;
       }
 
@@ -631,6 +681,104 @@ export function useAppManagerController() {
     });
   }, [runCleanup, selectedApp, selectedCleanupResult]);
 
+  const toggleStartup = useCallback(async () => {
+    if (!selectedApp) {
+      return;
+    }
+    const appId = selectedApp.id;
+    setStartupLoadingByAppId((prev) => ({ ...prev, [appId]: true }));
+    setActionError(null);
+    try {
+      const result = await appManagerSetStartup({
+        appId,
+        enabled: !selectedApp.startupEnabled,
+      });
+      setActionResultByAppId((prev) => ({ ...prev, [appId]: result }));
+      await loadListFirstPage(keywordRef.current);
+      await loadDetailCore(appId, true);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setStartupLoadingByAppId((prev) => ({ ...prev, [appId]: false }));
+    }
+  }, [loadDetailCore, loadListFirstPage, selectedApp]);
+
+  const runUninstall = useCallback(async () => {
+    if (!selectedApp) {
+      return;
+    }
+    const appId = selectedApp.id;
+    setUninstallLoadingByAppId((prev) => ({ ...prev, [appId]: true }));
+    setActionError(null);
+    try {
+      const result = await appManagerUninstall({
+        appId,
+        confirmedFingerprint: selectedApp.fingerprint,
+      });
+      setActionResultByAppId((prev) => ({ ...prev, [appId]: result }));
+      await loadListFirstPage(keywordRef.current);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setUninstallLoadingByAppId((prev) => ({ ...prev, [appId]: false }));
+    }
+  }, [loadListFirstPage, selectedApp]);
+
+  const openUninstallHelp = useCallback(async () => {
+    if (!selectedApp) {
+      return;
+    }
+    const appId = selectedApp.id;
+    setOpenHelpLoadingByAppId((prev) => ({ ...prev, [appId]: true }));
+    setActionError(null);
+    try {
+      const result = await appManagerOpenUninstallHelp(appId);
+      setActionResultByAppId((prev) => ({ ...prev, [appId]: result }));
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setOpenHelpLoadingByAppId((prev) => ({ ...prev, [appId]: false }));
+    }
+  }, [selectedApp]);
+
+  const exportScanResult = useCallback(async () => {
+    if (!selectedApp) {
+      return;
+    }
+    const appId = selectedApp.id;
+    setExportLoadingByAppId((prev) => ({ ...prev, [appId]: true }));
+    setExportError(null);
+    try {
+      const result = await appManagerExportScanResult(appId);
+      setExportResultByAppId((prev) => ({ ...prev, [appId]: result }));
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setExportLoadingByAppId((prev) => ({ ...prev, [appId]: false }));
+    }
+  }, [selectedApp]);
+
+  const openExportDirectory = useCallback(async () => {
+    if (!selectedApp) {
+      return;
+    }
+    const appId = selectedApp.id;
+    const exported = exportResultByAppId[appId];
+    if (!exported) {
+      setExportError("app_manager_export_missing_result");
+      return;
+    }
+    setOpenExportDirLoadingByAppId((prev) => ({ ...prev, [appId]: true }));
+    setExportError(null);
+    try {
+      await appManagerOpenDirectory(exported.directoryPath);
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setOpenExportDirLoadingByAppId((prev) => ({ ...prev, [appId]: false }));
+    }
+  }, [exportResultByAppId, selectedApp]);
+
   const revealPath = useCallback(async (path: string) => {
     await appManagerRevealPath(path);
   }, []);
@@ -679,6 +827,15 @@ export function useAppManagerController() {
     cleanupLoading: selectedCleanupLoading,
     cleanupResult: selectedCleanupResult,
     cleanupError,
+    startupLoading: selectedStartupLoading,
+    uninstallLoading: selectedUninstallLoading,
+    openHelpLoading: selectedOpenHelpLoading,
+    exportLoading: selectedExportLoading,
+    openExportDirLoading: selectedOpenExportDirLoading,
+    exportResult: selectedExportResult,
+    exportError,
+    actionResult: selectedActionResult,
+    actionError,
   };
 
   const actions = {
@@ -687,12 +844,18 @@ export function useAppManagerController() {
     refreshList,
     onLoadMore,
     onToggleResidue: toggleSelectedResidue,
+    onSelectAllResidues: selectAllResiduesForSelectedApp,
     onToggleIncludeMain: setSelectedIncludeMain,
     onSetDeleteMode: setSelectedDeleteMode,
     onCleanupNow: cleanupNow,
     onRetryFailed: retryFailed,
     onRevealPath: revealPath,
     onScanAgain: scanAgain,
+    onToggleStartup: toggleStartup,
+    onOpenUninstallHelp: openUninstallHelp,
+    onUninstall: runUninstall,
+    onExportScanResult: exportScanResult,
+    onOpenExportDirectory: openExportDirectory,
   };
 
   return { list, detail, actions };

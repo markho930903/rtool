@@ -31,27 +31,21 @@ pub fn list_managed_apps(
         .and_then(|value| value.parse::<usize>().ok())
         .unwrap_or(0);
 
-    let mut filtered: Vec<ManagedAppDto> = cache
-        .items
-        .iter()
-        .filter(|item| {
-            if !normalized_category.matches_item(item) {
-                return false;
-            }
-            item_matches_keyword(item, normalized_keyword.as_deref())
-        })
-        .cloned()
-        .collect();
+    let mut total = 0usize;
+    let mut items = Vec::with_capacity(limit);
+    for item in &cache.items {
+        if !normalized_category.matches_item(item) {
+            continue;
+        }
+        if !item_matches_keyword(item, normalized_keyword.as_deref()) {
+            continue;
+        }
+        if total >= offset && items.len() < limit {
+            items.push(item.clone());
+        }
+        total = total.saturating_add(1);
+    }
 
-    filtered.sort_by(|left, right| {
-        right
-            .startup_enabled
-            .cmp(&left.startup_enabled)
-            .then_with(|| left.source.sort_rank().cmp(&right.source.sort_rank()))
-            .then_with(|| left.name.cmp(&right.name))
-    });
-
-    let total = filtered.len();
     if offset >= total {
         return Ok(AppManagerPageDto {
             items: Vec::new(),
@@ -63,13 +57,12 @@ pub fn list_managed_apps(
         });
     }
 
-    let end = offset.saturating_add(limit).min(total);
-    let next_cursor = if end < total {
-        Some(end.to_string())
+    let consumed = offset.saturating_add(items.len());
+    let next_cursor = if consumed < total {
+        Some(consumed.to_string())
     } else {
         None
     };
-    let items = filtered[offset..end].to_vec();
 
     Ok(AppManagerPageDto {
         items,

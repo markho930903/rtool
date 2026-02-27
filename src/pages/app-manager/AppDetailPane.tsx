@@ -1,7 +1,10 @@
 import { type ReactElement, memo } from "react";
+import { useTranslation } from "react-i18next";
 
 import type {
+  AppManagerActionResult,
   AppManagerCleanupResult,
+  AppManagerExportScanResult,
   AppManagerResidueKind,
   AppManagerResidueScanResult,
   ManagedApp,
@@ -32,13 +35,28 @@ interface AppDetailPaneProps {
   cleanupLoading: boolean;
   cleanupResult: AppManagerCleanupResult | null;
   cleanupError: string | null;
+  startupLoading: boolean;
+  uninstallLoading: boolean;
+  openHelpLoading: boolean;
+  exportLoading: boolean;
+  openExportDirLoading: boolean;
+  exportResult: AppManagerExportScanResult | null;
+  exportError: string | null;
+  actionResult: AppManagerActionResult | null;
+  actionError: string | null;
   onToggleResidue: (itemId: string, checked: boolean) => void;
+  onSelectAllResidues: (itemIds: string[]) => void;
   onToggleIncludeMain: (checked: boolean) => void;
   onSetDeleteMode: (mode: DeleteMode) => void;
-  onCleanupNow: () => void;
-  onRetryFailed: () => void;
+  onCleanupNow: () => void | Promise<void>;
+  onRetryFailed: () => void | Promise<void>;
   onRevealPath: (path: string) => void;
-  onScanAgain: () => void;
+  onScanAgain: () => void | Promise<void>;
+  onToggleStartup: () => void | Promise<void>;
+  onOpenUninstallHelp: () => void | Promise<void>;
+  onUninstall: () => void | Promise<void>;
+  onExportScanResult: () => void | Promise<void>;
+  onOpenExportDirectory: () => void | Promise<void>;
 }
 
 interface SelectionButtonProps {
@@ -201,6 +219,7 @@ function ResidueCard(props: ResidueCardProps): ReactElement {
 }
 
 function AppDetailPaneImpl(props: AppDetailPaneProps): ReactElement {
+  const { t } = useTranslation("app_manager");
   const {
     selectedApp,
     coreDetail,
@@ -215,17 +234,32 @@ function AppDetailPaneImpl(props: AppDetailPaneProps): ReactElement {
     cleanupLoading,
     cleanupResult,
     cleanupError,
+    startupLoading,
+    uninstallLoading,
+    openHelpLoading,
+    exportLoading,
+    openExportDirLoading,
+    exportResult,
+    exportError,
+    actionResult,
+    actionError,
     onToggleResidue,
+    onSelectAllResidues,
     onToggleIncludeMain,
     onSetDeleteMode,
     onCleanupNow,
     onRetryFailed,
     onRevealPath,
     onScanAgain,
+    onToggleStartup,
+    onOpenUninstallHelp,
+    onUninstall,
+    onExportScanResult,
+    onOpenExportDirectory,
   } = props;
 
   if (!selectedApp) {
-    return <DiskPlaceholder title="等待选择应用" desc="左侧选择一个应用后，右侧加载精确详情与清理项。" />;
+    return <DiskPlaceholder title={t("detail.emptyTitle")} desc={t("detail.empty")} />;
   }
 
   const flatResidues: ResidueItem[] = (heavyDetail?.groups ?? []).flatMap((group) =>
@@ -235,17 +269,25 @@ function AppDetailPaneImpl(props: AppDetailPaneProps): ReactElement {
   const isHeavyPending = !hasHeavyData && !detailError;
   const showResidueEmpty = hasHeavyData && flatResidues.length === 0;
   const showOverlayLoading = (coreLoading && Boolean(coreDetail)) || (heavyLoading && hasHeavyData);
-  const selectedResidueCountText = isHeavyPending ? "--" : String(selectedResidueIds.length);
-  const residueCountText = isHeavyPending ? "--" : String(flatResidues.length);
+  const selectedResidueCount = isHeavyPending ? 0 : selectedResidueIds.length;
+  const residueCount = isHeavyPending ? 0 : flatResidues.length;
   const selectedResidueIdSet = new Set(selectedResidueIds);
+  const selectableResidueIds = flatResidues
+    .filter((item) => !(item.readonly && item.readonlyReasonCode === "managed_by_policy"))
+    .map((item) => item.itemId);
+  const allSelectableResiduesSelected =
+    selectableResidueIds.length > 0 && selectableResidueIds.every((itemId) => selectedResidueIdSet.has(itemId));
   const mainAppPath = coreDetail?.installPath ?? selectedApp.path;
   const revealPathButtonClass =
     "w-full cursor-pointer truncate text-left text-[11px] text-text-muted underline-offset-2 focus-visible:underline hover:underline disabled:cursor-not-allowed disabled:no-underline";
   const deleteModeOptions: RadioOption[] = [
-    { value: "trash", label: "移入废纸篓" },
-    { value: "permanent", label: "永久删除" },
+    { value: "trash", label: t("cleanup.deleteModeTrash") },
+    { value: "permanent", label: t("cleanup.deleteModePermanent") },
   ];
   const includeMainCardClassName = `rounded-lg border px-3 py-2.5 shadow-inset-soft transition-colors ${getSelectableCardClass(selectedIncludeMain)}`;
+  const cleanupErrorText =
+    cleanupError === "app_manager_cleanup_selection_required" ? t("cleanup.selectOneRequired") : cleanupError;
+  const exportErrorText = exportError === "app_manager_export_missing_result" ? t("cleanup.exportMissing") : exportError;
 
   const toggleIncludeMain = (): void => {
     onToggleIncludeMain(!selectedIncludeMain);
@@ -268,45 +310,114 @@ function AppDetailPaneImpl(props: AppDetailPaneProps): ReactElement {
             </div>
             <p className="m-0 truncate text-xs text-text-muted">{toBreadcrumb(mainAppPath)}</p>
             <div className="flex min-w-0 items-center gap-2 overflow-hidden whitespace-nowrap text-xs text-text-secondary">
-              <span className="min-w-0 max-w-[9rem] truncate">{`版本: ${selectedApp.version ?? "-"}`}</span>
-              <span className="min-w-0 max-w-[12rem] truncate">{`发布者: ${selectedApp.publisher ?? "-"}`}</span>
-              <span className="shrink-0">{`主程序: ${formatBytes(coreDetail?.sizeSummary.appBytes ?? selectedApp.sizeBytes)}`}</span>
+              <span className="min-w-0 max-w-[9rem] truncate">
+                {t("meta.version", { value: selectedApp.version ?? "-" })}
+              </span>
+              <span className="min-w-0 max-w-[12rem] truncate">
+                {t("meta.publisher", { value: selectedApp.publisher ?? "-" })}
+              </span>
+              <span className="shrink-0">
+                {t("detail.mainProgramSize", { value: formatBytes(coreDetail?.sizeSummary.appBytes ?? selectedApp.sizeBytes) })}
+              </span>
             </div>
           </div>
-          <Button size="sm" variant="secondary" disabled={heavyLoading && !deepCompleting} onClick={onScanAgain}>
-            {heavyLoading ? "扫描中..." : "重新扫描"}
+          <Button size="sm" variant="secondary" disabled={heavyLoading && !deepCompleting} onClick={() => void onScanAgain()}>
+            {heavyLoading ? t("cleanup.scanning") : t("cleanup.scan")}
           </Button>
         </div>
 
         <div className="min-h-4 text-xs text-text-secondary" aria-live="polite">
-          {deepCompleting ? "深度补全中，结果会自动更新" : "\u00a0"}
+          {deepCompleting ? t("detail.deepCompleting") : "\u00a0"}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            size="xs"
+            variant="secondary"
+            disabled={startupLoading || !selectedApp.capabilities.startup || !selectedApp.startupEditable}
+            onClick={() => void onToggleStartup()}
+          >
+            {startupLoading
+              ? t("status.processing")
+              : selectedApp.startupEnabled
+                ? t("actions.disableStartup")
+                : t("actions.enableStartup")}
+          </Button>
+          <Button
+            size="xs"
+            variant="secondary"
+            disabled={openHelpLoading || !selectedApp.capabilities.uninstall}
+            onClick={() => void onOpenUninstallHelp()}
+          >
+            {openHelpLoading ? t("status.processing") : t("actions.uninstallGuide")}
+          </Button>
+          <Button
+            size="xs"
+            variant="danger"
+            disabled={uninstallLoading || !selectedApp.capabilities.uninstall || !selectedApp.uninstallSupported}
+            onClick={() => {
+              const confirmed = window.confirm(
+                `${t("uninstallDialog.title")}\n${t("uninstallDialog.appName", { value: selectedApp.name })}\n${t("uninstallDialog.appPath", {
+                  value: selectedApp.path,
+                })}`,
+              );
+              if (confirmed) {
+                void onUninstall();
+              }
+            }}
+          >
+            {uninstallLoading ? t("status.processing") : t("actions.uninstall")}
+          </Button>
+          <Button size="xs" variant="secondary" disabled={exportLoading} onClick={() => void onExportScanResult()}>
+            {exportLoading ? t("cleanup.exporting") : t("cleanup.exportScan")}
+          </Button>
+          <Button
+            size="xs"
+            variant="secondary"
+            disabled={!exportResult || openExportDirLoading}
+            onClick={() => void onOpenExportDirectory()}
+          >
+            {openExportDirLoading ? t("cleanup.openingDir") : t("cleanup.openExportDir")}
+          </Button>
         </div>
 
         <div className="rounded-md border border-border-glass bg-surface-glass-soft px-2.5 py-2 shadow-inset-soft">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex shrink-0 items-center gap-1 text-[11px] text-text-secondary tabular-nums">
-              <span className="inline-flex min-w-[84px] justify-center rounded-full border border-border-glass bg-surface-glass px-1.5 py-0.5">{`已选残留 ${selectedResidueCountText} 项`}</span>
-              <span className="inline-flex min-w-[82px] justify-center rounded-full border border-border-glass bg-surface-glass px-1.5 py-0.5">{`可清理 ${residueCountText} 项`}</span>
+              <span className="inline-flex min-w-[84px] justify-center rounded-full border border-border-glass bg-surface-glass px-1.5 py-0.5">
+                {t("cleanup.selectedCount", { count: selectedResidueCount })}
+              </span>
+              <span className="inline-flex min-w-[82px] justify-center rounded-full border border-border-glass bg-surface-glass px-1.5 py-0.5">
+                {t("cleanup.cleanableCount", { count: residueCount })}
+              </span>
             </div>
 
             <div className="flex items-center justify-end gap-1.5">
               <Button
                 size="xs"
                 variant="secondary"
-                disabled={cleanupLoading || !cleanupResult || cleanupResult.failed.length === 0}
-                onClick={onRetryFailed}
+                disabled={cleanupLoading || selectableResidueIds.length === 0}
+                onClick={() => onSelectAllResidues(allSelectableResiduesSelected ? [] : selectableResidueIds)}
               >
-                重试失败项
+                {allSelectableResiduesSelected ? t("cleanup.clearSelection") : t("cleanup.selectAll")}
               </Button>
-              <Button size="xs" variant="danger" disabled={cleanupLoading} onClick={onCleanupNow}>
-                {cleanupLoading ? "清理中..." : "立即清理"}
+              <Button
+                size="xs"
+                variant="secondary"
+                disabled={cleanupLoading || !cleanupResult || cleanupResult.failed.length === 0}
+                onClick={() => void onRetryFailed()}
+              >
+                {t("result.retryFailed")}
+              </Button>
+              <Button size="xs" variant="danger" disabled={cleanupLoading} onClick={() => void onCleanupNow()}>
+                {cleanupLoading ? t("cleanup.cleaning") : t("cleanup.cleanNow")}
               </Button>
             </div>
           </div>
 
           <div className="mt-2 border-t border-border-glass/70 pt-2">
             <div className="flex min-w-[176px] items-center gap-1.5 overflow-x-auto">
-              <span className="shrink-0 text-[11px] text-text-secondary">清理方式</span>
+              <span className="shrink-0 text-[11px] text-text-secondary">{t("cleanup.deleteModeTitle")}</span>
               <RadioGroup
                 name="app-manager-delete-mode"
                 value={selectedDeleteMode}
@@ -328,9 +439,30 @@ function AppDetailPaneImpl(props: AppDetailPaneProps): ReactElement {
           {detailError}
         </div>
       ) : null}
-      {cleanupError ? (
+      {cleanupErrorText ? (
         <div className="mt-3 rounded-md border border-danger/35 bg-danger/10 px-3 py-2 text-xs text-danger">
-          {cleanupError}
+          {cleanupErrorText}
+        </div>
+      ) : null}
+      {actionError ? (
+        <div className="mt-3 rounded-md border border-danger/35 bg-danger/10 px-3 py-2 text-xs text-danger">
+          {actionError}
+        </div>
+      ) : null}
+      {exportErrorText ? (
+        <div className="mt-3 rounded-md border border-danger/35 bg-danger/10 px-3 py-2 text-xs text-danger">
+          {exportErrorText}
+        </div>
+      ) : null}
+      {actionResult ? (
+        <div className="mt-3 rounded-md border border-border-glass bg-surface-glass-soft px-3 py-2 text-xs text-text-secondary">
+          <div className="font-medium text-text-primary">{actionResult.message}</div>
+          {actionResult.detail ? <div className="mt-1 break-all">{actionResult.detail}</div> : null}
+        </div>
+      ) : null}
+      {exportResult ? (
+        <div className="mt-3 rounded-md border border-border-glass bg-surface-glass-soft px-3 py-2 text-xs text-text-secondary">
+          {t("cleanup.exportedPath", { value: exportResult.filePath })}
         </div>
       ) : null}
 
@@ -338,7 +470,7 @@ function AppDetailPaneImpl(props: AppDetailPaneProps): ReactElement {
         <LoadingIndicator
           mode="overlay"
           loading={showOverlayLoading}
-          text={deepCompleting ? "正在深度补全结果..." : "正在加载精确详情..."}
+          text={deepCompleting ? t("detail.deepCompletingLoading") : t("detail.loading")}
           containerClassName="min-h-24"
           showMask={false}
         >
@@ -376,7 +508,7 @@ function AppDetailPaneImpl(props: AppDetailPaneProps): ReactElement {
               <SkeletonComposer items={APP_RESIDUE_SKELETON_ITEMS} tone="glass" />
             ) : showResidueEmpty ? (
               <div className="rounded-lg border border-border-glass bg-surface-glass-soft px-3 py-6 text-center text-sm text-text-muted shadow-inset-soft">
-                当前没有可清理的相关项
+                {t("cleanup.empty")}
               </div>
             ) : (
               <div className="space-y-2">

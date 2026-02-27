@@ -178,6 +178,30 @@ fn ensure_app_manager_watcher_started(
     });
 }
 
+async fn run_app_manager_command<T, F>(
+    app: tauri::AppHandle,
+    service: AppManagerApplicationService,
+    request_id: Option<String>,
+    window_label: Option<String>,
+    command_name: &'static str,
+    operation: F,
+) -> Result<T, InvokeError>
+where
+    T: Send + 'static,
+    F: FnOnce(AppManagerApplicationService, TauriLauncherHost) -> AppResult<T> + Send + 'static,
+{
+    ensure_app_manager_watcher_started(&app, service);
+    let host = TauriLauncherHost::new(app);
+    run_blocking_command(
+        command_name,
+        request_id,
+        window_label,
+        command_name,
+        move || operation(service, host),
+    )
+    .await
+}
+
 fn reveal_path(path: &Path) -> AppResult<()> {
     if !path.exists() {
         return Err(
@@ -237,16 +261,14 @@ pub async fn app_manager_list(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerPageDto, InvokeError> {
-    let service = state.app_services.app_manager;
-    ensure_app_manager_watcher_started(&app, service);
     let input_query = query.unwrap_or_default();
-    let host = TauriLauncherHost::new(app);
-    run_blocking_command(
-        "app_manager_list",
+    run_app_manager_command(
+        app,
+        state.app_services.app_manager,
         request_id,
         window_label,
         "app_manager_list",
-        move || service.list(&host, input_query),
+        move |service, host| service.list(&host, input_query),
     )
     .await
 }
@@ -259,15 +281,13 @@ pub async fn app_manager_get_detail(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<ManagedAppDetailDto, InvokeError> {
-    let service = state.app_services.app_manager;
-    ensure_app_manager_watcher_started(&app, service);
-    let host = TauriLauncherHost::new(app);
-    run_blocking_command(
-        "app_manager_get_detail",
+    run_app_manager_command(
+        app,
+        state.app_services.app_manager,
         request_id,
         window_label,
         "app_manager_get_detail",
-        move || service.get_detail(&host, query),
+        move |service, host| service.get_detail(&host, query),
     )
     .await
 }
@@ -279,15 +299,13 @@ pub async fn app_manager_list_snapshot_meta(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerSnapshotMetaDto, InvokeError> {
-    let service = state.app_services.app_manager;
-    ensure_app_manager_watcher_started(&app, service);
-    let host = TauriLauncherHost::new(app);
-    run_blocking_command(
-        "app_manager_list_snapshot_meta",
+    run_app_manager_command(
+        app,
+        state.app_services.app_manager,
         request_id,
         window_label,
         "app_manager_list_snapshot_meta",
-        move || service.list_snapshot_meta(&host),
+        move |service, host| service.list_snapshot_meta(&host),
     )
     .await
 }
@@ -300,15 +318,13 @@ pub async fn app_manager_resolve_sizes(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerResolveSizesResultDto, InvokeError> {
-    let service = state.app_services.app_manager;
-    ensure_app_manager_watcher_started(&app, service);
-    let host = TauriLauncherHost::new(app);
-    run_blocking_command(
-        "app_manager_resolve_sizes",
+    run_app_manager_command(
+        app,
+        state.app_services.app_manager,
         request_id,
         window_label,
         "app_manager_resolve_sizes",
-        move || service.resolve_sizes(&host, input),
+        move |service, host| service.resolve_sizes(&host, input),
     )
     .await
 }
@@ -321,15 +337,13 @@ pub async fn app_manager_get_detail_core(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<ManagedAppDetailDto, InvokeError> {
-    let service = state.app_services.app_manager;
-    ensure_app_manager_watcher_started(&app, service);
-    let host = TauriLauncherHost::new(app);
-    run_blocking_command(
-        "app_manager_get_detail_core",
+    run_app_manager_command(
+        app,
+        state.app_services.app_manager,
         request_id,
         window_label,
         "app_manager_get_detail_core",
-        move || service.get_detail_core(&host, query),
+        move |service, host| service.get_detail_core(&host, query),
     )
     .await
 }
@@ -342,15 +356,13 @@ pub async fn app_manager_get_detail_heavy(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerResidueScanResultDto, InvokeError> {
-    let service = state.app_services.app_manager;
-    ensure_app_manager_watcher_started(&app, service);
-    let host = TauriLauncherHost::new(app);
-    run_blocking_command(
-        "app_manager_get_detail_heavy",
+    run_app_manager_command(
+        app,
+        state.app_services.app_manager,
         request_id,
         window_label,
         "app_manager_get_detail_heavy",
-        move || service.get_detail_heavy(&host, input),
+        move |service, host| service.get_detail_heavy(&host, input),
     )
     .await
 }
@@ -363,15 +375,13 @@ pub async fn app_manager_scan_residue(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerResidueScanResultDto, InvokeError> {
-    let service = state.app_services.app_manager;
-    ensure_app_manager_watcher_started(&app, service);
-    let host = TauriLauncherHost::new(app);
-    run_blocking_command(
-        "app_manager_scan_residue",
+    run_app_manager_command(
+        app,
+        state.app_services.app_manager,
         request_id,
         window_label,
         "app_manager_scan_residue",
-        move || service.scan_residue(&host, input),
+        move |service, host| service.scan_residue(&host, input),
     )
     .await
 }
@@ -384,15 +394,13 @@ pub async fn app_manager_cleanup(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerCleanupResultDto, InvokeError> {
-    let service = state.app_services.app_manager;
-    ensure_app_manager_watcher_started(&app, service);
-    let host = TauriLauncherHost::new(app);
-    let result = run_blocking_command(
-        "app_manager_cleanup",
+    let result = run_app_manager_command(
+        app,
+        state.app_services.app_manager,
         request_id,
         window_label,
         "app_manager_cleanup",
-        move || service.cleanup(&host, input),
+        move |service, host| service.cleanup(&host, input),
     )
     .await;
     if result.is_ok() {
@@ -409,15 +417,13 @@ pub async fn app_manager_export_scan_result(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerExportScanResultDto, InvokeError> {
-    let service = state.app_services.app_manager;
-    ensure_app_manager_watcher_started(&app, service);
-    let host = TauriLauncherHost::new(app);
-    run_blocking_command(
-        "app_manager_export_scan_result",
+    run_app_manager_command(
+        app,
+        state.app_services.app_manager,
         request_id,
         window_label,
         "app_manager_export_scan_result",
-        move || service.export_scan_result(&host, input),
+        move |service, host| service.export_scan_result(&host, input),
     )
     .await
 }
@@ -429,15 +435,13 @@ pub async fn app_manager_refresh_index(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerActionResultDto, InvokeError> {
-    let service = state.app_services.app_manager;
-    ensure_app_manager_watcher_started(&app, service);
-    let host = TauriLauncherHost::new(app);
-    let result = run_blocking_command(
-        "app_manager_refresh_index",
+    let result = run_app_manager_command(
+        app,
+        state.app_services.app_manager,
         request_id,
         window_label,
         "app_manager_refresh_index",
-        move || service.refresh_index(&host),
+        move |service, host| service.refresh_index(&host),
     )
     .await;
     if result.is_ok() {
@@ -454,15 +458,13 @@ pub async fn app_manager_set_startup(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerActionResultDto, InvokeError> {
-    let service = state.app_services.app_manager;
-    ensure_app_manager_watcher_started(&app, service);
-    let host = TauriLauncherHost::new(app);
-    let result = run_blocking_command(
-        "app_manager_set_startup",
+    let result = run_app_manager_command(
+        app,
+        state.app_services.app_manager,
         request_id,
         window_label,
         "app_manager_set_startup",
-        move || service.set_startup(&host, input),
+        move |service, host| service.set_startup(&host, input),
     )
     .await;
     if result.is_ok() {
@@ -479,15 +481,13 @@ pub async fn app_manager_uninstall(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerActionResultDto, InvokeError> {
-    let service = state.app_services.app_manager;
-    ensure_app_manager_watcher_started(&app, service);
-    let host = TauriLauncherHost::new(app);
-    let result = run_blocking_command(
-        "app_manager_uninstall",
+    let result = run_app_manager_command(
+        app,
+        state.app_services.app_manager,
         request_id,
         window_label,
         "app_manager_uninstall",
-        move || service.uninstall(&host, input),
+        move |service, host| service.uninstall(&host, input),
     )
     .await;
     if result.is_ok() {
@@ -504,15 +504,13 @@ pub async fn app_manager_open_uninstall_help(
     request_id: Option<String>,
     window_label: Option<String>,
 ) -> Result<AppManagerActionResultDto, InvokeError> {
-    let service = state.app_services.app_manager;
-    ensure_app_manager_watcher_started(&app, service);
-    let host = TauriLauncherHost::new(app);
-    run_blocking_command(
-        "app_manager_open_uninstall_help",
+    run_app_manager_command(
+        app,
+        state.app_services.app_manager,
         request_id,
         window_label,
         "app_manager_open_uninstall_help",
-        move || service.open_uninstall_help(&host, app_id),
+        move |service, host| service.open_uninstall_help(&host, app_id),
     )
     .await
 }

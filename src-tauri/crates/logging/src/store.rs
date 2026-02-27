@@ -1,11 +1,13 @@
-use super::logging_ingest::{now_millis, sanitize_for_log};
+use super::ingest::{now_millis, sanitize_for_log};
 use super::{HighFrequencyWindow, RecordLogInput};
 use crate::AppError;
 use crate::db::DbConn;
 use crate::db_error::DbResult;
 use crate::models::LogEntryDto;
-use libsql::{Row, params};
+use libsql::{Row, Rows, params};
 use serde_json::Value;
+
+const AGGREGATED_EVENT: &str = "high_frequency_aggregated";
 
 pub(super) async fn cleanup_expired_log_entries(conn: &DbConn, keep_days: u32) -> DbResult<()> {
     let keep_ms = i64::from(keep_days) * 24 * 60 * 60 * 1000;
@@ -28,6 +30,10 @@ fn serialize_metadata_value(metadata: &Option<Value>) -> Option<String> {
         .and_then(|value| serde_json::to_string(value).ok())
 }
 
+fn aggregated_message(key: &str) -> String {
+    format!("{AGGREGATED_EVENT} key={}", sanitize_for_log(key))
+}
+
 pub(super) fn row_to_log_entry(row: &Row) -> DbResult<LogEntryDto> {
     let aggregated_count: Option<i64> = row.get(10)?;
     Ok(LogEntryDto {
@@ -43,6 +49,18 @@ pub(super) fn row_to_log_entry(row: &Row) -> DbResult<LogEntryDto> {
         raw_ref: row.get(9)?,
         aggregated_count: aggregated_count.and_then(|value| u32::try_from(value).ok()),
     })
+}
+
+async fn next_log_entry(
+    rows: &mut Rows,
+    error_code: &'static str,
+    message: &'static str,
+) -> DbResult<LogEntryDto> {
+    if let Some(row) = rows.next().await? {
+        return Ok(row_to_log_entry(&row)?);
+    }
+
+    Err(AppError::new(error_code, message).into())
 }
 
 pub(super) async fn save_log_entry(
@@ -70,11 +88,7 @@ pub(super) async fn save_log_entry(
         )
         .await?;
 
-    if let Some(row) = rows.next().await? {
-        return Ok(row_to_log_entry(&row)?);
-    }
-
-    Err(AppError::new("log_insert_missing", "写入日志后未返回记录").into())
+    next_log_entry(&mut rows, "log_insert_missing", "写入日志后未返回记录").await
 }
 
 pub(super) async fn upsert_aggregated_log(
@@ -97,21 +111,17 @@ pub(super) async fn upsert_aggregated_log(
                 params![
                     timestamp,
                     i64::from(window.aggregated_count),
-                    format!("high_frequency_aggregated key={}", sanitize_for_log(key)),
+                    aggregated_message(key),
                     row_id
                 ],
             )
             .await?;
 
-        if let Some(row) = rows.next().await? {
-            return Ok(row_to_log_entry(&row)?);
-        }
-
-        return Err(AppError::new("log_aggregate_missing", "聚合日志记录不存在").into());
+        return next_log_entry(&mut rows, "log_aggregate_missing", "聚合日志记录不存在").await;
     }
 
     window.aggregated_count = 1;
-    let aggregated_message = format!("high_frequency_aggregated key={}", sanitize_for_log(key));
+    let aggregated_message_text = aggregated_message(key);
     let mut rows = conn
         .query(
             "INSERT INTO log_entries (timestamp, level, scope, event, request_id, window_label, message, metadata, raw_ref, aggregated_count)
@@ -121,20 +131,21 @@ pub(super) async fn upsert_aggregated_log(
                 timestamp,
                 input.level.as_str(),
                 input.scope.as_str(),
-                "high_frequency_aggregated",
+                AGGREGATED_EVENT,
                 input.request_id.as_str(),
                 input.window_label.as_deref(),
-                aggregated_message.as_str(),
+                aggregated_message_text.as_str(),
                 i64::from(window.aggregated_count)
             ],
         )
         .await?;
 
-    if let Some(row) = rows.next().await? {
-        let entry = row_to_log_entry(&row)?;
-        window.aggregated_row_id = Some(entry.id);
-        return Ok(entry);
-    }
-
-    Err(AppError::new("log_aggregate_insert_missing", "写入聚合日志后未返回记录").into())
+    let entry = next_log_entry(
+        &mut rows,
+        "log_aggregate_insert_missing",
+        "写入聚合日志后未返回记录",
+    )
+    .await?;
+    window.aggregated_row_id = Some(entry.id);
+    Ok(entry)
 }

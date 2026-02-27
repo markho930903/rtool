@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 import type { LauncherAction, PaletteActionResult, PaletteItem } from "@/components/palette/types";
-import { invokeWithLog } from "@/services/invoke";
+import { launcherExecute, launcherSearch } from "@/services/launcher.service";
 
 interface LauncherState {
   query: string;
@@ -66,10 +66,7 @@ export const useLauncherStore = create<LauncherStore>((set, get) => ({
     set({ loading: true, error: null });
 
     try {
-      const items = await invokeWithLog<PaletteItem[]>("launcher_search", {
-        query,
-        limit,
-      });
+      const items = (await launcherSearch(query, limit)) as PaletteItem[];
 
       if (requestVersion !== latestSearchRequestVersion || query !== get().query) {
         return;
@@ -95,9 +92,7 @@ export const useLauncherStore = create<LauncherStore>((set, get) => ({
       return null;
     }
     try {
-      const result = await invokeWithLog<PaletteActionResult>("launcher_execute", {
-        action: selected.action as LauncherAction,
-      });
+      const result = (await launcherExecute(selected.action as LauncherAction)) as PaletteActionResult;
 
       set({
         lastAction: result,

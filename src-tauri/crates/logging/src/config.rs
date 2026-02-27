@@ -1,4 +1,4 @@
-use super::logging_ingest::{normalize_level, sanitize_for_log};
+use super::ingest::{normalize_level, sanitize_for_log};
 use super::{
     DEFAULT_ALLOW_RAW_VIEW, DEFAULT_HIGH_FREQ_MAX_PER_KEY, DEFAULT_HIGH_FREQ_WINDOW_MS,
     DEFAULT_KEEP_DAYS, DEFAULT_MIN_LEVEL, DEFAULT_REALTIME_ENABLED, SETTING_KEY_ALLOW_RAW_VIEW,
@@ -8,6 +8,10 @@ use super::{
 use crate::AppError;
 use crate::db::{self, DbConn};
 use crate::models::LogConfigDto;
+
+fn bool_setting(value: bool) -> &'static str {
+    if value { "true" } else { "false" }
+}
 
 pub(super) async fn load_log_config(conn: &DbConn) -> LogConfigDto {
     let keys = [
@@ -65,11 +69,7 @@ pub(super) async fn persist_log_config(
         (SETTING_KEY_KEEP_DAYS, keep_days.as_str()),
         (
             SETTING_KEY_REALTIME_ENABLED,
-            if config.realtime_enabled {
-                "true"
-            } else {
-                "false"
-            },
+            bool_setting(config.realtime_enabled),
         ),
         (
             SETTING_KEY_HIGH_FREQ_WINDOW_MS,
@@ -81,11 +81,7 @@ pub(super) async fn persist_log_config(
         ),
         (
             SETTING_KEY_ALLOW_RAW_VIEW,
-            if config.allow_raw_view {
-                "true"
-            } else {
-                "false"
-            },
+            bool_setting(config.allow_raw_view),
         ),
     ];
     db::set_app_settings_batch(conn, entries.as_slice()).await?;

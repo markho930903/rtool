@@ -9,6 +9,7 @@ import type {
   TransferSettings,
 } from "@/components/transfer/types";
 import type {
+  CommandRequestDto,
   TransferHistoryFilterDto,
   TransferHistoryPageDto,
   TransferPairingCodeDto,
@@ -39,69 +40,77 @@ export interface TransferSendFilesInput {
   sessionId?: string;
 }
 
+function invokeTransfer<T>(kind: string, payload?: Record<string, unknown>): Promise<T> {
+  const request: CommandRequestDto = { kind };
+  if (payload !== undefined) {
+    request.payload = payload;
+  }
+  return invokeWithLog<T>("transfer_handle", { request });
+}
+
 export async function transferGetSettings(): Promise<TransferSettings> {
-  const dto = await invokeWithLog<TransferSettingsDto>("transfer_get_settings");
+  const dto = await invokeTransfer<TransferSettingsDto>("get_settings");
   return dto as TransferSettings;
 }
 
 export async function transferUpdateSettings(input: TransferUpdateSettingsInput): Promise<TransferSettings> {
-  const dto = await invokeWithLog<TransferSettingsDto>("transfer_update_settings", {
+  const dto = await invokeTransfer<TransferSettingsDto>("update_settings", {
     input: input as TransferUpdateSettingsInputDto,
   });
   return dto as TransferSettings;
 }
 
 export async function transferGeneratePairingCode(): Promise<TransferPairingCode> {
-  const dto = await invokeWithLog<TransferPairingCodeDto>("transfer_generate_pairing_code");
+  const dto = await invokeTransfer<TransferPairingCodeDto>("generate_pairing_code");
   return dto as TransferPairingCode;
 }
 
 export async function transferStartDiscovery(): Promise<void> {
-  await invokeWithLog("transfer_start_discovery");
+  await invokeTransfer<void>("start_discovery");
 }
 
 export async function transferStopDiscovery(): Promise<void> {
-  await invokeWithLog("transfer_stop_discovery");
+  await invokeTransfer<void>("stop_discovery");
 }
 
 export async function transferListPeers(): Promise<TransferPeer[]> {
-  const dto = await invokeWithLog<TransferPeerDto[]>("transfer_list_peers");
+  const dto = await invokeTransfer<TransferPeerDto[]>("list_peers");
   return dto as TransferPeer[];
 }
 
 export async function transferSendFiles(input: TransferSendFilesInput): Promise<TransferSession> {
-  const dto = await invokeWithLog<TransferSessionDto>("transfer_send_files", {
+  const dto = await invokeTransfer<TransferSessionDto>("send_files", {
     input: input as TransferSendFilesInputDto,
   });
   return dto as TransferSession;
 }
 
 export async function transferPauseSession(sessionId: string): Promise<void> {
-  await invokeWithLog("transfer_pause_session", { sessionId });
+  await invokeTransfer<void>("pause_session", { sessionId });
 }
 
 export async function transferResumeSession(sessionId: string): Promise<void> {
-  await invokeWithLog("transfer_resume_session", { sessionId });
+  await invokeTransfer<void>("resume_session", { sessionId });
 }
 
 export async function transferCancelSession(sessionId: string): Promise<void> {
-  await invokeWithLog("transfer_cancel_session", { sessionId });
+  await invokeTransfer<void>("cancel_session", { sessionId });
 }
 
 export async function transferRetrySession(sessionId: string): Promise<TransferSession> {
-  const dto = await invokeWithLog<TransferSessionDto>("transfer_retry_session", { sessionId });
+  const dto = await invokeTransfer<TransferSessionDto>("retry_session", { sessionId });
   return dto as TransferSession;
 }
 
 export async function transferListHistory(filter?: TransferHistoryFilter): Promise<TransferHistoryPage> {
-  const dto = await invokeWithLog<TransferHistoryPageDto>("transfer_list_history", {
+  const dto = await invokeTransfer<TransferHistoryPageDto>("list_history", {
     filter: filter as TransferHistoryFilterDto | undefined,
   });
   return dto as TransferHistoryPage;
 }
 
 export async function transferClearHistory(all = false, olderThanDays = 30): Promise<void> {
-  await invokeWithLog("transfer_clear_history", {
+  await invokeTransfer<void>("clear_history", {
     input: {
       all,
       olderThanDays,
@@ -110,5 +119,5 @@ export async function transferClearHistory(all = false, olderThanDays = 30): Pro
 }
 
 export async function transferOpenDownloadDir(path?: string): Promise<void> {
-  await invokeWithLog("transfer_open_download_dir", { path });
+  await invokeTransfer<void>("open_download_dir", { path });
 }

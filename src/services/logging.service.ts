@@ -1,6 +1,6 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
-import type { LogConfigDto, LogEntryDto, LogPageDto, LogQueryDto } from "@/contracts";
+import type { CommandRequestDto, LogConfigDto, LogEntryDto, LogPageDto, LogQueryDto } from "@/contracts";
 import { invokeWithLog } from "@/services/invoke";
 import { safeUnlisten } from "@/services/tauri-event";
 
@@ -46,50 +46,50 @@ export interface LoggingConfig {
   allowRawView: boolean;
 }
 
-export async function fetchLogPage(query?: LogQuery): Promise<LogPage> {
-  const dto = await invokeWithLog<LogPageDto>(
-    "logging_query",
+function invokeLogging<T>(
+  kind: string,
+  payload?: Record<string, unknown>,
+  silent = true,
+): Promise<T> {
+  const request: CommandRequestDto = { kind };
+  if (payload !== undefined) {
+    request.payload = payload;
+  }
+  return invokeWithLog<T>(
+    "logging_handle",
     {
-      query: query as LogQueryDto | undefined,
+      request,
     },
     {
-      silent: true,
+      silent,
     },
   );
+}
+
+export async function fetchLogPage(query?: LogQuery): Promise<LogPage> {
+  const dto = await invokeLogging<LogPageDto>("query", {
+    query: query as LogQueryDto | undefined,
+  });
   return dto as LogPage;
 }
 
 export async function fetchLoggingConfig(): Promise<LoggingConfig> {
-  const dto = await invokeWithLog<LogConfigDto>("logging_get_config", undefined, {
-    silent: true,
-  });
+  const dto = await invokeLogging<LogConfigDto>("get_config");
   return dto as LoggingConfig;
 }
 
 export async function saveLoggingConfig(config: LoggingConfig): Promise<LoggingConfig> {
-  const dto = await invokeWithLog<LogConfigDto>(
-    "logging_update_config",
-    {
-      config: config as LogConfigDto,
-    },
-    {
-      silent: true,
-    },
-  );
+  const dto = await invokeLogging<LogConfigDto>("update_config", {
+    config: config as LogConfigDto,
+  });
   return dto as LoggingConfig;
 }
 
 export async function exportLogs(query?: LogQuery, outputPath?: string): Promise<string> {
-  return invokeWithLog<string>(
-    "logging_export_jsonl",
-    {
-      query: query as LogQueryDto | undefined,
-      outputPath,
-    },
-    {
-      silent: true,
-    },
-  );
+  return invokeLogging<string>("export_jsonl", {
+    query: query as LogQueryDto | undefined,
+    outputPath,
+  });
 }
 
 export async function subscribeLogStream(onEntry: (entry: LogEntry) => void): Promise<UnlistenFn> {

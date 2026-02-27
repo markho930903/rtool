@@ -1,5 +1,8 @@
 use super::{run_command_async, run_command_sync};
 use crate::app::state::AppState;
+use crate::features::command_payload::{
+    CommandPayloadContext, CommandRequestDto,
+};
 use crate::features::clipboard::events::emit_clipboard_sync;
 #[cfg(test)]
 use crate::features::clipboard::system_clipboard::{
@@ -19,6 +22,8 @@ use protocol::models::{
 };
 use protocol::{AppError, AppResult, InvokeError, ResultExt};
 use rtool_core::services::ClipboardApplicationService;
+use serde::Deserialize;
+use serde_json::Value;
 use std::borrow::Cow;
 use tauri::{AppHandle, State};
 
@@ -60,6 +65,44 @@ fn emit_clipboard_touch_sync(app: &AppHandle, touched: ClipboardItemDto, reason:
         },
     );
 }
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct ClipboardListPayload {
+    filter: Option<ClipboardFilterDto>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClipboardPinPayload {
+    id: String,
+    pinned: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClipboardIdPayload {
+    id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClipboardSaveTextPayload {
+    text: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ClipboardWindowModePayload {
+    compact: bool,
+}
+
+const CLIPBOARD_COMMAND_CONTEXT: CommandPayloadContext = CommandPayloadContext::new(
+    "clipboard",
+    "剪贴板命令参数无效",
+    "剪贴板命令返回序列化失败",
+    "未知剪贴板命令",
+);
 
 #[tauri::command]
 pub async fn clipboard_list(
@@ -379,4 +422,97 @@ pub async fn clipboard_copy_image_back(
         },
     )
     .await
+}
+
+#[tauri::command]
+pub async fn clipboard_handle(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    clipboard_plugin: State<'_, tauri_plugin_clipboard::Clipboard>,
+    request: CommandRequestDto,
+    request_id: Option<String>,
+    window_label: Option<String>,
+) -> Result<Value, InvokeError> {
+    match request.kind.as_str() {
+        "list" => {
+            let payload: ClipboardListPayload =
+                CLIPBOARD_COMMAND_CONTEXT.parse("list", request.payload)?;
+            CLIPBOARD_COMMAND_CONTEXT.serialize(
+                "list",
+                clipboard_list(state, payload.filter, request_id, window_label).await?,
+            )
+        }
+        "pin" => {
+            let payload: ClipboardPinPayload = CLIPBOARD_COMMAND_CONTEXT.parse("pin", request.payload)?;
+            clipboard_pin(
+                app,
+                state,
+                payload.id,
+                payload.pinned,
+                request_id,
+                window_label,
+            )
+            .await?;
+            Ok(Value::Null)
+        }
+        "delete" => {
+            let payload: ClipboardIdPayload =
+                CLIPBOARD_COMMAND_CONTEXT.parse("delete", request.payload)?;
+            clipboard_delete(app, state, payload.id, request_id, window_label).await?;
+            Ok(Value::Null)
+        }
+        "clear_all" => {
+            clipboard_clear_all(app, state, request_id, window_label).await?;
+            Ok(Value::Null)
+        }
+        "save_text" => {
+            let payload: ClipboardSaveTextPayload =
+                CLIPBOARD_COMMAND_CONTEXT.parse("save_text", request.payload)?;
+            CLIPBOARD_COMMAND_CONTEXT.serialize(
+                "save_text",
+                clipboard_save_text(app, state, payload.text, request_id, window_label).await?,
+            )
+        }
+        "window_set_mode" => {
+            let payload: ClipboardWindowModePayload =
+                CLIPBOARD_COMMAND_CONTEXT.parse("window_set_mode", request.payload)?;
+            clipboard_window_set_mode(state, payload.compact, request_id, window_label)?;
+            Ok(Value::Null)
+        }
+        "window_apply_mode" => {
+            let payload: ClipboardWindowModePayload =
+                CLIPBOARD_COMMAND_CONTEXT.parse("window_apply_mode", request.payload)?;
+            CLIPBOARD_COMMAND_CONTEXT.serialize(
+                "window_apply_mode",
+                clipboard_window_apply_mode(app, state, payload.compact, request_id, window_label)?,
+            )
+        }
+        "copy_back" => {
+            let payload: ClipboardIdPayload =
+                CLIPBOARD_COMMAND_CONTEXT.parse("copy_back", request.payload)?;
+            clipboard_copy_back(
+                app,
+                state,
+                clipboard_plugin,
+                payload.id,
+                request_id,
+                window_label,
+            )
+            .await?;
+            Ok(Value::Null)
+        }
+        "copy_file_paths" => {
+            let payload: ClipboardIdPayload =
+                CLIPBOARD_COMMAND_CONTEXT.parse("copy_file_paths", request.payload)?;
+            clipboard_copy_file_paths(app, state, payload.id, request_id, window_label).await?;
+            Ok(Value::Null)
+        }
+        "copy_image_back" => {
+            let payload: ClipboardIdPayload =
+                CLIPBOARD_COMMAND_CONTEXT.parse("copy_image_back", request.payload)?;
+            clipboard_copy_image_back(app, state, payload.id, request_id, window_label).await?;
+            Ok(Value::Null)
+        }
+        _ => Err(CLIPBOARD_COMMAND_CONTEXT.unknown(request.kind)),
+    }
 }

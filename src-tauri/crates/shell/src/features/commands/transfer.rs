@@ -5,6 +5,9 @@ use tauri::State;
 
 use super::{run_command_async, run_command_sync};
 use crate::app::state::AppState;
+use crate::features::command_payload::{
+    CommandPayloadContext, CommandRequestDto,
+};
 use anyhow::Context;
 use protocol::models::{
     TransferClearHistoryInputDto, TransferHistoryFilterDto, TransferHistoryPageDto,
@@ -12,6 +15,8 @@ use protocol::models::{
     TransferSettingsDto, TransferUpdateSettingsInputDto,
 };
 use protocol::{AppError, AppResult, InvokeError, ResultExt};
+use serde::Deserialize;
+use serde_json::Value;
 
 fn open_path(path: &str) -> AppResult<()> {
     let trimmed = path.trim();
@@ -52,6 +57,49 @@ fn open_path(path: &str) -> AppResult<()> {
             .with_context("status", status.to_string()))
     }
 }
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TransferUpdateSettingsPayload {
+    input: TransferUpdateSettingsInputDto,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TransferSendFilesPayload {
+    input: TransferSendFilesInputDto,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TransferSessionPayload {
+    session_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct TransferListHistoryPayload {
+    filter: Option<TransferHistoryFilterDto>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct TransferClearHistoryPayload {
+    input: Option<TransferClearHistoryInputDto>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct TransferOpenDownloadDirPayload {
+    path: Option<String>,
+}
+
+const TRANSFER_COMMAND_CONTEXT: CommandPayloadContext = CommandPayloadContext::new(
+    "transfer",
+    "传输命令参数无效",
+    "传输命令返回序列化失败",
+    "未知传输命令",
+);
 
 #[tauri::command]
 pub fn transfer_get_settings(
@@ -288,4 +336,98 @@ pub fn transfer_open_download_dir(
             open_path(resolved.as_str())
         },
     )
+}
+
+#[tauri::command]
+pub async fn transfer_handle(
+    state: State<'_, AppState>,
+    request: CommandRequestDto,
+    request_id: Option<String>,
+    window_label: Option<String>,
+) -> Result<Value, InvokeError> {
+    match request.kind.as_str() {
+        "get_settings" => TRANSFER_COMMAND_CONTEXT.serialize(
+            "get_settings",
+            transfer_get_settings(state, request_id, window_label)?,
+        ),
+        "update_settings" => {
+            let payload: TransferUpdateSettingsPayload =
+                TRANSFER_COMMAND_CONTEXT.parse("update_settings", request.payload)?;
+            TRANSFER_COMMAND_CONTEXT.serialize(
+                "update_settings",
+                transfer_update_settings(state, payload.input, request_id, window_label).await?,
+            )
+        }
+        "generate_pairing_code" => TRANSFER_COMMAND_CONTEXT.serialize(
+            "generate_pairing_code",
+            transfer_generate_pairing_code(state, request_id, window_label)?,
+        ),
+        "start_discovery" => {
+            transfer_start_discovery(state, request_id, window_label).await?;
+            Ok(Value::Null)
+        }
+        "stop_discovery" => {
+            transfer_stop_discovery(state, request_id, window_label)?;
+            Ok(Value::Null)
+        }
+        "list_peers" => TRANSFER_COMMAND_CONTEXT.serialize(
+            "list_peers",
+            transfer_list_peers(state, request_id, window_label).await?,
+        ),
+        "send_files" => {
+            let payload: TransferSendFilesPayload =
+                TRANSFER_COMMAND_CONTEXT.parse("send_files", request.payload)?;
+            TRANSFER_COMMAND_CONTEXT.serialize(
+                "send_files",
+                transfer_send_files(state, payload.input, request_id, window_label).await?,
+            )
+        }
+        "pause_session" => {
+            let payload: TransferSessionPayload =
+                TRANSFER_COMMAND_CONTEXT.parse("pause_session", request.payload)?;
+            transfer_pause_session(state, payload.session_id, request_id, window_label).await?;
+            Ok(Value::Null)
+        }
+        "resume_session" => {
+            let payload: TransferSessionPayload =
+                TRANSFER_COMMAND_CONTEXT.parse("resume_session", request.payload)?;
+            transfer_resume_session(state, payload.session_id, request_id, window_label).await?;
+            Ok(Value::Null)
+        }
+        "cancel_session" => {
+            let payload: TransferSessionPayload =
+                TRANSFER_COMMAND_CONTEXT.parse("cancel_session", request.payload)?;
+            transfer_cancel_session(state, payload.session_id, request_id, window_label).await?;
+            Ok(Value::Null)
+        }
+        "retry_session" => {
+            let payload: TransferSessionPayload =
+                TRANSFER_COMMAND_CONTEXT.parse("retry_session", request.payload)?;
+            TRANSFER_COMMAND_CONTEXT.serialize(
+                "retry_session",
+                transfer_retry_session(state, payload.session_id, request_id, window_label).await?,
+            )
+        }
+        "list_history" => {
+            let payload: TransferListHistoryPayload =
+                TRANSFER_COMMAND_CONTEXT.parse("list_history", request.payload)?;
+            TRANSFER_COMMAND_CONTEXT.serialize(
+                "list_history",
+                transfer_list_history(state, payload.filter, request_id, window_label).await?,
+            )
+        }
+        "clear_history" => {
+            let payload: TransferClearHistoryPayload =
+                TRANSFER_COMMAND_CONTEXT.parse("clear_history", request.payload)?;
+            transfer_clear_history(state, payload.input, request_id, window_label).await?;
+            Ok(Value::Null)
+        }
+        "open_download_dir" => {
+            let payload: TransferOpenDownloadDirPayload =
+                TRANSFER_COMMAND_CONTEXT.parse("open_download_dir", request.payload)?;
+            transfer_open_download_dir(state, payload.path, request_id, window_label)?;
+            Ok(Value::Null)
+        }
+        _ => Err(TRANSFER_COMMAND_CONTEXT.unknown(request.kind)),
+    }
 }

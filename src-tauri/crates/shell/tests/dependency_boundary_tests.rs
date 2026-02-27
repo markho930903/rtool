@@ -2,20 +2,40 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 fn command_files(features_dir: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = fs::read_dir(features_dir) else {
-        return Vec::new();
-    };
     let mut files = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-        let file = path.join("commands.rs");
-        if file.is_file() {
-            files.push(file);
+    let commands_dir = features_dir.join("commands");
+    if let Ok(entries) = fs::read_dir(&commands_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+                files.push(path);
+            }
         }
     }
+
+    if files.is_empty() {
+        let Ok(entries) = fs::read_dir(features_dir) else {
+            return Vec::new();
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let file = path.join("commands.rs");
+                if file.is_file() {
+                    files.push(file);
+                }
+                continue;
+            }
+            if path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.ends_with("_commands.rs"))
+            {
+                files.push(path);
+            }
+        }
+    }
+
     files.sort();
     files
 }

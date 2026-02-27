@@ -1,7 +1,5 @@
-use super::logging_store::{cleanup_expired_log_entries, save_log_entry, upsert_aggregated_log};
+use super::store::{cleanup_expired_log_entries, save_log_entry, upsert_aggregated_log};
 use super::{
-    DEFAULT_ALLOW_RAW_VIEW, DEFAULT_HIGH_FREQ_MAX_PER_KEY, DEFAULT_HIGH_FREQ_WINDOW_MS,
-    DEFAULT_KEEP_DAYS, DEFAULT_MIN_LEVEL, DEFAULT_REALTIME_ENABLED,
     LOG_RETENTION_CLEANUP_INTERVAL_MS, LogCenter, LogConfigDto, MAX_COLLECTION_ITEMS,
     MAX_NESTED_DEPTH, MAX_STRING_LEN, RecordLogInput, SENSITIVE_HOST_KEYS, SENSITIVE_PATH_KEYS,
     SENSITIVE_TEXT_KEYS,
@@ -250,6 +248,16 @@ fn sanitize_record_input(input: RecordLogInput) -> RecordLogInput {
     }
 }
 
+fn build_event_key(input: &RecordLogInput) -> String {
+    format!(
+        "{}|{}|{}|{}",
+        input.level,
+        input.scope,
+        input.event,
+        input.window_label.as_deref().unwrap_or_default()
+    )
+}
+
 impl LogCenter {
     fn should_emit_level(&self, level: &str, config: &LogConfigDto) -> bool {
         let min_rank = level_rank(&config.min_level).unwrap_or(2);
@@ -299,20 +307,10 @@ impl LogCenter {
         let mut map = self.high_frequency.lock().ok()?;
         let entry = map
             .entry(key.to_string())
-            .or_insert_with(|| super::HighFrequencyWindow {
-                started_at: timestamp,
-                count: 0,
-                aggregated_row_id: None,
-                aggregated_count: 0,
-            });
+            .or_insert_with(|| super::HighFrequencyWindow::new(timestamp));
 
         if timestamp - entry.started_at >= i64::from(config.high_freq_window_ms) {
-            *entry = super::HighFrequencyWindow {
-                started_at: timestamp,
-                count: 0,
-                aggregated_row_id: None,
-                aggregated_count: 0,
-            };
+            *entry = super::HighFrequencyWindow::new(timestamp);
         }
 
         entry.count = entry.count.saturating_add(1);
@@ -320,12 +318,7 @@ impl LogCenter {
             return None;
         }
 
-        Some(super::HighFrequencyWindow {
-            started_at: entry.started_at,
-            count: entry.count,
-            aggregated_row_id: entry.aggregated_row_id,
-            aggregated_count: entry.aggregated_count,
-        })
+        Some(*entry)
     }
 
     fn update_aggregate_window(&self, key: &str, next: super::HighFrequencyWindow) {
@@ -340,14 +333,7 @@ impl LogCenter {
             .config
             .lock()
             .map(|value| value.clone())
-            .unwrap_or_else(|_| LogConfigDto {
-                min_level: DEFAULT_MIN_LEVEL.to_string(),
-                keep_days: DEFAULT_KEEP_DAYS,
-                realtime_enabled: DEFAULT_REALTIME_ENABLED,
-                high_freq_window_ms: DEFAULT_HIGH_FREQ_WINDOW_MS,
-                high_freq_max_per_key: DEFAULT_HIGH_FREQ_MAX_PER_KEY,
-                allow_raw_view: DEFAULT_ALLOW_RAW_VIEW,
-            });
+            .unwrap_or_else(|_| super::default_log_config());
 
         if !self.should_emit_level(&sanitized.level, &config) {
             return Ok(());
@@ -356,13 +342,7 @@ impl LogCenter {
         let timestamp = now_millis();
         self.maybe_cleanup(&config, timestamp).await;
 
-        let event_key = format!(
-            "{}|{}|{}|{}",
-            sanitized.level,
-            sanitized.scope,
-            sanitized.event,
-            sanitized.window_label.clone().unwrap_or_default()
-        );
+        let event_key = build_event_key(&sanitized);
 
         if let Some(mut window) = self.should_aggregate(&config, &event_key, timestamp) {
             let entry = upsert_aggregated_log(

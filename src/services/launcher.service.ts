@@ -1,31 +1,59 @@
 import type {
+  ActionResultDto as LauncherActionResult,
+  CommandRequestDto,
+  LauncherActionDto as LauncherAction,
   LauncherIndexStatusDto as LauncherIndexStatus,
+  LauncherItemDto as LauncherItem,
   LauncherRebuildResultDto as LauncherRebuildResult,
   LauncherSearchSettingsDto as LauncherSearchSettings,
   LauncherUpdateSearchSettingsInputDto as LauncherUpdateSearchSettingsInput,
 } from "@/contracts";
 import { invokeWithLog } from "@/services/invoke";
 
-export type { LauncherIndexStatus, LauncherRebuildResult, LauncherSearchSettings, LauncherUpdateSearchSettingsInput };
+function invokeLauncher<T>(kind: string, payload?: Record<string, unknown>): Promise<T> {
+  const request: CommandRequestDto = { kind };
+  if (payload !== undefined) {
+    request.payload = payload;
+  }
+  return invokeWithLog<T>("launcher_handle", { request });
+}
+
+export type {
+  LauncherAction,
+  LauncherActionResult,
+  LauncherIndexStatus,
+  LauncherItem,
+  LauncherRebuildResult,
+  LauncherSearchSettings,
+  LauncherUpdateSearchSettingsInput,
+};
+
+export async function launcherSearch(query: string, limit?: number): Promise<LauncherItem[]> {
+  return invokeLauncher<LauncherItem[]>("search", { query, limit });
+}
+
+export async function launcherExecute(action: LauncherAction): Promise<LauncherActionResult> {
+  return invokeLauncher<LauncherActionResult>("execute", { action });
+}
 
 export async function launcherGetSearchSettings(): Promise<LauncherSearchSettings> {
-  return invokeWithLog<LauncherSearchSettings>("launcher_get_search_settings");
+  return invokeLauncher<LauncherSearchSettings>("get_search_settings");
 }
 
 export async function launcherUpdateSearchSettings(
   input: LauncherUpdateSearchSettingsInput,
 ): Promise<LauncherSearchSettings> {
-  return invokeWithLog<LauncherSearchSettings>("launcher_update_search_settings", { input });
+  return invokeLauncher<LauncherSearchSettings>("update_search_settings", { input });
 }
 
 export async function launcherGetIndexStatus(): Promise<LauncherIndexStatus> {
-  return invokeWithLog<LauncherIndexStatus>("launcher_get_index_status");
+  return invokeLauncher<LauncherIndexStatus>("get_index_status");
 }
 
 export async function launcherRebuildIndex(): Promise<LauncherRebuildResult> {
-  return invokeWithLog<LauncherRebuildResult>("launcher_rebuild_index");
+  return invokeLauncher<LauncherRebuildResult>("rebuild_index");
 }
 
 export async function launcherResetSearchSettings(): Promise<LauncherSearchSettings> {
-  return invokeWithLog<LauncherSearchSettings>("launcher_reset_search_settings");
+  return invokeLauncher<LauncherSearchSettings>("reset_search_settings");
 }

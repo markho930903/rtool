@@ -1,10 +1,22 @@
 use crate::app::state::AppState;
 use crate::command_runtime::{run_command_async, run_command_sync};
 use crate::features::clipboard::events::emit_clipboard_sync;
+use crate::features::command_payload::{
+    CommandPayloadContext, CommandRequestDto,
+};
 use protocol::models::{ClipboardSyncPayload, UserSettingsDto, UserSettingsUpdateInputDto};
 use protocol::{AppError, InvokeError};
 use rtool_i18n::i18n::resolve_locale;
+use serde::Deserialize;
+use serde_json::Value;
 use tauri::{AppHandle, State};
+
+const SETTINGS_COMMAND_CONTEXT: CommandPayloadContext = CommandPayloadContext::new(
+    "settings",
+    "设置命令参数无效",
+    "设置命令返回序列化失败",
+    "未知设置命令",
+);
 
 #[tauri::command]
 pub fn app_get_user_settings(
@@ -63,4 +75,35 @@ pub async fn app_update_user_settings(
         },
     )
     .await
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateSettingsPayload {
+    input: UserSettingsUpdateInputDto,
+}
+
+#[tauri::command]
+pub async fn settings_handle(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request: CommandRequestDto,
+    request_id: Option<String>,
+    window_label: Option<String>,
+) -> Result<Value, InvokeError> {
+    match request.kind.as_str() {
+        "get" => SETTINGS_COMMAND_CONTEXT.serialize(
+            "get",
+            app_get_user_settings(state, request_id, window_label)?,
+        ),
+        "update" => {
+            let payload: UpdateSettingsPayload =
+                SETTINGS_COMMAND_CONTEXT.parse("update", request.payload)?;
+            SETTINGS_COMMAND_CONTEXT.serialize(
+                "update",
+                app_update_user_settings(app, state, payload.input, request_id, window_label).await?,
+            )
+        }
+        _ => Err(SETTINGS_COMMAND_CONTEXT.unknown(request.kind)),
+    }
 }

@@ -1,5 +1,6 @@
 import type {
   AppHealthSnapshotDto as AppHealthSnapshot,
+  CommandRequestDto,
   AppRuntimeInfoDto as AppRuntimeInfo,
   DashboardSnapshotDto as DashboardSnapshot,
   SystemInfoDto as SystemInfo,
@@ -8,10 +9,15 @@ import { invokeWithLog } from "@/services/invoke";
 
 export type { AppHealthSnapshot, AppRuntimeInfo, DashboardSnapshot, SystemInfo };
 
+function invokeDashboard<T>(kind: string): Promise<T> {
+  const request: CommandRequestDto = { kind };
+  return invokeWithLog<T>("dashboard_handle", { request });
+}
+
 export async function fetchDashboardSnapshot(): Promise<DashboardSnapshot> {
-  return invokeWithLog<DashboardSnapshot>("dashboard_snapshot");
+  return invokeDashboard<DashboardSnapshot>("snapshot");
 }
 
 export async function fetchAppHealthSnapshot(): Promise<AppHealthSnapshot> {
-  return invokeWithLog<AppHealthSnapshot>("app_get_health_snapshot");
+  return invokeDashboard<AppHealthSnapshot>("health_snapshot");
 }

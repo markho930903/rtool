@@ -1,15 +1,42 @@
-use super::logging_ingest::now_millis;
-use super::logging_query;
+use super::ingest::now_millis;
+use super::query;
 use super::{EXPORT_FLUSH_EVERY_PAGES, EXPORT_THROTTLE_SLEEP_MS};
 use crate::models::LogQueryDto;
 use crate::{AppError, ResultExt};
 use anyhow::Context;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::fs::File;
 use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::time::sleep;
+
+async fn write_export_bytes(
+    writer: &mut BufWriter<File>,
+    target_path: &Path,
+    bytes: &[u8],
+) -> Result<(), AppError> {
+    writer
+        .write_all(bytes)
+        .await
+        .with_context(|| format!("写入日志导出文件失败: {}", target_path.display()))
+        .with_code("log_export_write_failed", "写入日志导出文件失败")
+        .with_ctx("targetPath", target_path.display().to_string())?;
+    Ok(())
+}
+
+async fn flush_export_writer(
+    writer: &mut BufWriter<File>,
+    target_path: &Path,
+) -> Result<(), AppError> {
+    writer
+        .flush()
+        .await
+        .with_context(|| format!("刷新日志导出文件失败: {}", target_path.display()))
+        .with_code("log_export_flush_failed", "刷新日志导出文件失败")
+        .with_ctx("targetPath", target_path.display().to_string())?;
+    Ok(())
+}
 
 pub(super) async fn export_log_entries(
     center: &super::LogCenter,
@@ -46,34 +73,19 @@ pub(super) async fn export_log_entries(
         next_query.cursor = cursor.clone();
         next_query.limit = super::QUERY_LIMIT_MAX;
 
-        let page = logging_query::query_log_entries(center, next_query).await?;
+        let page = query::query_log_entries(center, next_query).await?;
         for item in &page.items {
             let line = serde_json::to_string(item)
                 .with_context(|| format!("序列化日志导出内容失败: entryId={}", item.id))
                 .with_code("log_export_serialize_failed", "序列化日志导出内容失败")
                 .with_ctx("entryId", item.id.to_string())?;
-            writer
-                .write_all(line.as_bytes())
-                .await
-                .with_context(|| format!("写入日志导出文件失败: {}", target_path.display()))
-                .with_code("log_export_write_failed", "写入日志导出文件失败")
-                .with_ctx("targetPath", target_path.display().to_string())?;
-            writer
-                .write_all(b"\n")
-                .await
-                .with_context(|| format!("写入日志导出文件失败: {}", target_path.display()))
-                .with_code("log_export_write_failed", "写入日志导出文件失败")
-                .with_ctx("targetPath", target_path.display().to_string())?;
+            write_export_bytes(&mut writer, &target_path, line.as_bytes()).await?;
+            write_export_bytes(&mut writer, &target_path, b"\n").await?;
         }
 
         page_count = page_count.saturating_add(1);
         if page_count.is_multiple_of(EXPORT_FLUSH_EVERY_PAGES) {
-            writer
-                .flush()
-                .await
-                .with_context(|| format!("刷新日志导出文件失败: {}", target_path.display()))
-                .with_code("log_export_flush_failed", "刷新日志导出文件失败")
-                .with_ctx("targetPath", target_path.display().to_string())?;
+            flush_export_writer(&mut writer, &target_path).await?;
             sleep(Duration::from_millis(EXPORT_THROTTLE_SLEEP_MS)).await;
         }
 
@@ -83,12 +95,7 @@ pub(super) async fn export_log_entries(
         cursor = page.next_cursor;
     }
 
-    writer
-        .flush()
-        .await
-        .with_context(|| format!("刷新日志导出文件失败: {}", target_path.display()))
-        .with_code("log_export_flush_failed", "刷新日志导出文件失败")
-        .with_ctx("targetPath", target_path.display().to_string())?;
+    flush_export_writer(&mut writer, &target_path).await?;
 
     Ok(target_path.to_string_lossy().to_string())
 }

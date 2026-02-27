@@ -1,5 +1,5 @@
-use super::logging_ingest::{normalize_level, sanitize_for_log};
-use super::logging_store::row_to_log_entry;
+use super::ingest::{normalize_level, sanitize_for_log};
+use super::store::row_to_log_entry;
 use super::{QUERY_LIMIT_DEFAULT, QUERY_LIMIT_MAX};
 use crate::AppError;
 use crate::db_error::DbAppError;
@@ -8,28 +8,40 @@ use libsql::{Value as LibsqlValue, params_from_iter};
 
 pub(crate) fn build_log_fts_query(keyword: &str) -> Option<String> {
     let normalized = sanitize_for_log(keyword);
-    let tokens = normalized
-        .split_whitespace()
-        .map(|token| {
-            token
-                .trim_matches(|ch: char| !ch.is_alphanumeric() && ch != '_' && ch != '-')
-                .to_string()
-        })
-        .filter(|token| !token.is_empty())
-        .take(8)
-        .collect::<Vec<_>>();
+    let mut tokens = Vec::new();
+
+    for token in normalized.split_whitespace() {
+        let normalized_token =
+            token.trim_matches(|ch: char| !ch.is_alphanumeric() && ch != '_' && ch != '-');
+        if normalized_token.is_empty() {
+            continue;
+        }
+
+        tokens.push(format!("{normalized_token}*"));
+        if tokens.len() >= 8 {
+            break;
+        }
+    }
 
     if tokens.is_empty() {
         return None;
     }
 
-    Some(
-        tokens
-            .into_iter()
-            .map(|token| format!("{token}*"))
-            .collect::<Vec<_>>()
-            .join(" AND "),
-    )
+    Some(tokens.join(" AND "))
+}
+
+fn push_exact_match_filter(
+    sql: &mut String,
+    params: &mut Vec<LibsqlValue>,
+    field: &str,
+    value: Option<&str>,
+) {
+    if let Some(value) = value.filter(|value| !value.trim().is_empty()) {
+        sql.push_str(" AND ");
+        sql.push_str(field);
+        sql.push_str(" = ?");
+        params.push(LibsqlValue::Text(sanitize_for_log(value)));
+    }
 }
 
 pub(super) async fn query_log_entries(
@@ -52,14 +64,17 @@ pub(super) async fn query_log_entries(
     }
 
     if let Some(levels) = query.levels.as_ref().filter(|levels| !levels.is_empty()) {
-        let mut normalized_levels = Vec::new();
-        for level in levels {
-            let normalized = normalize_level(level).ok_or_else(|| {
-                AppError::new("invalid_log_level", "日志级别非法")
-                    .with_context("level", sanitize_for_log(level))
-            })?;
-            normalized_levels.push(normalized.to_string());
-        }
+        let normalized_levels = levels
+            .iter()
+            .map(|level| {
+                normalize_level(level)
+                    .map(ToString::to_string)
+                    .ok_or_else(|| {
+                        AppError::new("invalid_log_level", "日志级别非法")
+                            .with_context("level", sanitize_for_log(level))
+                    })
+            })
+            .collect::<Result<Vec<_>, AppError>>()?;
 
         sql.push_str(" AND level IN (");
         for (index, value) in normalized_levels.iter().enumerate() {
@@ -72,32 +87,19 @@ pub(super) async fn query_log_entries(
         sql.push(')');
     }
 
-    if let Some(scope) = query
-        .scope
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-    {
-        sql.push_str(" AND scope = ?");
-        params.push(LibsqlValue::Text(sanitize_for_log(scope)));
-    }
-
-    if let Some(request_id) = query
-        .request_id
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-    {
-        sql.push_str(" AND request_id = ?");
-        params.push(LibsqlValue::Text(sanitize_for_log(request_id)));
-    }
-
-    if let Some(window_label) = query
-        .window_label
-        .as_deref()
-        .filter(|value| !value.trim().is_empty())
-    {
-        sql.push_str(" AND window_label = ?");
-        params.push(LibsqlValue::Text(sanitize_for_log(window_label)));
-    }
+    push_exact_match_filter(&mut sql, &mut params, "scope", query.scope.as_deref());
+    push_exact_match_filter(
+        &mut sql,
+        &mut params,
+        "request_id",
+        query.request_id.as_deref(),
+    );
+    push_exact_match_filter(
+        &mut sql,
+        &mut params,
+        "window_label",
+        query.window_label.as_deref(),
+    );
 
     if let Some(keyword) = query
         .keyword
@@ -143,10 +145,7 @@ pub(super) async fn query_log_entries(
 
     let page_size = usize::try_from(limit).unwrap_or(QUERY_LIMIT_DEFAULT as usize);
     let next_cursor = if items.len() > page_size {
-        let marker = items
-            .get(page_size)
-            .map(|value| value.id)
-            .unwrap_or_default();
+        let marker = items[page_size].id;
         items.truncate(page_size);
         Some(marker.to_string())
     } else {

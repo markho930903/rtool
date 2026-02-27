@@ -1,5 +1,8 @@
 use super::{run_blocking_command, run_command_sync};
 use crate::app::state::AppState;
+use crate::features::command_payload::{
+    CommandPayloadContext, CommandRequestDto,
+};
 use crate::host::launcher::TauriLauncherHost;
 use anyhow::Context;
 use protocol::models::{
@@ -12,6 +15,8 @@ use protocol::models::{
 };
 use protocol::{AppError, AppResult, InvokeError, ResultExt};
 use rtool_core::AppManagerApplicationService;
+use serde::Deserialize;
+use serde_json::Value;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;
@@ -21,6 +26,73 @@ use std::time::Duration;
 use tauri::{Emitter, State};
 use tokio::sync::Notify;
 use tokio::time::sleep;
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct AppManagerListPayload {
+    query: Option<AppManagerQueryDto>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AppManagerDetailPayload {
+    query: AppManagerDetailQueryDto,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AppManagerResolveSizesPayload {
+    input: AppManagerResolveSizesInputDto,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AppManagerResidueInputPayload {
+    input: AppManagerResidueScanInputDto,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AppManagerCleanupPayload {
+    input: AppManagerCleanupInputDto,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AppManagerExportPayload {
+    input: AppManagerExportScanInputDto,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AppManagerStartupPayload {
+    input: AppManagerStartupUpdateInputDto,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AppManagerUninstallPayload {
+    input: AppManagerUninstallInputDto,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AppManagerHelpPayload {
+    app_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AppManagerRevealPayload {
+    path: String,
+}
+
+const APP_MANAGER_COMMAND_CONTEXT: CommandPayloadContext = CommandPayloadContext::new(
+    "app_manager",
+    "应用管理命令参数无效",
+    "应用管理命令返回序列化失败",
+    "未知应用管理命令",
+);
 
 fn app_manager_watcher_started() -> &'static AtomicBool {
     static STARTED: OnceLock<AtomicBool> = OnceLock::new();
@@ -467,4 +539,136 @@ pub fn app_manager_reveal_path(
             reveal_path(Path::new(trimmed))
         },
     )
+}
+
+#[tauri::command]
+pub async fn app_manager_handle(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    request: CommandRequestDto,
+    request_id: Option<String>,
+    window_label: Option<String>,
+) -> Result<Value, InvokeError> {
+    match request.kind.as_str() {
+        "list" => {
+            let payload: AppManagerListPayload =
+                APP_MANAGER_COMMAND_CONTEXT.parse("list", request.payload)?;
+            APP_MANAGER_COMMAND_CONTEXT.serialize(
+                "list",
+                app_manager_list(app, state, payload.query, request_id, window_label).await?,
+            )
+        }
+        "get_detail" => {
+            let payload: AppManagerDetailPayload =
+                APP_MANAGER_COMMAND_CONTEXT.parse("get_detail", request.payload)?;
+            APP_MANAGER_COMMAND_CONTEXT.serialize(
+                "get_detail",
+                app_manager_get_detail(app, state, payload.query, request_id, window_label).await?,
+            )
+        }
+        "list_snapshot_meta" => APP_MANAGER_COMMAND_CONTEXT.serialize(
+            "list_snapshot_meta",
+            app_manager_list_snapshot_meta(app, state, request_id, window_label).await?,
+        ),
+        "resolve_sizes" => {
+            let payload: AppManagerResolveSizesPayload =
+                APP_MANAGER_COMMAND_CONTEXT.parse("resolve_sizes", request.payload)?;
+            APP_MANAGER_COMMAND_CONTEXT.serialize(
+                "resolve_sizes",
+                app_manager_resolve_sizes(app, state, payload.input, request_id, window_label)
+                    .await?,
+            )
+        }
+        "get_detail_core" => {
+            let payload: AppManagerDetailPayload =
+                APP_MANAGER_COMMAND_CONTEXT.parse("get_detail_core", request.payload)?;
+            APP_MANAGER_COMMAND_CONTEXT.serialize(
+                "get_detail_core",
+                app_manager_get_detail_core(app, state, payload.query, request_id, window_label)
+                    .await?,
+            )
+        }
+        "get_detail_heavy" => {
+            let payload: AppManagerResidueInputPayload =
+                APP_MANAGER_COMMAND_CONTEXT.parse("get_detail_heavy", request.payload)?;
+            APP_MANAGER_COMMAND_CONTEXT.serialize(
+                "get_detail_heavy",
+                app_manager_get_detail_heavy(app, state, payload.input, request_id, window_label)
+                    .await?,
+            )
+        }
+        "scan_residue" => {
+            let payload: AppManagerResidueInputPayload =
+                APP_MANAGER_COMMAND_CONTEXT.parse("scan_residue", request.payload)?;
+            APP_MANAGER_COMMAND_CONTEXT.serialize(
+                "scan_residue",
+                app_manager_scan_residue(app, state, payload.input, request_id, window_label).await?,
+            )
+        }
+        "cleanup" => {
+            let payload: AppManagerCleanupPayload =
+                APP_MANAGER_COMMAND_CONTEXT.parse("cleanup", request.payload)?;
+            APP_MANAGER_COMMAND_CONTEXT.serialize(
+                "cleanup",
+                app_manager_cleanup(app, state, payload.input, request_id, window_label).await?,
+            )
+        }
+        "export_scan_result" => {
+            let payload: AppManagerExportPayload =
+                APP_MANAGER_COMMAND_CONTEXT.parse("export_scan_result", request.payload)?;
+            APP_MANAGER_COMMAND_CONTEXT.serialize(
+                "export_scan_result",
+                app_manager_export_scan_result(
+                    app,
+                    state,
+                    payload.input,
+                    request_id,
+                    window_label,
+                )
+                .await?,
+            )
+        }
+        "refresh_index" => APP_MANAGER_COMMAND_CONTEXT.serialize(
+            "refresh_index",
+            app_manager_refresh_index(app, state, request_id, window_label).await?,
+        ),
+        "set_startup" => {
+            let payload: AppManagerStartupPayload =
+                APP_MANAGER_COMMAND_CONTEXT.parse("set_startup", request.payload)?;
+            APP_MANAGER_COMMAND_CONTEXT.serialize(
+                "set_startup",
+                app_manager_set_startup(app, state, payload.input, request_id, window_label).await?,
+            )
+        }
+        "uninstall" => {
+            let payload: AppManagerUninstallPayload =
+                APP_MANAGER_COMMAND_CONTEXT.parse("uninstall", request.payload)?;
+            APP_MANAGER_COMMAND_CONTEXT.serialize(
+                "uninstall",
+                app_manager_uninstall(app, state, payload.input, request_id, window_label).await?,
+            )
+        }
+        "open_uninstall_help" => {
+            let payload: AppManagerHelpPayload =
+                APP_MANAGER_COMMAND_CONTEXT.parse("open_uninstall_help", request.payload)?;
+            APP_MANAGER_COMMAND_CONTEXT.serialize(
+                "open_uninstall_help",
+                app_manager_open_uninstall_help(
+                    app,
+                    state,
+                    payload.app_id,
+                    request_id,
+                    window_label,
+                )
+                .await?,
+            )
+        }
+        "reveal_path" => {
+            let payload: AppManagerRevealPayload =
+                APP_MANAGER_COMMAND_CONTEXT.parse("reveal_path", request.payload)?;
+            app_manager_reveal_path(payload.path, request_id, window_label)?;
+            Ok(Value::Null)
+        }
+        _ => Err(APP_MANAGER_COMMAND_CONTEXT.unknown(request.kind)),
+    }
 }

@@ -1,7 +1,15 @@
 import { create } from "zustand";
 
 import type { ClipboardFilter, ClipboardItem, ClipboardSyncPayload } from "@/components/clipboard/types";
-import { invokeWithLog } from "@/services/invoke";
+import {
+  clipboardClearAll,
+  clipboardCopyBack,
+  clipboardCopyFilePaths,
+  clipboardCopyImageBack,
+  clipboardDelete,
+  clipboardList,
+  clipboardPin,
+} from "@/services/clipboard.service";
 import { runRecoverable } from "@/services/recoverable";
 import { getUserSettings } from "@/services/user-settings.service";
 
@@ -95,7 +103,7 @@ export const useClipboardStore = create<ClipboardStore>((set, get) => ({
           limit: Math.max(1, settings.clipboard.maxItems || 1),
           onlyPinned: false,
         };
-        const items = await invokeWithLog<ClipboardItem[]>("clipboard_list", { filter });
+        const items = (await clipboardList(filter)) as ClipboardItem[];
         return sortItems(items);
       },
       {
@@ -160,22 +168,22 @@ export const useClipboardStore = create<ClipboardStore>((set, get) => ({
     });
   },
   async pinItem(id, pinned) {
-    await invokeWithLog("clipboard_pin", { id, pinned });
+    await clipboardPin(id, pinned);
   },
   async deleteItem(id) {
-    await invokeWithLog("clipboard_delete", { id });
+    await clipboardDelete(id);
   },
   async clearAllItems() {
-    await invokeWithLog("clipboard_clear_all");
+    await clipboardClearAll();
   },
   async copyBack(id) {
-    await invokeWithLog("clipboard_copy_back", { id });
+    await clipboardCopyBack(id);
   },
   async copyFilePathsBack(id) {
-    await invokeWithLog("clipboard_copy_file_paths", { id });
+    await clipboardCopyFilePaths(id);
   },
   async copyImageBack(id) {
-    await invokeWithLog("clipboard_copy_image_back", { id });
+    await clipboardCopyImageBack(id);
   },
   upsertItem(item) {
     get().applySync({

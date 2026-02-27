@@ -1,5 +1,4 @@
 import { invoke } from "@tauri-apps/api/core";
-
 type LogLevel = "debug" | "info" | "warn" | "error";
 
 const MAX_STRING_LEN = 256;
@@ -199,12 +198,17 @@ async function emitClientLog(level: LogLevel, scope: string, message: string, me
   const sanitizedMetadata = metadata === undefined ? undefined : sanitizeValue(metadata);
 
   try {
-    await invoke("client_log", {
-      level,
-      scope: sanitizeString(scope),
-      message: sanitizedMessage,
-      metadata: sanitizedMetadata,
-      requestId,
+    await invoke("logging_handle", {
+      request: {
+        kind: "client_log",
+        payload: {
+          level,
+          scope: sanitizeString(scope),
+          message: sanitizedMessage,
+          metadata: sanitizedMetadata,
+          requestId,
+        },
+      },
     });
   } catch {
     // 防止日志上报失败导致业务逻辑受影响

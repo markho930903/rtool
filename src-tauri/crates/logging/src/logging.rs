@@ -17,24 +17,22 @@ use tracing_subscriber::util::SubscriberInitExt;
 use crate::db::DbConn;
 
 #[path = "config.rs"]
-mod logging_config;
+mod config;
 #[path = "export.rs"]
-mod logging_export;
+mod export;
 #[path = "ingest.rs"]
-mod logging_ingest;
+mod ingest;
 #[path = "query.rs"]
-mod logging_query;
+mod query;
 #[path = "store.rs"]
-mod logging_store;
+mod store;
 
-pub use logging_ingest::{
-    cleanup_expired_logs, sanitize_for_log, sanitize_json_value, sanitize_path,
-};
+pub use ingest::{cleanup_expired_logs, sanitize_for_log, sanitize_json_value, sanitize_path};
 
 #[cfg(test)]
-pub(crate) use logging_ingest::{cleanup_expired_logs_with_duration, now_millis};
+pub(crate) use ingest::{cleanup_expired_logs_with_duration, now_millis};
 #[cfg(test)]
-pub(crate) use logging_query::build_log_fts_query;
+pub(crate) use query::build_log_fts_query;
 
 const DEFAULT_KEEP_DAYS: u32 = 7;
 const DEFAULT_MIN_LEVEL: &str = "info";
@@ -64,6 +62,17 @@ const SENSITIVE_TEXT_KEYS: [&str; 5] = ["text", "content", "clipboard", "prompt"
 const SENSITIVE_PATH_KEYS: [&str; 4] = ["path", "file", "filepath", "filename"];
 const SENSITIVE_HOST_KEYS: [&str; 2] = ["host", "hostname"];
 
+pub(super) fn default_log_config() -> LogConfigDto {
+    LogConfigDto {
+        min_level: DEFAULT_MIN_LEVEL.to_string(),
+        keep_days: DEFAULT_KEEP_DAYS,
+        realtime_enabled: DEFAULT_REALTIME_ENABLED,
+        high_freq_window_ms: DEFAULT_HIGH_FREQ_WINDOW_MS,
+        high_freq_max_per_key: DEFAULT_HIGH_FREQ_MAX_PER_KEY,
+        allow_raw_view: DEFAULT_ALLOW_RAW_VIEW,
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct LoggingGuard {
     log_dir: PathBuf,
@@ -92,12 +101,23 @@ pub struct RecordLogInput {
     pub raw_ref: Option<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct HighFrequencyWindow {
     started_at: i64,
     count: u32,
     aggregated_row_id: Option<i64>,
     aggregated_count: u32,
+}
+
+impl HighFrequencyWindow {
+    fn new(started_at: i64) -> Self {
+        Self {
+            started_at,
+            count: 0,
+            aggregated_row_id: None,
+            aggregated_count: 0,
+        }
+    }
 }
 
 pub trait LoggingEventSink: Send + Sync {
@@ -131,7 +151,7 @@ fn log_ingest_sender_slot() -> &'static OnceLock<mpsc::SyncSender<RecordLogInput
 fn log_ingest_sender() -> &'static mpsc::SyncSender<RecordLogInput> {
     log_ingest_sender_slot().get_or_init(|| {
         let (sender, receiver) = mpsc::sync_channel::<RecordLogInput>(LOG_INGEST_QUEUE_CAPACITY);
-        let _ = std::thread::Builder::new()
+        if let Err(error) = std::thread::Builder::new()
             .name("rtool-log-ingest".to_string())
             .spawn(move || {
                 let runtime = match tokio::runtime::Builder::new_current_thread()
@@ -149,7 +169,10 @@ fn log_ingest_sender() -> &'static mpsc::SyncSender<RecordLogInput> {
                         eprintln!("logging ingest failed: {}", error);
                     }
                 }
-            });
+            })
+        {
+            eprintln!("logging ingest thread spawn failed: {}", error);
+        }
         sender
     })
 }
@@ -160,7 +183,7 @@ fn log_ingest_drop_counter() -> &'static AtomicU64 {
 }
 
 pub fn resolve_log_level() -> String {
-    logging_config::resolve_log_level()
+    config::resolve_log_level()
 }
 
 pub fn init_logging(app_data_dir: &Path) -> Result<LoggingGuard, AppError> {
@@ -221,10 +244,8 @@ pub async fn init_log_center(
     log_dir: PathBuf,
     event_sink: Option<Arc<dyn LoggingEventSink>>,
 ) -> Result<LogConfigDto, AppError> {
-    let config = logging_config::clamp_and_normalize_config(
-        logging_config::load_log_config(&db_conn).await,
-    )?;
-    logging_config::persist_log_config(&db_conn, &config).await?;
+    let config = config::clamp_and_normalize_config(config::load_log_config(&db_conn).await)?;
+    config::persist_log_config(&db_conn, &config).await?;
 
     let center = Arc::new(LogCenter {
         event_sink,
@@ -283,9 +304,9 @@ pub fn get_log_config() -> Result<LogConfigDto, AppError> {
 }
 
 pub async fn update_log_config(input: LogConfigDto) -> Result<LogConfigDto, AppError> {
-    let normalized = logging_config::clamp_and_normalize_config(input)?;
+    let normalized = config::clamp_and_normalize_config(input)?;
     let center = get_log_center()?;
-    logging_config::persist_log_config(&center.db_conn, &normalized).await?;
+    config::persist_log_config(&center.db_conn, &normalized).await?;
     let mut guard = center
         .config
         .lock()
@@ -296,7 +317,7 @@ pub async fn update_log_config(input: LogConfigDto) -> Result<LogConfigDto, AppE
 
 pub async fn query_log_entries(query: LogQueryDto) -> Result<LogPageDto, AppError> {
     let center = get_log_center()?;
-    logging_query::query_log_entries(&center, query).await
+    query::query_log_entries(&center, query).await
 }
 
 pub async fn export_log_entries(
@@ -304,7 +325,7 @@ pub async fn export_log_entries(
     output_path: Option<String>,
 ) -> Result<String, AppError> {
     let center = get_log_center()?;
-    logging_export::export_log_entries(&center, query, output_path).await
+    export::export_log_entries(&center, query, output_path).await
 }
 
 #[cfg(test)]

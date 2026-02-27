@@ -1,8 +1,17 @@
 use super::run_blocking_command;
 use crate::app::state::AppState;
+use crate::features::command_payload::{CommandPayloadContext, CommandRequestDto};
 use protocol::InvokeError;
 use protocol::models::{AppHealthSnapshotDto, DashboardSnapshotDto};
+use serde_json::Value;
 use tauri::State;
+
+const DASHBOARD_COMMAND_CONTEXT: CommandPayloadContext = CommandPayloadContext::new(
+    "dashboard",
+    "仪表盘命令参数无效",
+    "仪表盘命令返回序列化失败",
+    "未知仪表盘命令",
+);
 
 #[tauri::command]
 pub async fn dashboard_snapshot(
@@ -46,4 +55,24 @@ pub async fn app_get_health_snapshot(
         move || dashboard_service.health_snapshot(transfer_service.runtime_status()),
     )
     .await
+}
+
+#[tauri::command]
+pub async fn dashboard_handle(
+    state: State<'_, AppState>,
+    request: CommandRequestDto,
+    request_id: Option<String>,
+    window_label: Option<String>,
+) -> Result<Value, InvokeError> {
+    match request.kind.as_str() {
+        "snapshot" => DASHBOARD_COMMAND_CONTEXT.serialize(
+            "snapshot",
+            dashboard_snapshot(state, request_id, window_label).await?,
+        ),
+        "health_snapshot" => DASHBOARD_COMMAND_CONTEXT.serialize(
+            "health_snapshot",
+            app_get_health_snapshot(state, request_id, window_label).await?,
+        ),
+        _ => Err(DASHBOARD_COMMAND_CONTEXT.unknown(request.kind)),
+    }
 }

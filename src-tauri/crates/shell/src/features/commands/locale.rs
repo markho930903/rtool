@@ -1,8 +1,20 @@
 use crate::app::state::AppState;
 use crate::command_runtime::{run_command_async, run_command_sync};
+use crate::features::command_payload::{
+    CommandPayloadContext, CommandRequestDto,
+};
 use protocol::{AppError, InvokeError};
 use rtool_i18n::i18n::{LocaleStateDto, normalize_locale_preference, resolve_locale};
+use serde::Deserialize;
+use serde_json::Value;
 use tauri::{AppHandle, State};
+
+const LOCALE_COMMAND_CONTEXT: CommandPayloadContext = CommandPayloadContext::new(
+    "locale",
+    "语言命令参数无效",
+    "语言命令返回序列化失败",
+    "未知语言命令",
+);
 
 #[tauri::command]
 pub fn app_get_locale(
@@ -53,4 +65,41 @@ pub async fn app_set_locale(
         },
     )
     .await
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SetLocalePayload {
+    preference: String,
+}
+
+#[tauri::command]
+pub async fn locale_handle(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    request: CommandRequestDto,
+    request_id: Option<String>,
+    window_label: Option<String>,
+) -> Result<Value, InvokeError> {
+    match request.kind.as_str() {
+        "get" => LOCALE_COMMAND_CONTEXT.serialize(
+            "get",
+            app_get_locale(state, request_id, window_label)?,
+        ),
+        "set" => {
+            let payload: SetLocalePayload = LOCALE_COMMAND_CONTEXT.parse("set", request.payload)?;
+            LOCALE_COMMAND_CONTEXT.serialize(
+                "set",
+                app_set_locale(
+                    app,
+                    state,
+                    payload.preference,
+                    request_id,
+                    window_label,
+                )
+                .await?,
+            )
+        }
+        _ => Err(LOCALE_COMMAND_CONTEXT.unknown(request.kind)),
+    }
 }

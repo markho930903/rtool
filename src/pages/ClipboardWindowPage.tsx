@@ -9,7 +9,7 @@ import { useWindowLayoutPersistence } from "@/hooks/window/useWindowLayoutPersis
 import type { StoredWindowLayout, WindowLayoutBounds } from "@/hooks/window/window-layout.types";
 import { useAsyncEffect } from "@/hooks/useAsyncEffect";
 import { useLocaleStore } from "@/i18n/store";
-import { invokeWithLog } from "@/services/invoke";
+import { clipboardWindowApplyMode, clipboardWindowSetMode } from "@/services/clipboard.service";
 import { runRecoverable } from "@/services/recoverable";
 import { useThemeStore } from "@/theme/store";
 
@@ -145,7 +145,7 @@ export default function ClipboardWindowPage() {
       return;
     }
 
-    void invokeWithLog("clipboard_window_set_mode", { compact: isCompact }, { silent: true }).catch((error) => {
+    void clipboardWindowSetMode(isCompact).catch((error) => {
       console.warn("[clipboard-window] sync mode state failed", {
         compact: isCompact,
         error,
@@ -198,11 +198,7 @@ export default function ClipboardWindowPage() {
       const targetWidthLogical = compact ? COMPACT_WIDTH_LOGICAL : REGULAR_WIDTH_LOGICAL;
       const modeResult = await runRecoverable(
         () =>
-          invokeWithLog<ClipboardWindowModeAppliedPayload>(
-            "clipboard_window_apply_mode",
-            { compact },
-            { silent: true },
-          ),
+          clipboardWindowApplyMode(compact) as Promise<ClipboardWindowModeAppliedPayload>,
         {
           scope: "clipboard-window",
           action: "apply_mode_resize",

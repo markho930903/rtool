@@ -92,6 +92,10 @@ fn should_escape_sql_like_pattern_meta_chars() {
 #[test]
 fn should_parse_index_entry_kind_from_db_value() {
     assert_eq!(
+        IndexedEntryKind::from_db("application"),
+        Some(IndexedEntryKind::Application)
+    );
+    assert_eq!(
         IndexedEntryKind::from_db("directory"),
         Some(IndexedEntryKind::Directory)
     );

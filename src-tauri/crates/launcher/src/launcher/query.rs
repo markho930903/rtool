@@ -37,66 +37,92 @@ pub async fn search_indexed_items_async(
         }
     };
 
-    let mut items = Vec::new();
-    for (path, kind_raw, name, parent) in rows {
-        let Some(kind) = IndexedEntryKind::from_db(kind_raw.as_str()) else {
-            tracing::warn!(
-                event = "launcher_index_unknown_entry_kind",
-                kind = kind_raw.as_str(),
-                path = path.as_str()
-            );
-            continue;
-        };
-
-        let title = if name.trim().is_empty() {
-            path.clone()
-        } else {
-            name
-        };
-        let subtitle = if parent.trim().is_empty() {
-            path.clone()
-        } else {
-            parent
-        };
-
-        let item = match kind {
-            IndexedEntryKind::Directory => {
-                let icon = resolve_builtin_icon("i-noto:file-folder");
-                LauncherItemDto {
-                    id: stable_id("dir", path.as_str()),
-                    title,
-                    subtitle,
-                    category: "directory".to_string(),
-                    source: Some(t(locale, "launcher.source.directory")),
-                    shortcut: None,
-                    score: 0,
-                    icon_kind: icon.kind,
-                    icon_value: icon.value,
-                    action: LauncherActionDto::OpenDirectory { path },
-                }
-            }
-            IndexedEntryKind::File => {
-                let path_buf = PathBuf::from(path.as_str());
-                let icon = resolve_file_type_icon(app, path_buf.as_path());
-                LauncherItemDto {
-                    id: stable_id("file", path.as_str()),
-                    title,
-                    subtitle,
-                    category: "file".to_string(),
-                    source: Some(t(locale, "launcher.source.file")),
-                    shortcut: None,
-                    score: 0,
-                    icon_kind: icon.kind,
-                    icon_value: icon.value,
-                    action: LauncherActionDto::OpenFile { path },
-                }
-            }
-        };
-
-        items.push(item);
+    let mut items = Vec::with_capacity(rows.len());
+    for row in rows {
+        if let Some(item) = map_index_row_to_item(app, locale, row) {
+            items.push(item);
+        }
     }
 
     Ok(IndexedSearchResult { items, ready })
+}
+
+fn map_index_row_to_item(
+    app: &dyn LauncherHost,
+    locale: &str,
+    row: (String, String, String, String),
+) -> Option<LauncherItemDto> {
+    let (path, kind_raw, name, parent) = row;
+    let Some(kind) = IndexedEntryKind::from_db(kind_raw.as_str()) else {
+        tracing::warn!(
+            event = "launcher_index_unknown_entry_kind",
+            kind = kind_raw.as_str(),
+            path = path.as_str()
+        );
+        return None;
+    };
+
+    let title = non_empty_or_fallback(name, path.as_str());
+    let subtitle = non_empty_or_fallback(parent, path.as_str());
+
+    let item = match kind {
+        IndexedEntryKind::Application => {
+            let path_buf = PathBuf::from(path.as_str());
+            let icon = resolve_application_icon(app, path_buf.as_path());
+            LauncherItemDto {
+                id: stable_id("app", path.as_str()),
+                title,
+                subtitle,
+                category: "application".to_string(),
+                source: Some(t(locale, "launcher.source.application")),
+                shortcut: None,
+                score: 0,
+                icon_kind: icon.kind,
+                icon_value: icon.value,
+                action: LauncherActionDto::OpenApplication { path },
+            }
+        }
+        IndexedEntryKind::Directory => {
+            let icon = resolve_builtin_icon("i-noto:file-folder");
+            LauncherItemDto {
+                id: stable_id("dir", path.as_str()),
+                title,
+                subtitle,
+                category: "directory".to_string(),
+                source: Some(t(locale, "launcher.source.directory")),
+                shortcut: None,
+                score: 0,
+                icon_kind: icon.kind,
+                icon_value: icon.value,
+                action: LauncherActionDto::OpenDirectory { path },
+            }
+        }
+        IndexedEntryKind::File => {
+            let path_buf = PathBuf::from(path.as_str());
+            let icon = resolve_file_type_icon(app, path_buf.as_path());
+            LauncherItemDto {
+                id: stable_id("file", path.as_str()),
+                title,
+                subtitle,
+                category: "file".to_string(),
+                source: Some(t(locale, "launcher.source.file")),
+                shortcut: None,
+                score: 0,
+                icon_kind: icon.kind,
+                icon_value: icon.value,
+                action: LauncherActionDto::OpenFile { path },
+            }
+        }
+    };
+
+    Some(item)
+}
+
+fn non_empty_or_fallback(value: String, fallback: &str) -> String {
+    if value.trim().is_empty() {
+        return fallback.to_string();
+    }
+    value
 }
 
 async fn query_index_rows_default(
@@ -110,9 +136,10 @@ async fn query_index_rows_default(
         FROM launcher_index_entries
         ORDER BY
             CASE kind
-                WHEN 'directory' THEN 0
-                WHEN 'file' THEN 1
-                ELSE 2
+                WHEN 'application' THEN 0
+                WHEN 'directory' THEN 1
+                WHEN 'file' THEN 2
+                ELSE 3
             END ASC,
             name COLLATE NOCASE ASC,
             path COLLATE NOCASE ASC
@@ -147,9 +174,10 @@ async fn query_index_rows_fts(
         WHERE launcher_index_entries_fts MATCH ?1
         ORDER BY
             CASE e.kind
-                WHEN 'directory' THEN 0
-                WHEN 'file' THEN 1
-                ELSE 2
+                WHEN 'application' THEN 0
+                WHEN 'directory' THEN 1
+                WHEN 'file' THEN 2
+                ELSE 3
             END ASC,
             bm25(launcher_index_entries_fts) ASC,
             e.name COLLATE NOCASE ASC,
@@ -185,9 +213,10 @@ async fn query_index_rows_like(
         WHERE searchable_text LIKE ?1 ESCAPE '\\'
         ORDER BY
             CASE kind
-                WHEN 'directory' THEN 0
-                WHEN 'file' THEN 1
-                ELSE 2
+                WHEN 'application' THEN 0
+                WHEN 'directory' THEN 1
+                WHEN 'file' THEN 2
+                ELSE 3
             END ASC,
             name COLLATE NOCASE ASC,
             path COLLATE NOCASE ASC

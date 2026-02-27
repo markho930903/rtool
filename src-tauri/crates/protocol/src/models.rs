@@ -1396,8 +1396,6 @@ pub struct AppHealthSnapshotDto {
 pub enum ResourceModuleIdDto {
     Launcher,
     LauncherIndex,
-    LauncherFallback,
-    LauncherCache,
     Clipboard,
     AppManager,
     Transfer,

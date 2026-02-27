@@ -39,7 +39,6 @@ pub async fn app_update_user_settings(
             if previous_locale.preference != settings.locale.preference {
                 let resolved = resolve_locale(settings.locale.preference.as_str());
                 state.update_locale(settings.locale.preference.clone(), resolved.clone());
-                state.app_services.launcher.invalidate_cache();
                 crate::apply_locale_to_native_ui(&app, &resolved);
             }
 

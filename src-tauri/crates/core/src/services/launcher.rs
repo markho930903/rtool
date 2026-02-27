@@ -10,9 +10,7 @@ use rtool_launcher::launcher::index::{
     reset_search_settings_async, start_background_indexer, stop_background_indexer,
     update_search_settings_async,
 };
-use rtool_launcher::launcher::service::{
-    execute_launcher_action, invalidate_launcher_cache, search_launcher_async,
-};
+use rtool_launcher::launcher::service::{execute_launcher_action, search_launcher_async};
 
 #[derive(Clone)]
 pub struct LauncherApplicationService {
@@ -31,26 +29,15 @@ impl LauncherApplicationService {
         limit: Option<u16>,
     ) -> Vec<LauncherItemDto> {
         let (items, diagnostics) = search_launcher_async(host, &self.db_conn, query, limit).await;
-        if let Some(duration_ms) = diagnostics.index_query_duration_ms {
-            rtool_system::record_module_observation(
-                ResourceModuleIdDto::LauncherIndex,
-                !diagnostics.index_failed,
-                duration_ms,
-            );
-        }
-        if let Some(duration_ms) = diagnostics.fallback_scan_duration_ms {
-            rtool_system::record_module_observation(
-                ResourceModuleIdDto::LauncherFallback,
-                true,
-                duration_ms,
-            );
-        }
-        if let Some(duration_ms) = diagnostics.cache_refresh_duration_ms {
-            rtool_system::record_module_observation(
-                ResourceModuleIdDto::LauncherCache,
-                true,
-                duration_ms,
-            );
+        let should_record_index = diagnostics.index_used || diagnostics.index_failed;
+        if should_record_index {
+            if let Some(duration_ms) = diagnostics.index_query_duration_ms {
+                rtool_system::record_module_observation(
+                    ResourceModuleIdDto::LauncherIndex,
+                    !diagnostics.index_failed,
+                    duration_ms,
+                );
+            }
         }
         items
     }
@@ -84,10 +71,6 @@ impl LauncherApplicationService {
 
     pub async fn reset_search_settings(&self) -> AppResult<LauncherSearchSettingsDto> {
         reset_search_settings_async(&self.db_conn).await
-    }
-
-    pub fn invalidate_cache(&self) {
-        invalidate_launcher_cache();
     }
 
     pub fn start_background_indexer(&self) {

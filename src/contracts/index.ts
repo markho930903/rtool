@@ -400,8 +400,6 @@ export type AppHealthSnapshotDto = {
 export type ResourceModuleIdDto =
   | "launcher"
   | "launcher_index"
-  | "launcher_fallback"
-  | "launcher_cache"
   | "clipboard"
   | "app_manager"
   | "transfer"

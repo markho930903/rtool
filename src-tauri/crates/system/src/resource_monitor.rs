@@ -13,11 +13,9 @@ const DEFAULT_HISTORY_LIMIT: usize = 1800;
 const DEFAULT_SAMPLING_INTERVAL_MS: u64 = 1000;
 const DEFAULT_DURATION_SAMPLE_LIMIT: usize = 240;
 
-const ALL_MODULES: [ResourceModuleIdDto; 11] = [
+const ALL_MODULES: [ResourceModuleIdDto; 9] = [
     ResourceModuleIdDto::Launcher,
     ResourceModuleIdDto::LauncherIndex,
-    ResourceModuleIdDto::LauncherFallback,
-    ResourceModuleIdDto::LauncherCache,
     ResourceModuleIdDto::Clipboard,
     ResourceModuleIdDto::AppManager,
     ResourceModuleIdDto::Transfer,
@@ -600,8 +598,6 @@ fn module_to_crate(module_id: ResourceModuleIdDto) -> ResourceCrateIdDto {
     match module_id {
         ResourceModuleIdDto::Launcher
         | ResourceModuleIdDto::LauncherIndex
-        | ResourceModuleIdDto::LauncherFallback
-        | ResourceModuleIdDto::LauncherCache
         | ResourceModuleIdDto::AppManager => ResourceCrateIdDto::LauncherApp,
         ResourceModuleIdDto::Clipboard => ResourceCrateIdDto::Clipboard,
         ResourceModuleIdDto::Transfer => ResourceCrateIdDto::Transfer,

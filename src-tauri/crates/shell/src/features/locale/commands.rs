@@ -48,7 +48,6 @@ pub async fn app_set_locale(
                 .update_locale_preference(canonical_preference.as_str())?;
             let resolved = resolve_locale(&canonical_preference);
             let next = state.update_locale(canonical_preference, resolved.clone());
-            state.app_services.launcher.invalidate_cache();
             crate::apply_locale_to_native_ui(&app, &resolved);
             Ok::<LocaleStateDto, AppError>(next)
         },

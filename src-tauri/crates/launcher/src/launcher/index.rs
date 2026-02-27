@@ -1,5 +1,7 @@
 use crate::host::LauncherHost;
-use crate::launcher::icon::{resolve_builtin_icon, resolve_file_type_icon};
+use crate::launcher::icon::{
+    resolve_application_icon, resolve_builtin_icon, resolve_file_type_icon,
+};
 use libsql::params_from_iter;
 use protocol::models::{
     LauncherActionDto, LauncherIndexStatusDto, LauncherItemDto, LauncherRebuildResultDto,
@@ -88,6 +90,7 @@ struct LauncherSearchSettingsRecord {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IndexedEntryKind {
+    Application,
     Directory,
     File,
 }
@@ -95,12 +98,16 @@ enum IndexedEntryKind {
 impl IndexedEntryKind {
     fn as_str(self) -> &'static str {
         match self {
+            Self::Application => "application",
             Self::Directory => "directory",
             Self::File => "file",
         }
     }
 
     fn from_db(value: &str) -> Option<Self> {
+        if value.eq_ignore_ascii_case("application") {
+            return Some(Self::Application);
+        }
         if value.eq_ignore_ascii_case("directory") {
             return Some(Self::Directory);
         }

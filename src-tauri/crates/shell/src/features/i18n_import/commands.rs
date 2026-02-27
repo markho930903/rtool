@@ -33,7 +33,6 @@ pub fn app_reload_locales(
 ) -> Result<ReloadLocalesResult, InvokeError> {
     run_command_sync("app_reload_locales", request_id, window_label, move || {
         let output = reload_overlays().map_err(map_i18n_error)?;
-        state.app_services.launcher.invalidate_cache();
         let resolved_locale = state.resolved_locale();
         crate::apply_locale_to_native_ui(&app, &resolved_locale);
         Ok::<ReloadLocalesResult, AppError>(output)
@@ -66,7 +65,6 @@ pub fn app_import_locale_file(
             )
             .map_err(map_i18n_error)?;
 
-            state.app_services.launcher.invalidate_cache();
             let resolved_locale = state.resolved_locale();
             crate::apply_locale_to_native_ui(&app, &resolved_locale);
             Ok::<ImportLocaleResult, AppError>(output)

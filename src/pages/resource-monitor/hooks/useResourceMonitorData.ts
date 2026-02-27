@@ -409,17 +409,18 @@ export function useResourceMonitorData(): UseResourceMonitorDataResult {
   const overview = snapshot?.overview ?? null;
 
   const metricCards = useMemo<ResourceMetricCard[]>(() => {
+    const moduleCalls = (moduleId: ResourceModuleIdDto): number =>
+      moduleStats.find((item) => item.moduleId === moduleId)?.calls ?? 0;
+
     const memoryUsageHint =
       overview?.systemUsedMemoryBytes !== null && overview?.systemTotalMemoryBytes !== null
         ? `${formatBytes(overview?.systemUsedMemoryBytes ?? null)} / ${formatBytes(overview?.systemTotalMemoryBytes ?? null)}`
         : "--";
 
     const activeModuleCount = moduleStats.filter((item) => item.calls > 0).length;
-    const launcherCalls = moduleStats.find((item) => item.moduleId === "launcher")?.calls ?? 0;
-    const launcherIndexCalls = moduleStats.find((item) => item.moduleId === "launcher_index")?.calls ?? 0;
-    const launcherFallbackCalls = moduleStats.find((item) => item.moduleId === "launcher_fallback")?.calls ?? 0;
+    const launcherCalls = moduleCalls("launcher");
+    const launcherIndexCalls = moduleCalls("launcher_index");
     const indexHitRate = launcherCalls > 0 ? (launcherIndexCalls / launcherCalls) * 100 : null;
-    const fallbackRate = launcherCalls > 0 ? (launcherFallbackCalls / launcherCalls) * 100 : null;
 
     return [
       {
@@ -441,11 +442,6 @@ export function useResourceMonitorData(): UseResourceMonitorDataResult {
         title: t("metric.indexHitRate.title"),
         value: formatPercent(indexHitRate),
         hint: t("metric.indexHitRate.hint"),
-      },
-      {
-        title: t("metric.fallbackRate.title"),
-        value: formatPercent(fallbackRate),
-        hint: t("metric.fallbackRate.hint"),
       },
       {
         title: t("metric.activeModules.title"),

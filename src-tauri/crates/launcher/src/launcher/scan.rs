@@ -182,9 +182,14 @@ pub(super) fn scan_index_root_with_rules(
             }
 
             if file_type.is_dir() {
+                let kind = if is_application_candidate(path.as_path(), true) {
+                    IndexedEntryKind::Application
+                } else {
+                    IndexedEntryKind::Directory
+                };
                 if let Some(entry) = build_index_entry(
                     path.as_path(),
-                    IndexedEntryKind::Directory,
+                    kind,
                     source_root,
                     Some(&mut warning_aggregator),
                 ) {
@@ -201,9 +206,14 @@ pub(super) fn scan_index_root_with_rules(
                 continue;
             }
 
+            let kind = if is_application_candidate(path.as_path(), false) {
+                IndexedEntryKind::Application
+            } else {
+                IndexedEntryKind::File
+            };
             if let Some(entry) = build_index_entry(
                 path.as_path(),
-                IndexedEntryKind::File,
+                kind,
                 source_root,
                 Some(&mut warning_aggregator),
             ) {
@@ -252,16 +262,21 @@ pub(crate) fn build_index_entry(
         return None;
     }
 
-    let name = path
+    let raw_name = path
         .file_name()
         .map(|value| value.to_string_lossy().to_string())
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| path_value.clone());
+    let name = if matches!(kind, IndexedEntryKind::Application) {
+        application_title(path, raw_name.as_str())
+    } else {
+        raw_name
+    };
     let parent = path
         .parent()
         .map(|value| value.to_string_lossy().to_string())
         .unwrap_or_else(|| path_value.clone());
-    let ext = if matches!(kind, IndexedEntryKind::File) {
+    let ext = if !matches!(kind, IndexedEntryKind::Directory) {
         path.extension()
             .and_then(|value| value.to_str())
             .map(|value| value.to_ascii_lowercase())
@@ -442,11 +457,63 @@ fn path_is_same_or_ancestor(path: &str, target: &str) -> bool {
 }
 
 fn should_skip_dir_traversal(path: &Path) -> bool {
-    cfg!(target_os = "macos")
-        && path
+    cfg!(target_os = "macos") && has_extension_ignore_ascii_case(path, "app")
+}
+
+fn is_application_candidate(path: &Path, is_dir: bool) -> bool {
+    if cfg!(target_os = "macos") {
+        return is_dir && has_extension_ignore_ascii_case(path, "app");
+    }
+
+    if cfg!(target_os = "windows") {
+        return path
             .extension()
             .and_then(|extension| extension.to_str())
-            .is_some_and(|extension| extension.eq_ignore_ascii_case("app"))
+            .is_some_and(|extension| {
+                matches!(
+                    extension.to_ascii_lowercase().as_str(),
+                    "lnk" | "exe" | "url" | "appref-ms"
+                )
+            });
+    }
+
+    has_extension_ignore_ascii_case(path, "desktop")
+}
+
+fn application_title(path: &Path, fallback_name: &str) -> String {
+    if is_linux_desktop_entry(path) {
+        if let Some(title) = read_linux_desktop_name(path) {
+            return title;
+        }
+    }
+
+    path.file_stem()
+        .map(|name| name.to_string_lossy().to_string())
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| fallback_name.to_string())
+}
+
+fn has_extension_ignore_ascii_case(path: &Path, expected: &str) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case(expected))
+}
+
+fn is_linux_desktop_entry(path: &Path) -> bool {
+    cfg!(target_os = "linux") && has_extension_ignore_ascii_case(path, "desktop")
+}
+
+fn read_linux_desktop_name(path: &Path) -> Option<String> {
+    let content = fs::read_to_string(path).ok()?;
+    for line in content.lines() {
+        if let Some(value) = line.strip_prefix("Name=") {
+            let title = value.trim();
+            if !title.is_empty() {
+                return Some(title.to_string());
+            }
+        }
+    }
+    None
 }
 
 fn is_hidden(path: &Path) -> bool {

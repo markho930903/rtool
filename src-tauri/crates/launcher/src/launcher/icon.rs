@@ -566,6 +566,7 @@ fn pick_icns_file(resources_dir: &Path, app_path: &Path) -> Option<PathBuf> {
     candidates.into_iter().next().map(|(_, _, path)| path)
 }
 
+// NOTE: Keep i-noto:* mappings in sync with frontend uno.config.ts safelist.
 fn file_extension_icon(ext: &str) -> &'static str {
     match ext {
         "pdf" => "i-noto:page-facing-up",

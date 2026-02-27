@@ -506,6 +506,7 @@ export function useAppManagerController() {
   const selectedDeleteMode = selectedApp ? (deleteModeByAppId[selectedApp.id] ?? "trash") : "trash";
   const selectedCleanupResult = selectedApp ? (cleanupResultByAppId[selectedApp.id] ?? null) : null;
   const selectedCleanupLoading = selectedApp ? Boolean(cleanupLoadingByAppId[selectedApp.id]) : false;
+  const selectedDetailError = detailError ?? listError;
 
   const toggleResidue = useCallback((appId: string, itemId: string, checked: boolean) => {
     setSelectedResidueIdsByAppId((prev) => {
@@ -527,6 +528,36 @@ export function useAppManagerController() {
   const setDeleteMode = useCallback((appId: string, mode: AppManagerCleanupDeleteMode) => {
     setDeleteModeByAppId((prev) => ({ ...prev, [appId]: mode }));
   }, []);
+
+  const toggleSelectedResidue = useCallback(
+    (itemId: string, checked: boolean) => {
+      if (!selectedAppId) {
+        return;
+      }
+      toggleResidue(selectedAppId, itemId, checked);
+    },
+    [selectedAppId, toggleResidue],
+  );
+
+  const setSelectedIncludeMain = useCallback(
+    (includeMain: boolean) => {
+      if (!selectedAppId) {
+        return;
+      }
+      setIncludeMain(selectedAppId, includeMain);
+    },
+    [selectedAppId, setIncludeMain],
+  );
+
+  const setSelectedDeleteMode = useCallback(
+    (mode: AppManagerCleanupDeleteMode) => {
+      if (!selectedAppId) {
+        return;
+      }
+      setDeleteMode(selectedAppId, mode);
+    },
+    [selectedAppId, setDeleteMode],
+  );
 
   const runCleanup = useCallback(
     async (
@@ -620,43 +651,51 @@ export function useAppManagerController() {
     await loadListPage(nextCursor, false, keywordRef.current);
   }, [loadListPage, loadingMore, nextCursor]);
 
-  return {
+  const list = {
     items,
     loading: loading || refreshing,
     loadingMore,
     hasMore,
     keyword,
-    setKeyword,
     totalCount,
     indexedAt,
     revision,
     indexState,
     listError,
     selectedAppId,
-    setSelectedAppId,
+  };
+
+  const detail = {
     selectedApp,
-    refreshList,
-    onLoadMore,
-    selectedCore,
-    selectedHeavy,
-    selectedCoreLoading,
-    selectedHeavyLoading,
-    selectedDeepCompleting,
-    detailError,
+    coreDetail: selectedCore,
+    heavyDetail: selectedHeavy,
+    coreLoading: selectedCoreLoading,
+    heavyLoading: selectedHeavyLoading,
+    deepCompleting: selectedDeepCompleting,
+    detailError: selectedDetailError,
     selectedResidueIds,
     selectedIncludeMain,
     selectedDeleteMode,
-    setIncludeMain,
-    setDeleteMode,
-    toggleResidue,
-    cleanupNow,
-    selectedCleanupLoading,
-    selectedCleanupResult,
+    cleanupLoading: selectedCleanupLoading,
+    cleanupResult: selectedCleanupResult,
     cleanupError,
-    retryFailed,
-    revealPath,
-    scanAgain,
   };
+
+  const actions = {
+    setKeyword,
+    setSelectedAppId,
+    refreshList,
+    onLoadMore,
+    onToggleResidue: toggleSelectedResidue,
+    onToggleIncludeMain: setSelectedIncludeMain,
+    onSetDeleteMode: setSelectedDeleteMode,
+    onCleanupNow: cleanupNow,
+    onRetryFailed: retryFailed,
+    onRevealPath: revealPath,
+    onScanAgain: scanAgain,
+  };
+
+  return { list, detail, actions };
 }
 
 export type AppManagerController = ReturnType<typeof useAppManagerController>;

@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { type ReactElement, memo } from "react";
 
 import type {
   AppManagerCleanupResult,
@@ -11,8 +11,12 @@ import { AppEntityIcon } from "@/components/icons/AppEntityIcon";
 import { resolvePathIcon, resolveResiduePathIcon } from "@/components/icons/pathIcon";
 import { LoadingIndicator, SkeletonComposer, type SkeletonItemSpec } from "@/components/loading";
 import { Button, RadioGroup, type RadioOption } from "@/components/ui";
-import { DiskPlaceholder } from "@/features/app-manager/DiskPlaceholder";
-import { formatBytes, getPathName, toBreadcrumb } from "@/features/app-manager/format";
+import { DiskPlaceholder } from "@/pages/app-manager/DiskPlaceholder";
+import { formatBytes, getPathName, toBreadcrumb } from "@/pages/app-manager/format";
+
+type DeleteMode = "trash" | "permanent";
+type ResidueGroup = AppManagerResidueScanResult["groups"][number];
+type ResidueItem = ResidueGroup["items"][number] & { groupLabel: string };
 
 interface AppDetailPaneProps {
   selectedApp: ManagedApp | null;
@@ -24,20 +28,26 @@ interface AppDetailPaneProps {
   detailError: string | null;
   selectedResidueIds: string[];
   selectedIncludeMain: boolean;
-  selectedDeleteMode: "trash" | "permanent";
+  selectedDeleteMode: DeleteMode;
   cleanupLoading: boolean;
   cleanupResult: AppManagerCleanupResult | null;
   cleanupError: string | null;
   onToggleResidue: (itemId: string, checked: boolean) => void;
   onToggleIncludeMain: (checked: boolean) => void;
-  onSetDeleteMode: (mode: "trash" | "permanent") => void;
+  onSetDeleteMode: (mode: DeleteMode) => void;
   onCleanupNow: () => void;
   onRetryFailed: () => void;
   onRevealPath: (path: string) => void;
   onScanAgain: () => void;
 }
 
-function SelectionButton(props: { checked: boolean; disabled?: boolean; onClick: () => void }) {
+interface SelectionButtonProps {
+  checked: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}
+
+function SelectionButton(props: SelectionButtonProps): ReactElement {
   const { checked, disabled, onClick } = props;
   return (
     <button
@@ -68,7 +78,13 @@ function SelectionButton(props: { checked: boolean; disabled?: boolean; onClick:
   );
 }
 
-function PathTypeIcon(props: { path: string; pathType?: "file" | "directory"; residueKind?: AppManagerResidueKind }) {
+interface PathTypeIconProps {
+  path: string;
+  pathType?: "file" | "directory";
+  residueKind?: AppManagerResidueKind;
+}
+
+function PathTypeIcon(props: PathTypeIconProps): ReactElement {
   const iconClass = props.residueKind
     ? resolveResiduePathIcon(props.path, props.pathType, props.residueKind)
     : resolvePathIcon(props.path, props.pathType);
@@ -121,7 +137,70 @@ const APP_RESIDUE_SKELETON_ITEMS: SkeletonItemSpec[] = Array.from({ length: 5 },
   shimmerDelayMs: index * 80,
 }));
 
-function AppDetailPaneImpl(props: AppDetailPaneProps) {
+const SELECTED_CARD_CLASS = "border-accent/55 bg-accent/10";
+const UNSELECTED_CARD_CLASS = "border-border-glass bg-surface-glass-soft hover:border-accent/35 hover:bg-surface-glass";
+
+function getSelectableCardClass(checked: boolean, disabled = false): string {
+  if (checked) {
+    return disabled ? `${SELECTED_CARD_CLASS} cursor-not-allowed opacity-60` : `${SELECTED_CARD_CLASS} cursor-pointer`;
+  }
+  return disabled
+    ? `${UNSELECTED_CARD_CLASS} cursor-not-allowed opacity-60`
+    : `${UNSELECTED_CARD_CLASS} cursor-pointer`;
+}
+
+interface ResidueCardProps {
+  item: ResidueItem;
+  checked: boolean;
+  disabled: boolean;
+  revealPathButtonClass: string;
+  onToggleResidue: (itemId: string, checked: boolean) => void;
+  onRevealPath: (path: string) => void;
+}
+
+function ResidueCard(props: ResidueCardProps): ReactElement {
+  const { item, checked, disabled, revealPathButtonClass, onToggleResidue, onRevealPath } = props;
+  const cardClassName = `rounded-lg border px-3 py-2.5 transition-colors ${getSelectableCardClass(checked, disabled)}`;
+
+  const toggle = (): void => {
+    onToggleResidue(item.itemId, !checked);
+  };
+
+  return (
+    <div
+      className={cardClassName}
+      onClick={() => {
+        if (disabled) {
+          return;
+        }
+        toggle();
+      }}
+    >
+      <div className="flex items-start gap-2">
+        <SelectionButton checked={checked} disabled={disabled} onClick={toggle} />
+        <PathTypeIcon path={item.path} pathType={item.pathType} residueKind={item.kind} />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-medium text-text-primary">{getPathName(item.path)}</div>
+          <button
+            type="button"
+            disabled={disabled}
+            className={revealPathButtonClass}
+            onClick={(event) => {
+              event.stopPropagation();
+              onRevealPath(item.path);
+            }}
+          >
+            {toBreadcrumb(item.path)}
+          </button>
+          <div className="mt-1 text-[11px] text-text-secondary">{`${item.groupLabel} · ${item.kind}`}</div>
+        </div>
+        <span className="shrink-0 pt-0.5 text-sm text-text-primary">{formatBytes(item.sizeBytes)}</span>
+      </div>
+    </div>
+  );
+}
+
+function AppDetailPaneImpl(props: AppDetailPaneProps): ReactElement {
   const {
     selectedApp,
     coreDetail,
@@ -149,7 +228,7 @@ function AppDetailPaneImpl(props: AppDetailPaneProps) {
     return <DiskPlaceholder title="等待选择应用" desc="左侧选择一个应用后，右侧加载精确详情与清理项。" />;
   }
 
-  const flatResidues = (heavyDetail?.groups ?? []).flatMap((group) =>
+  const flatResidues: ResidueItem[] = (heavyDetail?.groups ?? []).flatMap((group) =>
     group.items.map((item) => ({ ...item, groupLabel: group.label })),
   );
   const hasHeavyData = Boolean(heavyDetail);
@@ -158,6 +237,7 @@ function AppDetailPaneImpl(props: AppDetailPaneProps) {
   const showOverlayLoading = (coreLoading && Boolean(coreDetail)) || (heavyLoading && hasHeavyData);
   const selectedResidueCountText = isHeavyPending ? "--" : String(selectedResidueIds.length);
   const residueCountText = isHeavyPending ? "--" : String(flatResidues.length);
+  const selectedResidueIdSet = new Set(selectedResidueIds);
   const mainAppPath = coreDetail?.installPath ?? selectedApp.path;
   const revealPathButtonClass =
     "w-full cursor-pointer truncate text-left text-[11px] text-text-muted underline-offset-2 focus-visible:underline hover:underline disabled:cursor-not-allowed disabled:no-underline";
@@ -165,6 +245,11 @@ function AppDetailPaneImpl(props: AppDetailPaneProps) {
     { value: "trash", label: "移入废纸篓" },
     { value: "permanent", label: "永久删除" },
   ];
+  const includeMainCardClassName = `rounded-lg border px-3 py-2.5 shadow-inset-soft transition-colors ${getSelectableCardClass(selectedIncludeMain)}`;
+
+  const toggleIncludeMain = (): void => {
+    onToggleIncludeMain(!selectedIncludeMain);
+  };
 
   return (
     <section className="ui-glass-panel flex h-full min-h-0 flex-col px-4 py-4">
@@ -229,7 +314,7 @@ function AppDetailPaneImpl(props: AppDetailPaneProps) {
                 orientation="horizontal"
                 size="sm"
                 variant="card"
-                onValueChange={(value) => onSetDeleteMode(value as "trash" | "permanent")}
+                onValueChange={(value) => onSetDeleteMode(value as DeleteMode)}
                 className="w-full flex-nowrap items-stretch gap-1"
                 optionClassName="w-fit min-h-8 shrink-0 items-center overflow-visible rounded-md border border-border-glass bg-surface-glass px-2 py-1 text-[11px] text-text-secondary shadow-inset-soft transition-colors duration-150 hover:border-border-glass-strong hover:bg-surface-glass"
               />
@@ -258,19 +343,9 @@ function AppDetailPaneImpl(props: AppDetailPaneProps) {
           showMask={false}
         >
           <div className="space-y-2">
-            <div
-              className={`rounded-lg border px-3 py-2.5 shadow-inset-soft transition-colors ${
-                selectedIncludeMain
-                  ? "border-accent/55 bg-accent/10"
-                  : "border-border-glass bg-surface-glass-soft hover:border-accent/35 hover:bg-surface-glass"
-              } cursor-pointer`}
-              onClick={() => onToggleIncludeMain(!selectedIncludeMain)}
-            >
+            <div className={includeMainCardClassName} onClick={toggleIncludeMain}>
               <div className="flex items-start gap-2">
-                <SelectionButton
-                  checked={selectedIncludeMain}
-                  onClick={() => onToggleIncludeMain(!selectedIncludeMain)}
-                />
+                <SelectionButton checked={selectedIncludeMain} onClick={toggleIncludeMain} />
                 <AppEntityIcon
                   iconKind={selectedApp.iconKind}
                   iconValue={selectedApp.iconValue}
@@ -306,48 +381,18 @@ function AppDetailPaneImpl(props: AppDetailPaneProps) {
             ) : (
               <div className="space-y-2">
                 {flatResidues.map((item) => {
-                  const checked = selectedResidueIds.includes(item.itemId);
+                  const checked = selectedResidueIdSet.has(item.itemId);
                   const disabled = item.readonly && item.readonlyReasonCode === "managed_by_policy";
                   return (
-                    <div
+                    <ResidueCard
                       key={item.itemId}
-                      className={`rounded-lg border px-3 py-2.5 transition-colors ${
-                        checked
-                          ? "border-accent/55 bg-accent/10"
-                          : "border-border-glass bg-surface-glass-soft hover:border-accent/35 hover:bg-surface-glass"
-                      } ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer"}`}
-                      onClick={() => {
-                        if (disabled) {
-                          return;
-                        }
-                        onToggleResidue(item.itemId, !checked);
-                      }}
-                    >
-                      <div className="flex items-start gap-2">
-                        <SelectionButton
-                          checked={checked}
-                          disabled={disabled}
-                          onClick={() => onToggleResidue(item.itemId, !checked)}
-                        />
-                        <PathTypeIcon path={item.path} pathType={item.pathType} residueKind={item.kind} />
-                        <div className="min-w-0 flex-1">
-                          <div className="truncate text-sm font-medium text-text-primary">{getPathName(item.path)}</div>
-                          <button
-                            type="button"
-                            disabled={disabled}
-                            className={revealPathButtonClass}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              onRevealPath(item.path);
-                            }}
-                          >
-                            {toBreadcrumb(item.path)}
-                          </button>
-                          <div className="mt-1 text-[11px] text-text-secondary">{`${item.groupLabel} · ${item.kind}`}</div>
-                        </div>
-                        <span className="shrink-0 pt-0.5 text-sm text-text-primary">{formatBytes(item.sizeBytes)}</span>
-                      </div>
-                    </div>
+                      item={item}
+                      checked={checked}
+                      disabled={disabled}
+                      revealPathButtonClass={revealPathButtonClass}
+                      onToggleResidue={onToggleResidue}
+                      onRevealPath={onRevealPath}
+                    />
                   );
                 })}
               </div>

@@ -1,8 +1,8 @@
 import type { ReactElement } from "react";
 import type { RouteObject } from "react-router";
 
-import { AppManagerShell } from "@/features/app-manager/AppManagerShell";
 import AppLayout from "@/layouts/AppLayout";
+import AppManagerPage from "@/pages/app-manager/AppManagerPage";
 import ClipboardWindowPage from "@/pages/ClipboardWindowPage";
 import HomePage from "@/pages/HomePage";
 import LauncherWindowPage from "@/pages/LauncherWindowPage";
@@ -19,7 +19,7 @@ const routeElementMap: Record<AppRouteId, ReactElement> = {
   tools: <ToolsPage />,
   transfer: <TransferPage />,
   logs: <LogCenterPage />,
-  app_manager: <AppManagerShell />,
+  app_manager: <AppManagerPage />,
   resource_monitor: <ResourceMonitorPage />,
   settings: <SettingsPage />,
   not_found: <NotFoundPage />,

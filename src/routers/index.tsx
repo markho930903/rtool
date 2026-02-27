@@ -8,7 +8,6 @@ import HomePage from "@/pages/HomePage";
 import LauncherWindowPage from "@/pages/LauncherWindowPage";
 import LogCenterPage from "@/pages/LogCenterPage";
 import NotFoundPage from "@/pages/NotFoundPage";
-import ResourceMonitorPage from "@/pages/resource-monitor/ResourceMonitorPage";
 import SettingsPage from "@/pages/settings/SettingsPage";
 import ToolsPage from "@/pages/ToolsPage";
 import TransferPage from "@/pages/TransferPage";
@@ -20,7 +19,6 @@ const routeElementMap: Record<AppRouteId, ReactElement> = {
   transfer: <TransferPage />,
   logs: <LogCenterPage />,
   app_manager: <AppManagerPage />,
-  resource_monitor: <ResourceMonitorPage />,
   settings: <SettingsPage />,
   not_found: <NotFoundPage />,
   clipboard: <ClipboardWindowPage />,

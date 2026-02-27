@@ -213,8 +213,6 @@ pub(crate) fn command_start(
     request_id: &str,
     window_label: Option<&str>,
 ) -> Instant {
-    rtool_system::record_command_start(command, request_id);
-
     tracing::debug!(
         event = "command_start",
         command = command,
@@ -244,7 +242,6 @@ pub(crate) fn command_start(
 
 pub(crate) fn command_end_ok(command: &str, request_id: &str, started_at: Instant) {
     let duration_ms = started_at.elapsed().as_millis() as u64;
-    rtool_system::record_command_end(command, request_id, true, duration_ms);
     observe_runtime_window(command, duration_ms, true);
 
     if duration_ms >= COMMAND_SLOW_TRACE_MS {
@@ -291,7 +288,6 @@ where
 {
     let error: InvokeError = error.clone().into().with_request_id(request_id.to_string());
     let duration_ms = started_at.elapsed().as_millis() as u64;
-    rtool_system::record_command_end(command, request_id, false, duration_ms);
     observe_runtime_window(command, duration_ms, false);
 
     let causes: Vec<String> = error

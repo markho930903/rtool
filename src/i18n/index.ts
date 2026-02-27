@@ -13,7 +13,6 @@ import layoutEnUS from "../../i18n/source/en-US/layout.json";
 import logsEnUS from "../../i18n/source/en-US/logs.json";
 import notFoundEnUS from "../../i18n/source/en-US/not_found.json";
 import paletteEnUS from "../../i18n/source/en-US/palette.json";
-import resourceMonitorEnUS from "../../i18n/source/en-US/resource_monitor.json";
 import settingsEnUS from "../../i18n/source/en-US/settings.json";
 import toolsEnUS from "../../i18n/source/en-US/tools.json";
 import transferEnUS from "../../i18n/source/en-US/transfer.json";
@@ -25,7 +24,6 @@ import layoutZhCN from "../../i18n/source/zh-CN/layout.json";
 import logsZhCN from "../../i18n/source/zh-CN/logs.json";
 import notFoundZhCN from "../../i18n/source/zh-CN/not_found.json";
 import paletteZhCN from "../../i18n/source/zh-CN/palette.json";
-import resourceMonitorZhCN from "../../i18n/source/zh-CN/resource_monitor.json";
 import settingsZhCN from "../../i18n/source/zh-CN/settings.json";
 import toolsZhCN from "../../i18n/source/zh-CN/tools.json";
 import transferZhCN from "../../i18n/source/zh-CN/transfer.json";
@@ -42,7 +40,6 @@ const resources = {
     settings: settingsZhCN,
     clipboard: clipboardZhCN,
     palette: paletteZhCN,
-    resource_monitor: resourceMonitorZhCN,
     not_found: notFoundZhCN,
   },
   "en-US": {
@@ -56,7 +53,6 @@ const resources = {
     settings: settingsEnUS,
     clipboard: clipboardEnUS,
     palette: paletteEnUS,
-    resource_monitor: resourceMonitorEnUS,
     not_found: notFoundEnUS,
   },
 } as const;
@@ -84,7 +80,6 @@ void i18n
       "settings",
       "clipboard",
       "palette",
-      "resource_monitor",
       "not_found",
     ],
     interpolation: {

@@ -6,7 +6,6 @@ export type AppRouteId =
   | "transfer"
   | "logs"
   | "app_manager"
-  | "resource_monitor"
   | "settings"
   | "not_found"
   | "clipboard"
@@ -117,24 +116,6 @@ const ROUTE_CONFIG: AppRouteConfig[] = [
       detailKey: "app_manager:desc",
       state: "online",
       order: 5,
-    },
-  },
-  {
-    id: "resource_monitor",
-    to: "/resource-monitor",
-    routePath: "resource-monitor",
-    mainLayout: true,
-    windowMode: "resource-monitor",
-    menu: {
-      labelKey: "nav.resourceMonitor",
-      icon: "i-noto:satellite-antenna",
-      order: 5,
-    },
-    homeModule: {
-      nameKey: "module.resourceMonitor.name",
-      detailKey: "module.resourceMonitor.detail",
-      state: "online",
-      order: 6,
     },
   },
   {

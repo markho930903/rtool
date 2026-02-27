@@ -321,7 +321,6 @@ export type CommandKey =
   | "launcher_handle"
   | "locale_handle"
   | "logging_handle"
-  | "resource_monitor_handle"
   | "settings_handle"
   | "transfer_handle";
 
@@ -347,71 +346,6 @@ export type AppHealthSnapshotDto = {
   sampledAt: number;
   transfer: TransferRuntimeStatusDto;
   launcher: LauncherRuntimeStatusDto;
-};
-
-export type ResourceModuleIdDto =
-  | "launcher"
-  | "launcher_index"
-  | "clipboard"
-  | "app_manager"
-  | "transfer"
-  | "logging"
-  | "locale"
-  | "dashboard"
-  | "system";
-
-export type ResourceCrateIdDto = "launcher_app" | "clipboard" | "transfer" | "infra" | "tauri_shell" | "core";
-
-export type ResourcePointDto = {
-  sampledAt: number;
-  processCpuPercent: number | null;
-  processMemoryBytes: number | null;
-  systemUsedMemoryBytes: number | null;
-  systemTotalMemoryBytes: number | null;
-};
-
-export type ResourceOverviewDto = {
-  sampledAt: number;
-  processCpuPercent: number | null;
-  processMemoryBytes: number | null;
-  systemUsedMemoryBytes: number | null;
-  systemTotalMemoryBytes: number | null;
-};
-
-export type ResourceModuleStatsDto = {
-  moduleId: ResourceModuleIdDto;
-  calls: number;
-  errorCalls: number;
-  avgDurationMs: number | null;
-  p95DurationMs: number | null;
-  activeSharePercent: number | null;
-  estimatedCpuPercent: number | null;
-  estimatedMemoryBytes: number | null;
-  lastSeenAt: number | null;
-};
-
-export type ResourceCrateStatsDto = {
-  crateId: ResourceCrateIdDto;
-  calls: number;
-  errorCalls: number;
-  avgDurationMs: number | null;
-  p95DurationMs: number | null;
-  activeSharePercent: number | null;
-  estimatedCpuPercent: number | null;
-  estimatedMemoryBytes: number | null;
-};
-
-export type ResourceSnapshotDto = {
-  sampledAt: number;
-  overview: ResourceOverviewDto;
-  modules: Array<ResourceModuleStatsDto>;
-  crates: Array<ResourceCrateStatsDto>;
-};
-
-export type ResourceHistoryDto = {
-  points: Array<ResourcePointDto>;
-  windowMs: number;
-  stepMs: number;
 };
 
 export type ErrorContextItem = { key: string; value: string };

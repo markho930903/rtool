@@ -5,6 +5,5 @@ pub mod dashboard;
 pub mod launcher;
 pub mod locale;
 pub mod logging;
-pub mod resource_monitor;
 pub mod transfer;
 pub mod user_settings;

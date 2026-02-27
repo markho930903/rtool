@@ -11,7 +11,6 @@ use rtool_i18n::i18n::{
     AppLocaleState, init_i18n_catalog, normalize_locale_preference, resolve_locale, t,
 };
 use rtool_logging::logging;
-use rtool_system::{MonitorOptions, initialize_global_monitor, start_sampling};
 use rtool_transfer::service::{TransferService, TransferTask, TransferTaskSpawner};
 use std::error::Error;
 use std::path::PathBuf;
@@ -222,17 +221,6 @@ pub(crate) fn setup(app: &mut tauri::App) -> Result<(), Box<dyn Error>> {
         app_services,
         runtime_state,
     });
-
-    let monitor_stage_started_at = Instant::now();
-    initialize_global_monitor(MonitorOptions::default());
-    let tick_app_handle = app_handle.clone();
-    let monitor_started = start_sampling(Some(Arc::new(move |sampled_at| {
-        crate::features::resource_monitor::events::emit_tick(&tick_app_handle, sampled_at);
-    })));
-    if !monitor_started {
-        tracing::warn!(event = "resource_monitor_sampler_already_started");
-    }
-    log_setup_stage("resource_monitor_init", monitor_stage_started_at, true);
 
     launcher_service.start_background_indexer();
     apply_locale_to_native_ui(&app_handle, &initial_resolved_locale);

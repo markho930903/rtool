@@ -12,8 +12,6 @@
   "module.tools.detail": "Base64 / Regex / Timestamp",
   "module.transfer.name": "Transfer",
   "module.transfer.detail": "Peer-to-peer file transfer and discovery service",
-  "module.resourceMonitor.name": "Resource Monitor",
-  "module.resourceMonitor.detail": "CPU/Memory and latency analysis by module",
   "memory.noData": "No memory samples yet",
   "timeline.min": "min {value}",
   "timeline.max": "max {value}",

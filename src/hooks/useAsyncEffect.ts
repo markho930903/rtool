@@ -46,5 +46,6 @@ export function useAsyncEffect(
       disposed = true;
       stack.flush();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- custom hook forwards caller-managed dependencies.
   }, deps);
 }

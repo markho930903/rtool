@@ -8,5 +8,5 @@ pub use runtime_state::RuntimeState;
 pub use services::{
     AppManagerApplicationService, ApplicationServices, ClipboardApplicationService,
     DashboardApplicationService, LauncherApplicationService, LoggingApplicationService,
-    ResourceMonitorApplicationService, TransferApplicationService, UserSettingsApplicationService,
+    TransferApplicationService, UserSettingsApplicationService,
 };

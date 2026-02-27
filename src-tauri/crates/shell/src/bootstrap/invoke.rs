@@ -8,7 +8,6 @@ pub(crate) fn with_invoke_handler(
         crate::features::launcher::commands::launcher_handle,
         crate::features::locale::commands::locale_handle,
         crate::features::logging::commands::logging_handle,
-        crate::features::resource_monitor::commands::resource_monitor_handle,
         crate::features::transfer::commands::transfer_handle,
         crate::features::user_settings::commands::settings_handle,
     ])

@@ -640,7 +640,9 @@ export function useAppManagerController() {
         setSelectedResidueIdsByAppId((prev) => ({ ...prev, [appId]: [] }));
         setSelectionTouchedByUserByAppId((prev) => ({ ...prev, [appId]: false }));
         await loadListFirstPage(keywordRef.current);
-        await Promise.all([loadDetailCore(appId, true), loadDetailHeavy(appId, true)]);
+        if (itemsRef.current.some((item) => item.id === appId)) {
+          await Promise.all([loadDetailCore(appId, true), loadDetailHeavy(appId, true)]);
+        }
       } catch (error) {
         setCleanupError(error instanceof Error ? error.message : String(error));
       } finally {

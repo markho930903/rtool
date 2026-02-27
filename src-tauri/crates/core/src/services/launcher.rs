@@ -1,7 +1,7 @@
 use protocol::AppResult;
 use protocol::models::{
     LauncherActionDto, LauncherIndexStatusDto, LauncherItemDto, LauncherRebuildResultDto,
-    LauncherSearchSettingsDto, LauncherUpdateSearchSettingsInputDto, ResourceModuleIdDto,
+    LauncherSearchSettingsDto, LauncherUpdateSearchSettingsInputDto,
 };
 use rtool_db::db::DbConn;
 use rtool_launcher::host::LauncherHost;
@@ -28,17 +28,7 @@ impl LauncherApplicationService {
         query: &str,
         limit: Option<u16>,
     ) -> Vec<LauncherItemDto> {
-        let (items, diagnostics) = search_launcher_async(host, &self.db_conn, query, limit).await;
-        let should_record_index = diagnostics.index_used || diagnostics.index_failed;
-        if should_record_index {
-            if let Some(duration_ms) = diagnostics.index_query_duration_ms {
-                rtool_system::record_module_observation(
-                    ResourceModuleIdDto::LauncherIndex,
-                    !diagnostics.index_failed,
-                    duration_ms,
-                );
-            }
-        }
+        let (items, _diagnostics) = search_launcher_async(host, &self.db_conn, query, limit).await;
         items
     }
 

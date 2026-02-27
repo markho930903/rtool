@@ -3,7 +3,6 @@ mod clipboard;
 mod dashboard;
 mod launcher;
 mod logging;
-mod resource_monitor;
 mod transfer;
 mod user_settings;
 
@@ -12,7 +11,6 @@ pub use clipboard::ClipboardApplicationService;
 pub use dashboard::DashboardApplicationService;
 pub use launcher::LauncherApplicationService;
 pub use logging::LoggingApplicationService;
-pub use resource_monitor::ResourceMonitorApplicationService;
 pub use transfer::TransferApplicationService;
 pub use user_settings::UserSettingsApplicationService;
 
@@ -27,7 +25,6 @@ pub struct ApplicationServices {
     pub dashboard: DashboardApplicationService,
     pub launcher: LauncherApplicationService,
     pub logging: LoggingApplicationService,
-    pub resource_monitor: ResourceMonitorApplicationService,
     pub transfer: TransferApplicationService,
     pub settings: UserSettingsApplicationService,
 }
@@ -44,7 +41,6 @@ impl ApplicationServices {
             dashboard: DashboardApplicationService,
             launcher: LauncherApplicationService::new(db_conn),
             logging: LoggingApplicationService,
-            resource_monitor: ResourceMonitorApplicationService,
             transfer: TransferApplicationService::new(transfer_service),
             settings: UserSettingsApplicationService,
         }

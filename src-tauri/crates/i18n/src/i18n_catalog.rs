@@ -1,12 +1,9 @@
 use anyhow::{Context, Result};
-use serde::Serialize;
 use serde_json::Value;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{OnceLock, RwLock, RwLockReadGuard, RwLockWriteGuard};
-
-const OVERLAY_MAX_BYTES: usize = 512 * 1024;
 
 struct BuiltinBundle {
     locale: &'static str,
@@ -158,35 +155,12 @@ impl CatalogLayer {
             .map(String::as_str)
     }
 
-    fn namespaces_for(&self, locale: &str) -> Vec<String> {
-        let mut values = self
-            .namespaces
-            .get(locale)
-            .map(|set| set.iter().cloned().collect::<Vec<_>>())
-            .unwrap_or_default();
-        values.sort();
-        values
-    }
-
-    fn locale_namespaces(&self) -> Vec<LocaleNamespaces> {
-        let mut locales = self
-            .namespaces
-            .keys()
-            .map(|locale| LocaleNamespaces {
-                locale: locale.clone(),
-                namespaces: self.namespaces_for(locale),
-            })
-            .collect::<Vec<_>>();
-        locales.sort_by(|left, right| left.locale.cmp(&right.locale));
-        locales
-    }
 }
 
 #[derive(Debug, Clone)]
 struct I18nCatalog {
     builtin: CatalogLayer,
     overlay: CatalogLayer,
-    overlay_root: PathBuf,
 }
 
 impl I18nCatalog {
@@ -200,41 +174,6 @@ impl I18nCatalog {
         self.lookup_in_locale(locale, key)
             .or_else(|| self.lookup_in_locale(fallback_locale, key))
     }
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LocaleNamespaces {
-    pub locale: String,
-    pub namespaces: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LocaleCatalogList {
-    pub builtin_locales: Vec<LocaleNamespaces>,
-    pub overlay_locales: Vec<LocaleNamespaces>,
-    pub effective_locales: Vec<LocaleNamespaces>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ImportLocaleResult {
-    pub success: bool,
-    pub locale: String,
-    pub namespace: String,
-    pub imported_keys: u32,
-    pub warnings: Vec<String>,
-    pub effective_locale_namespaces: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ReloadLocalesResult {
-    pub success: bool,
-    pub overlay_locales: Vec<LocaleNamespaces>,
-    pub reloaded_files: u32,
-    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Default)]
@@ -256,7 +195,6 @@ pub fn initialize(app_data_dir: &Path) -> Result<()> {
     let catalog = I18nCatalog {
         builtin,
         overlay: overlay.layer,
-        overlay_root,
     };
 
     if !overlay.warnings.is_empty() {
@@ -288,91 +226,6 @@ pub fn translate(locale: &str, fallback_locale: &str, key: &str) -> Option<Strin
         .map(ToString::to_string)
 }
 
-pub fn list_locales() -> Result<LocaleCatalogList> {
-    let lock = get_catalog_lock()?;
-    let guard = read_guard(lock);
-    Ok(build_catalog_list(&guard))
-}
-
-pub fn reload_overlays() -> Result<ReloadLocalesResult> {
-    let lock = get_catalog_lock()?;
-    let mut guard = write_guard(lock);
-    let overlay = load_overlay_layer(&guard.overlay_root)?;
-    guard.overlay = overlay.layer.clone();
-
-    if !overlay.warnings.is_empty() {
-        for warning in &overlay.warnings {
-            tracing::warn!(event = "i18n_overlay_reload_warning", detail = warning);
-        }
-    }
-
-    Ok(ReloadLocalesResult {
-        success: true,
-        overlay_locales: overlay.layer.locale_namespaces(),
-        reloaded_files: overlay.loaded_files,
-        warnings: overlay.warnings,
-    })
-}
-
-pub fn import_locale_file(
-    locale: &str,
-    namespace: &str,
-    content: &str,
-    replace: bool,
-    fallback_locale: &str,
-) -> Result<ImportLocaleResult> {
-    validate_locale_code(locale)?;
-    validate_namespace(namespace)?;
-
-    if content.len() > OVERLAY_MAX_BYTES {
-        anyhow::bail!(
-            "导入失败: 文件过大 ({} bytes), 上限 {} bytes",
-            content.len(),
-            OVERLAY_MAX_BYTES
-        );
-    }
-
-    let entries = parse_translation_json(content, &format!("{}:{}", locale, namespace), true)?;
-    if entries.is_empty() {
-        anyhow::bail!("导入失败: 翻译文件不能为空");
-    }
-
-    let lock = get_catalog_lock()?;
-    let mut guard = write_guard(lock);
-
-    let warnings = collect_placeholder_warnings(&guard, fallback_locale, &entries);
-    persist_overlay_namespace(&guard.overlay_root, locale, namespace, &entries, replace)?;
-
-    let overlay = load_overlay_layer(&guard.overlay_root)?;
-    if !overlay.warnings.is_empty() {
-        for warning in &overlay.warnings {
-            tracing::warn!(event = "i18n_overlay_reload_warning", detail = warning);
-        }
-    }
-    guard.overlay = overlay.layer;
-
-    let mut effective_namespaces = BTreeSet::new();
-    for value in guard.builtin.namespaces_for(locale) {
-        effective_namespaces.insert(value);
-    }
-    for value in guard.overlay.namespaces_for(locale) {
-        effective_namespaces.insert(value);
-    }
-
-    Ok(ImportLocaleResult {
-        success: true,
-        locale: locale.to_string(),
-        namespace: namespace.to_string(),
-        imported_keys: entries.len() as u32,
-        warnings,
-        effective_locale_namespaces: effective_namespaces.into_iter().collect(),
-    })
-}
-
-fn get_catalog_lock() -> Result<&'static RwLock<I18nCatalog>> {
-    CATALOG.get().context("语言目录尚未初始化")
-}
-
 fn read_guard(lock: &RwLock<I18nCatalog>) -> RwLockReadGuard<'_, I18nCatalog> {
     match lock.read() {
         Ok(guard) => guard,
@@ -387,46 +240,12 @@ fn write_guard(lock: &RwLock<I18nCatalog>) -> RwLockWriteGuard<'_, I18nCatalog> 
     }
 }
 
-fn build_catalog_list(catalog: &I18nCatalog) -> LocaleCatalogList {
-    let builtin_locales = catalog.builtin.locale_namespaces();
-    let overlay_locales = catalog.overlay.locale_namespaces();
-
-    let mut effective_by_locale: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
-    for item in &builtin_locales {
-        let entry = effective_by_locale.entry(item.locale.clone()).or_default();
-        for namespace in &item.namespaces {
-            entry.insert(namespace.clone());
-        }
-    }
-    for item in &overlay_locales {
-        let entry = effective_by_locale.entry(item.locale.clone()).or_default();
-        for namespace in &item.namespaces {
-            entry.insert(namespace.clone());
-        }
-    }
-
-    let effective_locales = effective_by_locale
-        .into_iter()
-        .map(|(locale, namespaces)| LocaleNamespaces {
-            locale,
-            namespaces: namespaces.into_iter().collect(),
-        })
-        .collect::<Vec<_>>();
-
-    LocaleCatalogList {
-        builtin_locales,
-        overlay_locales,
-        effective_locales,
-    }
-}
-
 fn load_builtin_layer() -> Result<CatalogLayer> {
     let mut layer = CatalogLayer::default();
     for bundle in BUILTIN_BUNDLES {
         let entries = parse_translation_json(
             bundle.content,
             &format!("builtin:{}:{}", bundle.locale, bundle.namespace),
-            true,
         )?;
         layer.insert_namespace(bundle.locale, bundle.namespace, entries);
     }
@@ -529,7 +348,6 @@ fn load_overlay_layer(root: &Path) -> Result<OverlayLoadResult> {
             let entries = match parse_translation_json(
                 &content,
                 &format!("overlay:{}:{}", locale, namespace),
-                true,
             ) {
                 Ok(value) => value,
                 Err(error) => {
@@ -553,7 +371,6 @@ fn load_overlay_layer(root: &Path) -> Result<OverlayLoadResult> {
 fn parse_translation_json(
     content: &str,
     context: &str,
-    strict_key: bool,
 ) -> Result<HashMap<String, String>> {
     let value: Value =
         serde_json::from_str(content).with_context(|| format!("{} JSON 解析失败", context))?;
@@ -563,138 +380,13 @@ fn parse_translation_json(
 
     let mut entries = HashMap::new();
     for (key, value) in object {
-        if strict_key {
-            validate_key(key)?;
-        }
+        validate_key(key)?;
         let text = value
             .as_str()
             .with_context(|| format!("{} key={} 的值必须为字符串", context, key))?;
         entries.insert(key.clone(), text.to_string());
     }
     Ok(entries)
-}
-
-fn persist_overlay_namespace(
-    overlay_root: &Path,
-    locale: &str,
-    namespace: &str,
-    entries: &HashMap<String, String>,
-    replace: bool,
-) -> Result<()> {
-    let locale_dir = overlay_root.join(locale);
-    fs::create_dir_all(&locale_dir)
-        .with_context(|| format!("创建 locale 目录失败: {}", locale_dir.display()))?;
-
-    let file_path = locale_dir.join(format!("{}.json", namespace));
-    if file_path.exists() && !replace {
-        anyhow::bail!("导入失败: {} 已存在且 replace=false", file_path.display());
-    }
-
-    let temp_path = locale_dir.join(format!(".{}.json.tmp", namespace));
-    let mut ordered = BTreeMap::new();
-    for (key, value) in entries {
-        ordered.insert(key.clone(), value.clone());
-    }
-    let serialized = serde_json::to_string_pretty(&ordered)
-        .map(|value| format!("{}\n", value))
-        .with_context(|| "序列化导入文件失败".to_string())?;
-    fs::write(&temp_path, serialized)
-        .with_context(|| format!("写入导入临时文件失败: {}", temp_path.display()))?;
-
-    if let Err(error) = fs::rename(&temp_path, &file_path) {
-        let _ = fs::remove_file(&temp_path);
-        return Err(anyhow::Error::new(error).context(format!(
-            "替换导入文件失败: {} -> {}",
-            temp_path.display(),
-            file_path.display()
-        )));
-    }
-
-    Ok(())
-}
-
-fn collect_placeholder_warnings(
-    catalog: &I18nCatalog,
-    fallback_locale: &str,
-    entries: &HashMap<String, String>,
-) -> Vec<String> {
-    let mut warnings = Vec::new();
-    for (key, value) in entries {
-        let Some(fallback_value) = catalog.lookup_in_locale(fallback_locale, key) else {
-            continue;
-        };
-
-        let imported_placeholders = extract_placeholders(value);
-        let fallback_placeholders = extract_placeholders(fallback_value);
-        if imported_placeholders != fallback_placeholders {
-            warnings.push(format!(
-                "key={} 占位符不一致: imported={:?}, fallback={:?}",
-                key, imported_placeholders, fallback_placeholders
-            ));
-        }
-    }
-    warnings
-}
-
-fn extract_placeholders(value: &str) -> BTreeSet<String> {
-    let mut result = BTreeSet::new();
-
-    // Legacy template format: {{name}}
-    let mut rest = value;
-    loop {
-        let Some(start) = rest.find("{{") else {
-            break;
-        };
-        let after_start = &rest[start + 2..];
-        let Some(end) = after_start.find("}}") else {
-            break;
-        };
-        if let Some(placeholder) = normalize_placeholder_name(&after_start[..end]) {
-            result.insert(placeholder);
-        }
-        rest = &after_start[end + 2..];
-    }
-
-    // ICU format used by i18next-icu: {name} or {name, number}
-    let bytes = value.as_bytes();
-    let mut index = 0usize;
-    while index < bytes.len() {
-        if bytes[index] != b'{' {
-            index += 1;
-            continue;
-        }
-
-        if index + 1 < bytes.len() && bytes[index + 1] == b'{' {
-            index += 2;
-            continue;
-        }
-
-        let start = index + 1;
-        let Some(relative_end) = value[start..].find('}') else {
-            break;
-        };
-        let end = start + relative_end;
-        if let Some(placeholder) = normalize_placeholder_name(&value[start..end]) {
-            result.insert(placeholder);
-        }
-        index = end + 1;
-    }
-
-    result
-}
-
-fn normalize_placeholder_name(raw: &str) -> Option<String> {
-    let candidate = raw.split(',').next()?.trim();
-    if candidate.is_empty() {
-        return None;
-    }
-    if !candidate
-        .chars()
-        .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '.' || ch == '-')
-    {
-        return None;
-    }
-    Some(candidate.to_string())
 }
 
 fn validate_key(key: &str) -> Result<()> {

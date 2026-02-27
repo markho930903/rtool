@@ -1,7 +1,6 @@
 import { useTranslation } from "react-i18next";
 
-import { LoadingIndicator } from "@/components/loading";
-import { Button, Input, RadioGroup, Select, Slider } from "@/components/ui";
+import { Button, RadioGroup, Select, Slider } from "@/components/ui";
 import type { GeneralSettingsSectionState } from "@/pages/settings/hooks/useSettingsPageState";
 import { GLASS_RANGES } from "@/theme/constants";
 
@@ -136,96 +135,6 @@ export default function GeneralSettingsSection(props: GeneralSettingsSectionProp
           </div>
         </div>
 
-        <div className="mt-5 space-y-3 rounded-lg border border-border-glass bg-surface-glass-soft px-3 py-3 shadow-inset-soft">
-          <h3 className="m-0 text-sm font-semibold text-text-primary">{t("general.import.title")}</h3>
-          <p className="m-0 text-xs text-text-muted">{t("general.import.desc")}</p>
-
-          <p className="m-0 text-xs text-text-secondary">
-            {t("general.import.catalog", {
-              builtin: props.state.catalogSummary.builtin,
-              overlay: props.state.catalogSummary.overlay,
-              effective: props.state.catalogSummary.effective,
-            })}
-          </p>
-
-          <div className="grid max-w-[520px] gap-2 md:grid-cols-2">
-            <div className="space-y-1">
-              <label htmlFor="locale-import-locale" className="text-xs text-text-secondary">
-                {t("general.import.locale")}
-              </label>
-              <Select
-                id="locale-import-locale"
-                value={props.state.importLocale}
-                options={props.state.importLocaleOptions}
-                onChange={(event) => props.state.onImportLocaleChange(event.currentTarget.value)}
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label htmlFor="locale-import-namespace" className="text-xs text-text-secondary">
-                {t("general.import.namespace")}
-              </label>
-              <Select
-                id="locale-import-namespace"
-                value={props.state.importNamespace}
-                options={props.state.importNamespaceOptions}
-                onChange={(event) => props.state.onImportNamespaceChange(event.currentTarget.value)}
-              />
-            </div>
-          </div>
-
-          <div className="grid max-w-[520px] gap-2">
-            <label htmlFor="locale-import-file" className="text-xs text-text-secondary">
-              {t("general.import.file")}
-            </label>
-            <Input
-              id="locale-import-file"
-              type="file"
-              accept=".json,application/json"
-              onChange={(event) => {
-                void props.state.onImportFileSelect(event.currentTarget.files?.[0] ?? null);
-              }}
-            />
-            <p className="m-0 text-xs text-text-muted">
-              {props.state.importFileName
-                ? t("general.import.selected", { name: props.state.importFileName })
-                : t("general.import.noFile")}
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              size="default"
-              variant="primary"
-              disabled={props.state.importingLocaleFile || !props.state.importFileContent.trim()}
-              onClick={() => {
-                void props.state.onImportLocaleFile();
-              }}
-            >
-              {props.state.importingLocaleFile ? t("general.import.importing") : t("general.import.import")}
-            </Button>
-            <Button
-              size="default"
-              variant="secondary"
-              disabled={props.state.localeCatalogLoading}
-              onClick={() => {
-                void props.state.onReloadLocales();
-              }}
-            >
-              {t("general.import.reload")}
-            </Button>
-            {props.state.localeCatalogLoading ? <LoadingIndicator text={t("common:status.loading")} /> : null}
-          </div>
-
-          {props.state.localeCatalogError ? (
-            <p className="m-0 text-xs text-danger">{props.state.localeCatalogError}</p>
-          ) : null}
-          {props.state.importMessage ? (
-            <p className={`m-0 text-xs ${props.state.importMessage.isError ? "text-danger" : "text-text-secondary"}`}>
-              {props.state.importMessage.text}
-            </p>
-          ) : null}
-        </div>
       </div>
     </section>
   );

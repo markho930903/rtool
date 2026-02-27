@@ -318,7 +318,6 @@ export type CommandKey =
   | "app_manager_handle"
   | "clipboard_handle"
   | "dashboard_handle"
-  | "i18n_import_handle"
   | "launcher_handle"
   | "locale_handle"
   | "logging_handle"
@@ -417,15 +416,6 @@ export type ResourceHistoryDto = {
 
 export type ErrorContextItem = { key: string; value: string };
 
-export type ImportLocaleResult = {
-  success: boolean;
-  locale: string;
-  namespace: string;
-  importedKeys: number;
-  warnings: Array<string>;
-  effectiveLocaleNamespaces: Array<string>;
-};
-
 export type InvokeError = {
   code: string;
   message: string;
@@ -496,14 +486,6 @@ export type LauncherUpdateSearchSettingsInputDto = {
   maxTotalItems: number | null;
   refreshIntervalSecs: number | null;
 };
-
-export type LocaleCatalogList = {
-  builtinLocales: Array<LocaleNamespaces>;
-  overlayLocales: Array<LocaleNamespaces>;
-  effectiveLocales: Array<LocaleNamespaces>;
-};
-
-export type LocaleNamespaces = { locale: string; namespaces: Array<string> };
 
 export type LocaleStateDto = { preference: string; resolved: string };
 
@@ -651,13 +633,6 @@ export type ManagedAppDto = {
   identity: AppManagerIdentityDto;
   riskLevel: AppManagerRiskLevel;
   fingerprint: string;
-};
-
-export type ReloadLocalesResult = {
-  success: boolean;
-  overlayLocales: Array<LocaleNamespaces>;
-  reloadedFiles: number;
-  warnings: Array<string>;
 };
 
 export type SystemInfoDto = {

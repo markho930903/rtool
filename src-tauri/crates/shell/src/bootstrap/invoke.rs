@@ -5,7 +5,6 @@ pub(crate) fn with_invoke_handler(
         crate::features::app_manager::commands::app_manager_handle,
         crate::features::clipboard::commands::clipboard_handle,
         crate::features::dashboard::commands::dashboard_handle,
-        crate::features::i18n_import::commands::i18n_import_handle,
         crate::features::launcher::commands::launcher_handle,
         crate::features::locale::commands::locale_handle,
         crate::features::logging::commands::logging_handle,

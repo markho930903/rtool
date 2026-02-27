@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import type { SelectOptionInput } from "@/components/ui";
 import { SUPPORTED_LOCALES } from "@/i18n/constants";
-import { localeActions, useLocaleStore } from "@/i18n/store";
+import { useLocaleStore } from "@/i18n/store";
 import type { LocalePreference } from "@/i18n/types";
 import { useLayoutStore } from "@/layouts/layout.store";
 import type { LayoutPreference } from "@/layouts/layout.types";
@@ -16,12 +16,6 @@ import {
   type LauncherIndexStatus,
   type LauncherSearchSettings,
 } from "@/services/launcher.service";
-import {
-  importBackendLocaleFile,
-  listBackendLocales,
-  reloadBackendLocales,
-  type BackendLocaleCatalogList,
-} from "@/services/locale.service";
 import { transferGetSettings, transferUpdateSettings } from "@/services/transfer.service";
 import { useLoggingStore } from "@/stores/logging.store";
 import { useSettingsStore } from "@/stores/settings.store";
@@ -101,31 +95,6 @@ export interface GeneralSettingsSectionState {
   onPreviewGlassField: (field: "opacity" | "blur" | "saturate" | "brightness", value: number) => void;
   onCommitGlassField: (field: "opacity" | "blur" | "saturate" | "brightness", value: number) => void;
   onResetGlassTheme: () => void;
-
-  catalogSummary: {
-    builtin: string;
-    overlay: string;
-    effective: string;
-  };
-  localeCatalogLoading: boolean;
-  localeCatalogError: string | null;
-
-  importLocale: string;
-  importLocaleOptions: SelectOptionInput[];
-  onImportLocaleChange: (value: string) => void;
-
-  importNamespace: string;
-  importNamespaceOptions: SelectOptionInput[];
-  onImportNamespaceChange: (value: string) => void;
-
-  importFileName: string;
-  importFileContent: string;
-  importingLocaleFile: boolean;
-  importMessage: MessageState | null;
-
-  onImportFileSelect: (file: File | null) => Promise<void>;
-  onImportLocaleFile: () => Promise<void>;
-  onReloadLocales: () => Promise<void>;
 }
 
 export interface ClipboardSettingsSectionState {
@@ -426,15 +395,6 @@ export function useSettingsPageState(): UseSettingsPageStateResult {
   const [logHighFreqMaxPerKeyInput, setLogHighFreqMaxPerKeyInput] = useState(String(20));
   const [logAllowRawView, setLogAllowRawView] = useState(false);
   const [loggingSaveMessage, setLoggingSaveMessage] = useState<MessageState | null>(null);
-  const [localeCatalog, setLocaleCatalog] = useState<BackendLocaleCatalogList | null>(null);
-  const [localeCatalogLoading, setLocaleCatalogLoading] = useState(false);
-  const [localeCatalogError, setLocaleCatalogError] = useState<string | null>(null);
-  const [importLocale, setImportLocale] = useState("zh-CN");
-  const [importNamespace, setImportNamespace] = useState("native");
-  const [importFileName, setImportFileName] = useState("");
-  const [importFileContent, setImportFileContent] = useState("");
-  const [importingLocaleFile, setImportingLocaleFile] = useState(false);
-  const [importMessage, setImportMessage] = useState<MessageState | null>(null);
 
   const settingsNavItems: SettingsNavItem[] = useMemo(
     () => [
@@ -511,24 +471,6 @@ export function useSettingsPageState(): UseSettingsPageStateResult {
 
     void loadLauncher();
   }, [fetchClipboardSettings, fetchLoggingConfig]);
-
-  const refreshLocaleCatalog = useCallback(async () => {
-    setLocaleCatalogLoading(true);
-    setLocaleCatalogError(null);
-    try {
-      const next = await listBackendLocales();
-      setLocaleCatalog(next);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setLocaleCatalogError(message);
-    } finally {
-      setLocaleCatalogLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refreshLocaleCatalog();
-  }, [refreshLocaleCatalog]);
 
   useEffect(() => {
     setGlassTargetTheme(themeResolved);
@@ -728,12 +670,7 @@ export function useSettingsPageState(): UseSettingsPageStateResult {
     parsedLauncherRefresh === launcherSettings.refreshIntervalSecs;
 
   const localePreferenceOptions = useMemo(() => {
-    const values = new Set<string>(SUPPORTED_LOCALES);
-    for (const item of localeCatalog?.effectiveLocales ?? []) {
-      values.add(item.locale);
-    }
-
-    const sortedValues = [...values].sort((left, right) => left.localeCompare(right));
+    const sortedValues = [...SUPPORTED_LOCALES].sort((left, right) => left.localeCompare(right));
     return [
       { value: "system", label: t("general.option.system") },
       ...sortedValues.map((value) => ({
@@ -741,22 +678,7 @@ export function useSettingsPageState(): UseSettingsPageStateResult {
         label: localeDisplayLabel(value, t),
       })),
     ];
-  }, [localeCatalog, t]);
-
-  const importLocaleOptions = useMemo(() => {
-    const values = new Set<string>(SUPPORTED_LOCALES);
-    for (const item of localeCatalog?.effectiveLocales ?? []) {
-      values.add(item.locale);
-    }
-    const sorted = [...values].sort((left, right) => left.localeCompare(right));
-    return sorted.map((value) => ({ value, label: value }));
-  }, [localeCatalog]);
-
-  const importNamespaceOptions = useMemo(() => {
-    const localeItem = localeCatalog?.effectiveLocales.find((item) => item.locale === importLocale);
-    const values = localeItem?.namespaces.length ? localeItem.namespaces : ["native"];
-    return values.map((value) => ({ value, label: value }));
-  }, [localeCatalog, importLocale]);
+  }, [t]);
 
   const layoutPreferenceOptions = useMemo(
     () => [
@@ -780,25 +702,6 @@ export function useSettingsPageState(): UseSettingsPageStateResult {
   );
 
   const effectiveThemeLabel = themeResolved === "dark" ? t("general.glass.theme.dark") : t("general.glass.theme.light");
-
-  useEffect(() => {
-    if (!importLocaleOptions.some((item) => item.value === importLocale)) {
-      setImportLocale(importLocaleOptions[0]?.value ?? "zh-CN");
-    }
-  }, [importLocale, importLocaleOptions]);
-
-  useEffect(() => {
-    if (!importNamespaceOptions.some((item) => item.value === importNamespace)) {
-      setImportNamespace(importNamespaceOptions[0]?.value ?? "native");
-    }
-  }, [importNamespace, importNamespaceOptions]);
-
-  const catalogSummary = useMemo(() => {
-    const builtin = localeCatalog?.builtinLocales.map((item) => item.locale).join(", ") || "--";
-    const overlay = localeCatalog?.overlayLocales.map((item) => item.locale).join(", ") || "--";
-    const effective = localeCatalog?.effectiveLocales.map((item) => item.locale).join(", ") || "--";
-    return { builtin, overlay, effective };
-  }, [localeCatalog]);
 
   const clipboardMaxItemsHelperText = maxItemsInvalid
     ? t("clipboard.invalid", { min: MIN_MAX_ITEMS, max: MAX_MAX_ITEMS })
@@ -1022,93 +925,6 @@ export function useSettingsPageState(): UseSettingsPageStateResult {
     }
   };
 
-  const handleSelectImportFile = async (file: File | null) => {
-    if (!file) {
-      setImportFileName("");
-      setImportFileContent("");
-      return;
-    }
-
-    const content = await file.text();
-    setImportFileName(file.name);
-    setImportFileContent(content);
-    setImportMessage(null);
-  };
-
-  const handleReloadLocales = async () => {
-    setLocaleCatalogLoading(true);
-    setLocaleCatalogError(null);
-    try {
-      const result = await reloadBackendLocales();
-      await refreshLocaleCatalog();
-      await localeActions.syncFromBackend();
-      if (result.warnings.length > 0) {
-        setImportMessage({
-          text: t("general.import.reloadWithWarnings", { count: result.warnings.length }),
-          isError: false,
-        });
-      } else {
-        setImportMessage({
-          text: t("general.import.reloadSuccess", { count: result.reloadedFiles }),
-          isError: false,
-        });
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setImportMessage({
-        text: t("general.import.reloadFailed", { message }),
-        isError: true,
-      });
-    } finally {
-      setLocaleCatalogLoading(false);
-    }
-  };
-
-  const handleImportLocaleFile = async () => {
-    if (!importFileContent.trim()) {
-      setImportMessage({
-        text: t("general.import.emptyFile"),
-        isError: true,
-      });
-      return;
-    }
-
-    setImportingLocaleFile(true);
-    setImportMessage(null);
-    try {
-      const result = await importBackendLocaleFile({
-        locale: importLocale,
-        namespace: importNamespace,
-        content: importFileContent,
-        replace: true,
-      });
-      await refreshLocaleCatalog();
-      await localeActions.syncFromBackend();
-      if (result.warnings.length > 0) {
-        setImportMessage({
-          text: t("general.import.successWithWarnings", {
-            count: result.importedKeys,
-            warnings: result.warnings.length,
-          }),
-          isError: false,
-        });
-      } else {
-        setImportMessage({
-          text: t("general.import.success", { count: result.importedKeys }),
-          isError: false,
-        });
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setImportMessage({
-        text: t("general.import.failed", { message }),
-        isError: true,
-      });
-    } finally {
-      setImportingLocaleFile(false);
-    }
-  };
-
   const onLocalePreferenceChange = useCallback(
     (value: string) => {
       void setLocalePreference(value as LocalePreference);
@@ -1122,16 +938,6 @@ export function useSettingsPageState(): UseSettingsPageStateResult {
     },
     [setLayoutPreference],
   );
-
-  const onImportLocaleChange = useCallback((value: string) => {
-    setImportLocale(value);
-    setImportMessage(null);
-  }, []);
-
-  const onImportNamespaceChange = useCallback((value: string) => {
-    setImportNamespace(value);
-    setImportMessage(null);
-  }, []);
 
   const onMaxItemsChange = useCallback((value: string) => {
     setMaxItemsInput(value);
@@ -1266,22 +1072,6 @@ export function useSettingsPageState(): UseSettingsPageStateResult {
       onPreviewGlassField: previewGlassField,
       onCommitGlassField: commitGlassField,
       onResetGlassTheme: handleResetGlassTheme,
-      catalogSummary,
-      localeCatalogLoading,
-      localeCatalogError,
-      importLocale,
-      importLocaleOptions,
-      onImportLocaleChange,
-      importNamespace,
-      importNamespaceOptions,
-      onImportNamespaceChange,
-      importFileName,
-      importFileContent,
-      importingLocaleFile,
-      importMessage,
-      onImportFileSelect: handleSelectImportFile,
-      onImportLocaleFile: handleImportLocaleFile,
-      onReloadLocales: handleReloadLocales,
     },
     clipboard: {
       maxItemsInput,

@@ -2,7 +2,6 @@ pub mod app_manager;
 pub mod clipboard;
 pub mod command_payload;
 pub mod dashboard;
-pub mod i18n_import;
 pub mod launcher;
 pub mod locale;
 pub mod logging;

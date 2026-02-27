@@ -173,9 +173,9 @@ pub use settings::{
 };
 
 #[cfg(test)]
-#[path = "../../tests/launcher/launcher_index_service_tests.rs"]
+#[path = "../../tests/launcher_index_service_tests.inc"]
 mod tests;
 
 #[cfg(test)]
-#[path = "../../tests/launcher/launcher_slo_smoke_tests.rs"]
+#[path = "../../tests/launcher_slo_smoke_tests.inc"]
 mod slo_smoke_tests;

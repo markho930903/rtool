@@ -370,5 +370,5 @@ impl ClipboardService {
 }
 
 #[cfg(test)]
-#[path = "../tests/app/clipboard_service_tests.rs"]
+#[path = "../tests/clipboard_service_tests.inc"]
 mod tests;

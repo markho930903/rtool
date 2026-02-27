@@ -28,5 +28,5 @@ pub use db_settings_store::{
 };
 
 #[cfg(test)]
-#[path = "../../tests/infrastructure/db_tests.rs"]
+#[path = "../../tests/db_tests.inc"]
 mod tests;

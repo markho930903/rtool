@@ -66,5 +66,5 @@ pub fn completed_bytes(bitmap: &[u8], chunk_count: u32, chunk_size: u32, total_s
 }
 
 #[cfg(test)]
-#[path = "../../tests/transfer/resume_tests.rs"]
+#[path = "../../tests/resume_tests.inc"]
 mod tests;

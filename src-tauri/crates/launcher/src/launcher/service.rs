@@ -1020,5 +1020,5 @@ fn stable_id(prefix: &str, input: &str) -> String {
 }
 
 #[cfg(test)]
-#[path = "../../tests/launcher/launcher_service_tests.rs"]
+#[path = "../../tests/launcher_service_tests.inc"]
 mod tests;

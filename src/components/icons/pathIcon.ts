@@ -1,5 +1,6 @@
 export type AppPathType = "file" | "directory";
 
+// NOTE: Keep i-noto:* mappings in this file synced with uno.config.ts safelist.
 const FILE_FALLBACK_ICON = "i-noto:page-facing-up";
 const DIRECTORY_ICON = "i-noto:file-folder";
 const DIRECTORY_SUFFIX_HINTS = [
@@ -28,6 +29,11 @@ const FILE_EXTENSION_HINTS = new Set([
   "db",
   "sqlite",
   "sqlite3",
+  "p12",
+  "pfx",
+  "pdf",
+  "mp3",
+  "sql",
 ]);
 const RESIDUE_FILE_PREFERRED_KINDS = new Set([
   "preferences",
@@ -132,7 +138,11 @@ export function resolveFileIconByExtension(ext: string | null): string {
   }
 
   if (ext === "pdf") {
-    return "i-noto:page-facing-up";
+    return "i-noto:closed-book";
+  }
+
+  if (ext === "p12" || ext === "pfx") {
+    return "i-noto:locked-with-key";
   }
 
   if (ext === "doc" || ext === "docx" || ext === "rtf") {
@@ -203,7 +213,7 @@ export function resolveFileIconByExtension(ext: string | null): string {
   }
 
   if (ext === "sql") {
-    return "i-noto:floppy-disk";
+    return "i-noto:file-cabinet";
   }
 
   return FILE_FALLBACK_ICON;

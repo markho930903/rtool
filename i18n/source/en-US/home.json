@@ -46,6 +46,7 @@
   "info.runtime": "Uptime",
   "info.mainShortcut": "Main window shortcut",
   "info.clipboardShortcut": "Clipboard shortcut",
+  "info.settingsShortcut": "Settings shortcut",
   "info.currentWindowMode": "Current window mode",
   "info.os": "OS",
   "info.kernel": "Kernel version",
@@ -55,5 +56,6 @@
   "info.cpuCores": "CPU cores",
   "info.totalMemory": "Total / Used memory",
   "shortcut.main": "Cmd/Ctrl + K (Launcher)",
-  "shortcut.clipboard": "Alt + V (Normal) / Alt + Shift + V (Compact)"
+  "shortcut.clipboard": "Alt + V (Normal) / Alt + Shift + V (Compact)",
+  "shortcut.settings": "Cmd/Ctrl + ,"
 }

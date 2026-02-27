@@ -9,6 +9,7 @@ import { useAsyncEffect } from "@/hooks/useAsyncEffect";
 import { useLocaleStore } from "@/i18n/store";
 import { useLayoutStore } from "@/layouts/layout.store";
 import { routes } from "@/routers";
+import { launcherExecute } from "@/services/launcher.service";
 import { useClipboardStore } from "@/stores/clipboard.store";
 import { useTransferStore } from "@/stores/transfer.store";
 import { useThemeStore } from "@/theme/store";
@@ -92,9 +93,6 @@ function AppEventBridge() {
 
   useEffect(() => {
     const currentWindow = getCurrentWindow();
-    if (currentWindow.label !== "main") {
-      return;
-    }
 
     const isEditableTarget = (target: EventTarget | null): boolean => {
       if (!(target instanceof Element)) {
@@ -113,6 +111,27 @@ function AppEventBridge() {
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
+      const isSettingsShortcut =
+        (event.metaKey || event.ctrlKey) &&
+        !event.altKey &&
+        !event.shiftKey &&
+        !event.repeat &&
+        event.code === "Comma";
+
+      if (isSettingsShortcut) {
+        event.preventDefault();
+        void launcherExecute({ kind: "open_builtin_route", route: "/settings" }).catch((error) => {
+          if (import.meta.env.DEV) {
+            console.warn("[app-event-bridge] open settings shortcut failed", error);
+          }
+        });
+        return;
+      }
+
+      if (currentWindow.label !== "main") {
+        return;
+      }
+
       if (event.key !== "Escape") {
         return;
       }

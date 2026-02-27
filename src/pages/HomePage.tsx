@@ -293,6 +293,7 @@ export default function HomePage() {
           <InfoRow label={t("info.runtime")} value={formatUptime(snapshot?.app.uptimeSeconds ?? null)} />
           <InfoRow label={t("info.mainShortcut")} value={t("shortcut.main")} />
           <InfoRow label={t("info.clipboardShortcut")} value={t("shortcut.clipboard")} />
+          <InfoRow label={t("info.settingsShortcut")} value={t("shortcut.settings")} />
           <InfoRow label={t("info.currentWindowMode")} value={windowMode} />
         </TerminalPanel>
 

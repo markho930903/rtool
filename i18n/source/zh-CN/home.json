@@ -46,6 +46,7 @@
   "info.runtime": "运行时长",
   "info.mainShortcut": "主窗口快捷键",
   "info.clipboardShortcut": "剪贴板快捷键",
+  "info.settingsShortcut": "设置快捷键",
   "info.currentWindowMode": "当前窗口模式",
   "info.os": "操作系统",
   "info.kernel": "内核版本",
@@ -55,5 +56,6 @@
   "info.cpuCores": "CPU 核心数",
   "info.totalMemory": "总内存 / 已用",
   "shortcut.main": "Cmd/Ctrl + K（启动器）",
-  "shortcut.clipboard": "Alt + V（普通窗口）/ Alt + Shift + V（简洁模式）"
+  "shortcut.clipboard": "Alt + V（普通窗口）/ Alt + Shift + V（简洁模式）",
+  "shortcut.settings": "Cmd/Ctrl + ,"
 }

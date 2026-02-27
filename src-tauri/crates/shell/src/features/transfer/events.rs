@@ -1,6 +1,6 @@
-use foundation::models::{TransferPeerDto, TransferProgressSnapshotDto};
-use foundation::{AppError, AppResult};
-use domain::service::TransferEventSink;
+use protocol::models::{TransferPeerDto, TransferProgressSnapshotDto};
+use protocol::{AppError, AppResult};
+use rtool_transfer::service::TransferEventSink;
 use tauri::{AppHandle, Emitter};
 
 const TRANSFER_PEER_SYNC_EVENT: &str = "rtool://transfer/peer_sync";

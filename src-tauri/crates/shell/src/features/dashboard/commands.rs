@@ -1,7 +1,7 @@
 use super::run_blocking_command;
 use crate::app::state::AppState;
-use foundation::InvokeError;
-use foundation::models::{AppHealthSnapshotDto, DashboardSnapshotDto};
+use protocol::InvokeError;
+use protocol::models::{AppHealthSnapshotDto, DashboardSnapshotDto};
 use tauri::State;
 
 #[tauri::command]

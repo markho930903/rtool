@@ -4,9 +4,9 @@ use crate::constants::{
 };
 use crate::host::launcher::TauriLauncherHost;
 use crate::platform::native_ui::windows::focus_main_window;
-use foundation::i18n::t;
-use foundation::models::LauncherActionDto;
-use domain::launcher::service::execute_launcher_action;
+use protocol::models::LauncherActionDto;
+use rtool_i18n::i18n::t;
+use rtool_launcher::launcher::service::execute_launcher_action;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
 use tauri::{AppHandle, Runtime};

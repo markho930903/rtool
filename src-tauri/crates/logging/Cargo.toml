@@ -1,0 +1,18 @@
+[package]
+name = "rtool_logging"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+protocol = { package = "rtool_protocol", path = "../protocol" }
+rtool_db = { package = "rtool_db", path = "../db" }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+libsql = { workspace = true }
+regex = { workspace = true }
+tracing = { workspace = true }
+tracing-appender = { workspace = true }
+tracing-subscriber = { workspace = true }
+walkdir = { workspace = true }
+tokio = { workspace = true }

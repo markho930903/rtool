@@ -1,7 +1,7 @@
 use super::run_command_sync;
-use usecase::ResourceMonitorApplicationService;
-use foundation::InvokeError;
-use foundation::models::{ActionResultDto, ResourceHistoryDto, ResourceSnapshotDto};
+use protocol::InvokeError;
+use protocol::models::{ActionResultDto, ResourceHistoryDto, ResourceSnapshotDto};
+use rtool_core::ResourceMonitorApplicationService;
 
 #[tauri::command]
 pub fn resource_monitor_snapshot(

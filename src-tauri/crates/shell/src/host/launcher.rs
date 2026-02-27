@@ -1,5 +1,5 @@
-use foundation::{AppError, AppResult};
-use domain::host::{AppPackageInfo, LauncherHost, LauncherWindow};
+use protocol::{AppError, AppResult};
+use rtool_launcher::host::{AppPackageInfo, LauncherHost, LauncherWindow};
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 
 pub struct TauriLauncherHost {
@@ -78,7 +78,7 @@ impl LauncherHost for TauriLauncherHost {
         &self,
         compact: bool,
         source: &str,
-    ) -> AppResult<foundation::models::ClipboardWindowModeAppliedDto> {
+    ) -> AppResult<protocol::models::ClipboardWindowModeAppliedDto> {
         crate::platform::native_ui::clipboard_window::apply_clipboard_window_mode(
             &self.app, compact, source,
         )

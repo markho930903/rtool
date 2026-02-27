@@ -1,6 +1,6 @@
-use foundation::models::LogEntryDto;
-use foundation::{AppError, AppResult};
-use foundation::logging::LoggingEventSink;
+use protocol::models::LogEntryDto;
+use protocol::{AppError, AppResult};
+use rtool_logging::logging::LoggingEventSink;
 use tauri::{AppHandle, Emitter};
 
 const STREAM_EVENT_NAME: &str = "rtool://logging/stream";

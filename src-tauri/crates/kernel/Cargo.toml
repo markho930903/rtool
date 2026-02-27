@@ -1,0 +1,10 @@
+[package]
+name = "rtool_kernel"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+protocol = { package = "rtool_protocol", path = "../protocol" }
+regex = { workspace = true }
+tokio = { workspace = true }
+

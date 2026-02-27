@@ -1,9 +1,9 @@
 use crate::app::state::AppState;
 use crate::command_runtime::{run_command_async, run_command_sync};
 use crate::features::clipboard::events::emit_clipboard_sync;
-use foundation::i18n::resolve_locale;
-use foundation::models::{ClipboardSyncPayload, UserSettingsDto, UserSettingsUpdateInputDto};
-use foundation::{AppError, InvokeError};
+use protocol::models::{ClipboardSyncPayload, UserSettingsDto, UserSettingsUpdateInputDto};
+use protocol::{AppError, InvokeError};
+use rtool_i18n::i18n::resolve_locale;
 use tauri::{AppHandle, State};
 
 #[tauri::command]

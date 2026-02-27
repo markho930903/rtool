@@ -3,8 +3,8 @@ use super::image_preview::{
     save_clipboard_image_preview,
 };
 use crate::features::clipboard::events::emit_clipboard_sync;
-use domain::service::ClipboardService;
-use foundation::models::ClipboardSyncPayload;
+use protocol::models::ClipboardSyncPayload;
+use rtool_clipboard::service::ClipboardService;
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager, Runtime};
 
@@ -67,7 +67,7 @@ impl<R: Runtime> ClipboardProcessor<R> {
                         .causes
                         .first()
                         .map(String::as_str)
-                        .map(foundation::logging::sanitize_for_log)
+                        .map(rtool_logging::logging::sanitize_for_log)
                         .unwrap_or_default()
                 );
             }
@@ -113,7 +113,7 @@ impl<R: Runtime> ClipboardProcessor<R> {
                         .causes
                         .first()
                         .map(String::as_str)
-                        .map(foundation::logging::sanitize_for_log)
+                        .map(rtool_logging::logging::sanitize_for_log)
                         .unwrap_or_default()
                 );
             }
@@ -152,7 +152,7 @@ impl<R: Runtime> ClipboardProcessor<R> {
                     .causes
                     .first()
                     .map(String::as_str)
-                    .map(foundation::logging::sanitize_for_log)
+                    .map(rtool_logging::logging::sanitize_for_log)
                     .unwrap_or_default()
             );
             return;
@@ -175,7 +175,7 @@ impl<R: Runtime> ClipboardProcessor<R> {
             }
         });
 
-        let item = foundation::clipboard::build_image_clipboard_item(
+        let item = kernel::clipboard::build_image_clipboard_item(
             width,
             height,
             &signature,
@@ -204,7 +204,7 @@ impl<R: Runtime> ClipboardProcessor<R> {
                         .causes
                         .first()
                         .map(String::as_str)
-                        .map(foundation::logging::sanitize_for_log)
+                        .map(rtool_logging::logging::sanitize_for_log)
                         .unwrap_or_default()
                 );
             }

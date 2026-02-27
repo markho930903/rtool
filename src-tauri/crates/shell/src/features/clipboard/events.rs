@@ -1,4 +1,4 @@
-use foundation::models::ClipboardSyncPayload;
+use protocol::models::ClipboardSyncPayload;
 use tauri::{AppHandle, Emitter, Runtime};
 
 const CLIPBOARD_SYNC_EVENT: &str = "rtool://clipboard/sync";

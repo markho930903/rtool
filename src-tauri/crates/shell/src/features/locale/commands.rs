@@ -1,7 +1,7 @@
 use crate::app::state::AppState;
 use crate::command_runtime::{run_command_async, run_command_sync};
-use foundation::i18n::{LocaleStateDto, normalize_locale_preference, resolve_locale};
-use foundation::{AppError, InvokeError};
+use protocol::{AppError, InvokeError};
+use rtool_i18n::i18n::{LocaleStateDto, normalize_locale_preference, resolve_locale};
 use tauri::{AppHandle, State};
 
 #[tauri::command]

@@ -6,7 +6,8 @@ mod features;
 mod host;
 mod platform;
 
-use foundation::{AppResult, models};
+use protocol::AppResult;
+use protocol::models;
 use tauri::{AppHandle, Runtime};
 
 pub(crate) fn apply_locale_to_native_ui<R: Runtime>(app: &AppHandle<R>, locale: &str) {

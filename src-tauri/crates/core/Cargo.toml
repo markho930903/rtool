@@ -1,0 +1,18 @@
+[package]
+name = "rtool_core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+protocol = { package = "rtool_protocol", path = "../protocol" }
+rtool_db = { package = "rtool_db", path = "../db" }
+rtool_i18n = { package = "rtool_i18n", path = "../i18n" }
+rtool_logging = { package = "rtool_logging", path = "../logging" }
+rtool_system = { package = "rtool_system", path = "../system" }
+rtool_clipboard = { package = "rtool_clipboard", path = "../clipboard" }
+rtool_launcher = { package = "rtool_launcher", path = "../launcher" }
+rtool_transfer = { package = "rtool_transfer", path = "../transfer" }
+rtool_app_manager = { package = "rtool_app_manager", path = "../app_manager" }
+serde_json = { workspace = true }
+sysinfo = { workspace = true }
+tracing = { workspace = true }

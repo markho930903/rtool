@@ -4,8 +4,8 @@ use crate::constants::{
     CLIPBOARD_WINDOW_LABEL,
 };
 use anyhow::Context;
-use foundation::models::ClipboardWindowModeAppliedDto;
-use foundation::{AppError, AppResult, ResultExt};
+use protocol::models::ClipboardWindowModeAppliedDto;
+use protocol::{AppError, AppResult, ResultExt};
 use tauri::{AppHandle, LogicalSize, Manager, PhysicalPosition};
 
 fn clamp_clipboard_window_position(

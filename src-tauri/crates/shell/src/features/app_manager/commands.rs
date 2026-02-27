@@ -2,8 +2,7 @@ use super::{run_blocking_command, run_command_sync};
 use crate::app::state::AppState;
 use crate::host::launcher::TauriLauncherHost;
 use anyhow::Context;
-use usecase::AppManagerApplicationService;
-use foundation::models::{
+use protocol::models::{
     AppManagerActionResultDto, AppManagerCleanupInputDto, AppManagerCleanupResultDto,
     AppManagerDetailQueryDto, AppManagerExportScanInputDto, AppManagerExportScanResultDto,
     AppManagerPageDto, AppManagerQueryDto, AppManagerResidueScanInputDto,
@@ -11,7 +10,8 @@ use foundation::models::{
     AppManagerResolveSizesResultDto, AppManagerSnapshotMetaDto, AppManagerStartupUpdateInputDto,
     AppManagerUninstallInputDto, ManagedAppDetailDto,
 };
-use foundation::{AppError, AppResult, InvokeError, ResultExt};
+use protocol::{AppError, AppResult, InvokeError, ResultExt};
+use rtool_core::AppManagerApplicationService;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Arc;

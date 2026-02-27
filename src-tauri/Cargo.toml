@@ -1,8 +1,16 @@
 [workspace]
 members = [
-    "crates/foundation",
-    "crates/domain",
-    "crates/usecase",
+    "crates/protocol",
+    "crates/kernel",
+    "crates/db",
+    "crates/logging",
+    "crates/i18n",
+    "crates/system",
+    "crates/clipboard",
+    "crates/launcher",
+    "crates/transfer",
+    "crates/app_manager",
+    "crates/core",
     "crates/shell",
 ]
 resolver = "2"
@@ -35,9 +43,6 @@ walkdir = "2.5.0"
 wincode = { version = "0.4.4", features = ["derive"] }
 zip = { version = "8.1.0", default-features = false, features = ["deflate"] }
 
-foundation = { path = "crates/foundation" }
-domain = { path = "crates/domain" }
-usecase = { path = "crates/usecase" }
 shell = { path = "crates/shell" }
 
 [package]

@@ -2,7 +2,7 @@ mod image_preview;
 mod processor;
 
 use crate::constants::CLIPBOARD_PLUGIN_UPDATE_EVENT;
-use domain::service::ClipboardService;
+use rtool_clipboard::service::ClipboardService;
 use std::sync::Arc;
 use tauri::{AppHandle, Listener, Manager, Runtime};
 use tokio::sync::Mutex;

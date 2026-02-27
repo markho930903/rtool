@@ -1,0 +1,22 @@
+[package]
+name = "rtool_launcher"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+protocol = { package = "rtool_protocol", path = "../protocol" }
+rtool_db = { package = "rtool_db", path = "../db" }
+rtool_i18n = { package = "rtool_i18n", path = "../i18n" }
+anyhow = { workspace = true }
+libsql = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+regex = { workspace = true }
+base64 = { workspace = true }
+tracing = { workspace = true }
+walkdir = { workspace = true }
+tokio = { workspace = true }
+tauri = { workspace = true }
+
+[dev-dependencies]
+uuid = { workspace = true }

@@ -1,5 +1,5 @@
-use usecase::{ApplicationServices, RuntimeState};
-use foundation::i18n::{LocaleStateDto, ResolvedAppLocale};
+use rtool_core::{ApplicationServices, RuntimeState};
+use rtool_i18n::i18n::{LocaleStateDto, ResolvedAppLocale};
 use std::path::PathBuf;
 use std::time::Instant;
 

@@ -6,10 +6,10 @@ use std::sync::{Mutex, OnceLock};
 use std::time::Instant;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use usecase::RequestContext;
-use foundation::{AppResult, InvokeError};
-use foundation::logging::{RecordLogInput, record_log_event_best_effort, sanitize_for_log};
-use foundation::runtime::blocking::run_blocking;
+use kernel::runtime::blocking::run_blocking;
+use protocol::{AppResult, InvokeError};
+use rtool_core::RequestContext;
+use rtool_logging::logging::{RecordLogInput, record_log_event_best_effort, sanitize_for_log};
 
 const COMMAND_DETAIL_SAMPLE_RATE: u64 = 16;
 const COMMAND_START_SAMPLE_RATE: u64 = 32;
@@ -213,7 +213,7 @@ pub(crate) fn command_start(
     request_id: &str,
     window_label: Option<&str>,
 ) -> Instant {
-    foundation::record_command_start(command, request_id);
+    rtool_system::record_command_start(command, request_id);
 
     tracing::debug!(
         event = "command_start",
@@ -244,7 +244,7 @@ pub(crate) fn command_start(
 
 pub(crate) fn command_end_ok(command: &str, request_id: &str, started_at: Instant) {
     let duration_ms = started_at.elapsed().as_millis() as u64;
-    foundation::record_command_end(command, request_id, true, duration_ms);
+    rtool_system::record_command_end(command, request_id, true, duration_ms);
     observe_runtime_window(command, duration_ms, true);
 
     if duration_ms >= COMMAND_SLOW_TRACE_MS {
@@ -291,7 +291,7 @@ where
 {
     let error: InvokeError = error.clone().into().with_request_id(request_id.to_string());
     let duration_ms = started_at.elapsed().as_millis() as u64;
-    foundation::record_command_end(command, request_id, false, duration_ms);
+    rtool_system::record_command_end(command, request_id, false, duration_ms);
     observe_runtime_window(command, duration_ms, false);
 
     let causes: Vec<String> = error

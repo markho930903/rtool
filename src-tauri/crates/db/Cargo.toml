@@ -1,0 +1,14 @@
+[package]
+name = "rtool_db"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+protocol = { package = "rtool_protocol", path = "../protocol" }
+kernel = { package = "rtool_kernel", path = "../kernel" }
+anyhow = { workspace = true }
+libsql = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }

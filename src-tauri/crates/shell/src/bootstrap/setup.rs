@@ -2,16 +2,17 @@ use crate::app::state::AppState;
 use crate::constants::TRAY_ICON_ID;
 use crate::platform::clipboard_watcher::start_clipboard_watcher;
 use crate::platform::native_ui::{apply_locale_to_native_ui, tray};
-use usecase::{ApplicationServices, RuntimeState, UserSettingsApplicationService};
-use domain::service::ClipboardService;
-use foundation::{
-    AppResult,
-    i18n::{AppLocaleState, init_i18n_catalog, normalize_locale_preference, resolve_locale, t},
-    models::UserSettingsDto,
+use protocol::AppResult;
+use protocol::models::UserSettingsDto;
+use rtool_clipboard::service::ClipboardService;
+use rtool_core::{ApplicationServices, RuntimeState, UserSettingsApplicationService};
+use rtool_db::db;
+use rtool_i18n::i18n::{
+    AppLocaleState, init_i18n_catalog, normalize_locale_preference, resolve_locale, t,
 };
-use foundation::{db, logging};
-use foundation::{MonitorOptions, initialize_global_monitor, start_sampling};
-use domain::service::{TransferService, TransferTask, TransferTaskSpawner};
+use rtool_logging::logging;
+use rtool_system::{MonitorOptions, initialize_global_monitor, start_sampling};
+use rtool_transfer::service::{TransferService, TransferTask, TransferTaskSpawner};
 use std::error::Error;
 use std::path::PathBuf;
 use std::sync::Arc;

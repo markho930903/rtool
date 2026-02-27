@@ -1,0 +1,24 @@
+[package]
+name = "rtool_transfer"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+protocol = { package = "rtool_protocol", path = "../protocol" }
+kernel = { package = "rtool_kernel", path = "../kernel" }
+rtool_db = { package = "rtool_db", path = "../db" }
+anyhow = { workspace = true }
+base64 = { workspace = true }
+blake3 = { workspace = true }
+chacha20poly1305 = { workspace = true }
+libsql = { workspace = true }
+rand = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+walkdir = { workspace = true }
+wincode = { workspace = true }
+zip = { workspace = true }

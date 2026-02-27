@@ -1,0 +1,11 @@
+[package]
+name = "rtool_system"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+protocol = { package = "rtool_protocol", path = "../protocol" }
+serde = { workspace = true }
+sysinfo = { workspace = true }
+tracing = { workspace = true }
+

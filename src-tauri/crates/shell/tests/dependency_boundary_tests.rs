@@ -21,7 +21,7 @@ fn command_files(features_dir: &Path) -> Vec<PathBuf> {
 }
 
 #[test]
-fn command_adapters_should_not_call_domain_crates_directly() {
+fn command_adapters_should_not_call_business_crates_directly() {
     let manifest_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
     let features_dir = manifest_dir.join("src").join("features");
     let files = command_files(features_dir.as_path());
@@ -31,7 +31,12 @@ fn command_adapters_should_not_call_domain_crates_directly() {
         features_dir.display()
     );
 
-    let forbidden = ["use domain::", "domain::service::", "domain::launcher::"];
+    let forbidden = [
+        "use rtool_clipboard::",
+        "use rtool_transfer::",
+        "use rtool_launcher::",
+        "use rtool_app_manager::",
+    ];
 
     let mut violations = Vec::new();
     for file in files {
@@ -46,7 +51,7 @@ fn command_adapters_should_not_call_domain_crates_directly() {
 
     assert!(
         violations.is_empty(),
-        "found forbidden direct domain dependency in command adapters:\\n{}",
+        "found forbidden direct business dependency in command adapters:\\n{}",
         violations.join("\\n")
     );
 }

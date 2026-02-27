@@ -4,9 +4,17 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-foundation = { path = "../foundation" }
-domain = { path = "../domain" }
-usecase = { path = "../usecase" }
+protocol = { package = "rtool_protocol", path = "../protocol" }
+kernel = { package = "rtool_kernel", path = "../kernel" }
+rtool_core = { package = "rtool_core", path = "../core" }
+rtool_db = { package = "rtool_db", path = "../db" }
+rtool_logging = { package = "rtool_logging", path = "../logging" }
+rtool_i18n = { package = "rtool_i18n", path = "../i18n" }
+rtool_system = { package = "rtool_system", path = "../system" }
+rtool_clipboard = { package = "rtool_clipboard", path = "../clipboard" }
+rtool_launcher = { package = "rtool_launcher", path = "../launcher" }
+rtool_transfer = { package = "rtool_transfer", path = "../transfer" }
+rtool_app_manager = { package = "rtool_app_manager", path = "../app_manager" }
 anyhow = { workspace = true }
 active-win-pos-rs = { workspace = true }
 arboard = { workspace = true }

@@ -6,12 +6,12 @@ use tauri::State;
 use super::{run_command_async, run_command_sync};
 use crate::app::state::AppState;
 use anyhow::Context;
-use foundation::models::{
+use protocol::models::{
     TransferClearHistoryInputDto, TransferHistoryFilterDto, TransferHistoryPageDto,
     TransferPairingCodeDto, TransferPeerDto, TransferSendFilesInputDto, TransferSessionDto,
     TransferSettingsDto, TransferUpdateSettingsInputDto,
 };
-use foundation::{AppError, AppResult, InvokeError, ResultExt};
+use protocol::{AppError, AppResult, InvokeError, ResultExt};
 
 fn open_path(path: &str) -> AppResult<()> {
     let trimmed = path.trim();

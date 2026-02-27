@@ -1,8 +1,8 @@
 use super::run_blocking_command;
 use crate::command_runtime::run_command_async;
 use crate::host::launcher::TauriLauncherHost;
-use foundation::InvokeError;
-use foundation::models::{
+use protocol::InvokeError;
+use protocol::models::{
     ActionResultDto, LauncherActionDto, LauncherIndexStatusDto, LauncherItemDto,
     LauncherRebuildResultDto, LauncherSearchSettingsDto, LauncherUpdateSearchSettingsInputDto,
 };

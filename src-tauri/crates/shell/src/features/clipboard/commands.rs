@@ -11,14 +11,14 @@ use crate::features::clipboard::system_clipboard::{
     parse_file_paths_from_plain_text,
 };
 use anyhow::Context;
-use usecase::services::ClipboardApplicationService;
-use foundation::models::{
-    ClipboardFilterDto, ClipboardItemDto, ClipboardSyncPayload, ClipboardWindowModeAppliedDto,
-};
-use foundation::{AppError, AppResult, InvokeError, ResultExt};
-use foundation::runtime::blocking::run_blocking;
 use arboard::{Clipboard as ArboardClipboard, ImageData};
 use image::ImageReader;
+use kernel::runtime::blocking::run_blocking;
+use protocol::models::{
+    ClipboardFilterDto, ClipboardItemDto, ClipboardSyncPayload, ClipboardWindowModeAppliedDto,
+};
+use protocol::{AppError, AppResult, InvokeError, ResultExt};
+use rtool_core::services::ClipboardApplicationService;
 use std::borrow::Cow;
 use tauri::{AppHandle, State};
 

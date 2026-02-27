@@ -1,11 +1,11 @@
 use super::run_command_sync;
 use crate::app::state::AppState;
-use foundation::i18n::DEFAULT_RESOLVED_LOCALE;
-use foundation::i18n_catalog::{
+use protocol::{AppError, InvokeError};
+use rtool_i18n::i18n::DEFAULT_RESOLVED_LOCALE;
+use rtool_i18n::i18n_catalog::{
     ImportLocaleResult, LocaleCatalogList, ReloadLocalesResult, import_locale_file, list_locales,
     reload_overlays,
 };
-use foundation::{AppError, InvokeError};
 use tauri::{AppHandle, State};
 
 fn map_i18n_error(error: anyhow::Error) -> AppError {

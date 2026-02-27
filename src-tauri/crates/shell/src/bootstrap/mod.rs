@@ -6,7 +6,7 @@ use crate::constants::{
     SHORTCUT_LAUNCHER_FALLBACK, SHORTCUT_LAUNCHER_PRIMARY,
 };
 use crate::platform::native_ui::shortcuts;
-use usecase::LauncherApplicationService;
+use rtool_core::LauncherApplicationService;
 use setup::{log_error_fallback, log_warn_fallback};
 use tauri_plugin_global_shortcut::ShortcutState;
 

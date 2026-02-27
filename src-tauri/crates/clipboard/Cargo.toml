@@ -1,0 +1,16 @@
+[package]
+name = "rtool_clipboard"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+protocol = { package = "rtool_protocol", path = "../protocol" }
+kernel = { package = "rtool_kernel", path = "../kernel" }
+rtool_db = { package = "rtool_db", path = "../db" }
+anyhow = { workspace = true }
+arboard = { workspace = true }
+base64 = { workspace = true }
+image = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+sysinfo = { workspace = true }

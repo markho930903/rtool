@@ -1,6 +1,6 @@
 use anyhow::Context;
-use foundation::{AppError, AppResult, ResultExt};
 use base64::Engine as _;
+use protocol::{AppError, AppResult, ResultExt};
 use std::collections::BTreeSet;
 
 pub fn decode_data_url_image_bytes(data_url: &str) -> AppResult<Vec<u8>> {
@@ -18,7 +18,7 @@ pub fn decode_data_url_image_bytes(data_url: &str) -> AppResult<Vec<u8>> {
 }
 
 pub fn parse_file_paths_from_plain_text(plain_text: &str) -> AppResult<Vec<String>> {
-    foundation::clipboard::parse_file_paths_from_text(plain_text).ok_or_else(|| {
+    kernel::clipboard::parse_file_paths_from_text(plain_text).ok_or_else(|| {
         AppError::new(
             "clipboard_file_payload_invalid",
             "文件条目路径数据无效或目标文件不存在",

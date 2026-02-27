@@ -1,7 +1,7 @@
 use crate::constants::{
     CLIPBOARD_WINDOW_LABEL, LAUNCHER_OPENED_EVENT, LAUNCHER_WINDOW_LABEL, MAIN_WINDOW_LABEL,
 };
-use foundation::i18n::t;
+use rtool_i18n::i18n::t;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
 pub(crate) fn refresh_window_titles<R: Runtime>(app: &AppHandle<R>, locale: &str) {

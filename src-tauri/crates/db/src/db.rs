@@ -13,8 +13,11 @@ pub struct PrunedClipboardItem {
 
 pub type DbConn = Connection;
 
+#[path = "db_bootstrap.rs"]
 mod db_bootstrap;
+#[path = "db_clipboard_store.rs"]
 mod db_clipboard_store;
+#[path = "db_settings_store.rs"]
 mod db_settings_store;
 
 pub use db_bootstrap::{init_db, open_db};
@@ -28,5 +31,5 @@ pub use db_settings_store::{
 };
 
 #[cfg(test)]
-#[path = "../../tests/db_tests.inc"]
+#[path = "../tests/db_tests.inc"]
 mod tests;

@@ -224,5 +224,5 @@ pub fn resolve_conflict_path(path: &Path) -> PathBuf {
 }
 
 #[cfg(test)]
-#[path = "../../tests/session_tests.inc"]
+#[path = "../tests/session_tests.inc"]
 mod tests;

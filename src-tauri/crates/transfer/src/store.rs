@@ -845,5 +845,5 @@ pub async fn ensure_session_exists(
 }
 
 #[cfg(test)]
-#[path = "../../tests/store_tests.inc"]
+#[path = "../tests/store_tests.inc"]
 mod tests;

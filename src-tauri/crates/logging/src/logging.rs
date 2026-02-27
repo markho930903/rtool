@@ -16,10 +16,15 @@ use tracing_subscriber::util::SubscriberInitExt;
 
 use crate::db::DbConn;
 
+#[path = "config.rs"]
 mod logging_config;
+#[path = "export.rs"]
 mod logging_export;
+#[path = "ingest.rs"]
 mod logging_ingest;
+#[path = "query.rs"]
 mod logging_query;
+#[path = "store.rs"]
 mod logging_store;
 
 pub use logging_ingest::{
@@ -303,5 +308,5 @@ pub async fn export_log_entries(
 }
 
 #[cfg(test)]
-#[path = "../../tests/logging_tests.inc"]
+#[path = "../tests/logging_tests.inc"]
 mod tests;

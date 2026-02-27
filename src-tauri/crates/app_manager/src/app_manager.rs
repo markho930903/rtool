@@ -32,15 +32,25 @@ use std::process::Command;
 use std::sync::{Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+#[path = "api.rs"]
 mod api;
+#[path = "cleanup.rs"]
 mod cleanup;
+#[path = "discovery.rs"]
 mod discovery;
+#[path = "identity.rs"]
 mod identity;
+#[path = "index.rs"]
 mod index;
+#[path = "naming.rs"]
 mod naming;
+#[path = "residue.rs"]
 mod residue;
+#[path = "size.rs"]
 mod size;
+#[path = "startup.rs"]
 mod startup;
+#[path = "uninstall.rs"]
 mod uninstall;
 
 pub use api::*;
@@ -489,25 +499,25 @@ fn home_dir() -> Option<PathBuf> {
 }
 
 #[cfg(test)]
-#[path = "../../tests/residue_tests.inc"]
+#[path = "../tests/residue_tests.inc"]
 mod residue_tests;
 
 #[cfg(test)]
-#[path = "../../tests/path_size_tests.inc"]
+#[path = "../tests/path_size_tests.inc"]
 mod path_size_tests;
 
 #[cfg(test)]
-#[path = "../../tests/display_name_tests.inc"]
+#[path = "../tests/display_name_tests.inc"]
 mod display_name_tests;
 
 #[cfg(test)]
-#[path = "../../tests/query_contract_tests.inc"]
+#[path = "../tests/query_contract_tests.inc"]
 mod query_contract_tests;
 
 #[cfg(test)]
-#[path = "../../tests/discovery_tests.inc"]
+#[path = "../tests/discovery_tests.inc"]
 mod discovery_tests;
 
 #[cfg(all(test, target_os = "macos"))]
-#[path = "../../tests/macos_tests.inc"]
+#[path = "../tests/macos_tests.inc"]
 mod macos_tests;

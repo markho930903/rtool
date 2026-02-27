@@ -21,7 +21,7 @@
   "general.option.en": "English",
   "general.effective": "当前生效语言：{locale}",
   "general.glass.title": "液态玻璃",
-  "general.glass.desc": "手动调节玻璃层透明度、模糊、饱和度与亮度，调整后立即生效并自动保存。",
+  "general.glass.desc": "手动调节玻璃层不透明度、模糊、饱和度与亮度，所有参数按输入值 1:1 实时生效并自动保存。",
   "general.glass.currentTheme": "当前生效主题：{theme}",
   "general.glass.targetTheme": "切换主题并编辑参数",
   "general.glass.theme.light": "浅色主题",

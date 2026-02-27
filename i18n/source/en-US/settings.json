@@ -21,7 +21,7 @@
   "general.option.en": "English",
   "general.effective": "Effective locale: {locale}",
   "general.glass.title": "Liquid Glass",
-  "general.glass.desc": "Manually tune panel opacity, blur, saturation, and brightness. Changes apply instantly and persist automatically.",
+  "general.glass.desc": "Manually tune glass opacity, blur, saturation, and brightness. Every value is applied 1:1 in real time and saved automatically.",
   "general.glass.currentTheme": "Current resolved theme: {theme}",
   "general.glass.targetTheme": "Switch theme and edit profile",
   "general.glass.theme.light": "Light theme",

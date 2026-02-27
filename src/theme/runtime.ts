@@ -3,30 +3,6 @@ import type { LiquidGlassProfile, LiquidGlassSettings, ResolvedTheme, ThemePrefe
 
 const ALLOWED_PREFERENCES: ThemePreference[] = ["light", "dark", "system"];
 
-interface GlassAlphaStops {
-  strong: [number, number];
-  surface: [number, number];
-  soft: [number, number];
-  overlay: [number, number];
-}
-
-const GLASS_ALPHA_STOPS: Record<ResolvedTheme, GlassAlphaStops> = {
-  dark: {
-    strong: [14, 78],
-    surface: [10, 70],
-    soft: [1, 8],
-    overlay: [16, 84],
-  },
-  light: {
-    strong: [28, 88],
-    surface: [22, 80],
-    soft: [10, 58],
-    overlay: [30, 88],
-  },
-};
-
-const DARK_BRIGHTNESS_SCALE = 0.96;
-
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
@@ -40,10 +16,6 @@ function cloneGlassSettings(settings: LiquidGlassSettings): LiquidGlassSettings 
 
 function clampNumber(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
-}
-
-function interpolate(min: number, max: number, progress: number): number {
-  return min + (max - min) * progress;
 }
 
 function formatPercent(value: number): string {
@@ -131,21 +103,13 @@ export function applyLiquidGlassToDocument(resolved: ResolvedTheme, settings: Li
   const root = document.documentElement;
   const profile = resolved === "dark" ? settings.dark : settings.light;
   const normalizedOpacity = clampNumber(profile.opacity, GLASS_RANGES.opacity.min, GLASS_RANGES.opacity.max);
-  const opacitySpan = GLASS_RANGES.opacity.max - GLASS_RANGES.opacity.min;
-  const opacityProgress = opacitySpan <= 0 ? 1 : (normalizedOpacity - GLASS_RANGES.opacity.min) / opacitySpan;
-  const alphaStops = GLASS_ALPHA_STOPS[resolved];
+  const normalizedBlur = clampNumber(profile.blur, GLASS_RANGES.blur.min, GLASS_RANGES.blur.max);
+  const normalizedSaturate = clampNumber(profile.saturate, GLASS_RANGES.saturate.min, GLASS_RANGES.saturate.max);
+  const normalizedBrightness = clampNumber(profile.brightness, GLASS_RANGES.brightness.min, GLASS_RANGES.brightness.max);
+  const opacityPercent = formatPercent(normalizedOpacity);
 
-  const strongAlpha = interpolate(alphaStops.strong[0], alphaStops.strong[1], opacityProgress);
-  const surfaceAlpha = interpolate(alphaStops.surface[0], alphaStops.surface[1], opacityProgress);
-  const softAlpha = interpolate(alphaStops.soft[0], alphaStops.soft[1], opacityProgress);
-  const overlayAlpha = interpolate(alphaStops.overlay[0], alphaStops.overlay[1], opacityProgress);
-  const effectiveBrightness = resolved === "dark" ? profile.brightness * DARK_BRIGHTNESS_SCALE : profile.brightness;
-
-  root.style.setProperty("--glass-blur", `${profile.blur}px`);
-  root.style.setProperty("--glass-saturate", `${profile.saturate}%`);
-  root.style.setProperty("--glass-brightness", `${effectiveBrightness.toFixed(2)}%`);
-  root.style.setProperty("--glass-alpha-strong", formatPercent(strongAlpha));
-  root.style.setProperty("--glass-alpha-surface", formatPercent(surfaceAlpha));
-  root.style.setProperty("--glass-alpha-soft", formatPercent(softAlpha));
-  root.style.setProperty("--glass-alpha-overlay", formatPercent(overlayAlpha));
+  root.style.setProperty("--glass-alpha", opacityPercent);
+  root.style.setProperty("--glass-blur", `${normalizedBlur}px`);
+  root.style.setProperty("--glass-saturate", `${normalizedSaturate}%`);
+  root.style.setProperty("--glass-brightness", `${normalizedBrightness}%`);
 }

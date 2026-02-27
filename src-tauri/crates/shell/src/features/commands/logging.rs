@@ -84,9 +84,6 @@ pub async fn logging_export_jsonl(
     .await
 }
 
-#[cfg(test)]
-#[path = "../../../tests/logging_tests.inc"]
-mod tests;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]

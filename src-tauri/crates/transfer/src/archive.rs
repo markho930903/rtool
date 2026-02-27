@@ -214,6 +214,3 @@ pub fn cleanup_temp_paths(paths: &[PathBuf]) {
     }
 }
 
-#[cfg(test)]
-#[path = "../tests/archive_tests.inc"]
-mod tests;

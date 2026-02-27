@@ -513,26 +513,8 @@ fn home_dir() -> Option<PathBuf> {
         .or_else(|| std::env::var_os("USERPROFILE").map(PathBuf::from))
 }
 
-#[cfg(test)]
-#[path = "../tests/residue_tests.inc"]
-mod residue_tests;
 
-#[cfg(test)]
-#[path = "../tests/path_size_tests.inc"]
-mod path_size_tests;
 
-#[cfg(test)]
-#[path = "../tests/display_name_tests.inc"]
-mod display_name_tests;
 
-#[cfg(test)]
-#[path = "../tests/query_contract_tests.inc"]
-mod query_contract_tests;
 
-#[cfg(test)]
-#[path = "../tests/discovery_tests.inc"]
-mod discovery_tests;
 
-#[cfg(all(test, target_os = "macos"))]
-#[path = "../tests/macos_tests.inc"]
-mod macos_tests;

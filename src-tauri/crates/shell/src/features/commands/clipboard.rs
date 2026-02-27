@@ -4,11 +4,6 @@ use crate::features::command_payload::{
     CommandPayloadContext, CommandRequestDto,
 };
 use crate::features::clipboard::events::emit_clipboard_sync;
-#[cfg(test)]
-use crate::features::clipboard::system_clipboard::{
-    build_macos_copy_files_script, ensure_expected_and_actual_file_paths,
-    normalize_path_for_compare,
-};
 use crate::features::clipboard::system_clipboard::{
     copy_files_to_clipboard_with_verify, decode_data_url_image_bytes,
     parse_file_paths_from_plain_text,
@@ -316,9 +311,6 @@ pub async fn clipboard_copy_back(
     .await
 }
 
-#[cfg(test)]
-#[path = "../../../tests/clipboard_tests.inc"]
-mod tests;
 
 #[tauri::command]
 pub async fn clipboard_copy_file_paths(

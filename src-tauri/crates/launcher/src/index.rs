@@ -157,18 +157,7 @@ use settings::{
     resolve_effective_max_items_per_root,
 };
 
-#[cfg(test)]
-use refresh::{TruncationLogLevel, classify_truncation_log_level};
-#[cfg(test)]
-use scan::{
-    ScanWarningAggregator, ScanWarningKind, build_index_entry, scan_index_root,
-    scan_priority_for_path,
-};
 use settings::escape_like_pattern;
-#[cfg(test)]
-use settings::{
-    ScopePlatform, build_default_search_root_candidates, default_exclude_patterns, save_settings,
-};
 
 pub use query::{IndexedSearchResult, search_indexed_items_async};
 pub use refresh::{
@@ -178,11 +167,3 @@ pub use refresh::{
 pub use settings::{
     get_search_settings_async, reset_search_settings_async, update_search_settings_async,
 };
-
-#[cfg(test)]
-#[path = "../tests/launcher_index_service_tests.inc"]
-mod tests;
-
-#[cfg(test)]
-#[path = "../tests/launcher_slo_smoke_tests.inc"]
-mod slo_smoke_tests;

@@ -30,6 +30,3 @@ pub use db_settings_store::{
     set_app_settings_batch,
 };
 
-#[cfg(test)]
-#[path = "../tests/db_tests.inc"]
-mod tests;

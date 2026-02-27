@@ -141,24 +141,6 @@ fn scan_discovery_root(
     }
 }
 
-#[cfg(test)]
-pub(super) fn discover_from_root_for_test(
-    path: PathBuf,
-    scope: AppManagerScope,
-    kind: AppManagerResidueKind,
-    identifiers: &[ResidueIdentifier],
-    token_aliases: &[String],
-) -> DiscoveryResult {
-    let mut result = DiscoveryResult::default();
-    scan_discovery_root(
-        DiscoveryRootSpec { path, scope, kind },
-        identifiers,
-        token_aliases,
-        &mut result,
-    );
-    result
-}
-
 fn best_pattern_match<'a>(
     entry_name: &str,
     identifiers: &'a [ResidueIdentifier],

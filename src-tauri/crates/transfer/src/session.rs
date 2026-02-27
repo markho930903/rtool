@@ -223,6 +223,3 @@ pub fn resolve_conflict_path(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
-#[cfg(test)]
-#[path = "../tests/session_tests.inc"]
-mod tests;

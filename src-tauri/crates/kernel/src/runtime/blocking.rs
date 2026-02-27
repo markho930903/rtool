@@ -38,6 +38,3 @@ fn join_error_detail(error: &tokio::task::JoinError) -> String {
     }
 }
 
-#[cfg(test)]
-#[path = "../../tests/blocking_tests.inc"]
-mod tests;

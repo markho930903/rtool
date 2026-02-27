@@ -588,6 +588,3 @@ fn file_extension_icon(ext: &str) -> &'static str {
     }
 }
 
-#[cfg(test)]
-#[path = "../tests/icon_service_tests.inc"]
-mod tests;

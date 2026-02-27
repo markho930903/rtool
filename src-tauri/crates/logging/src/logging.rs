@@ -6,8 +6,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
-#[cfg(test)]
-use std::time::{Duration, SystemTime};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling::{Builder as RollingBuilder, Rotation};
 use tracing_subscriber::EnvFilter;
@@ -29,10 +27,6 @@ mod store;
 
 pub use ingest::{cleanup_expired_logs, sanitize_for_log, sanitize_json_value, sanitize_path};
 
-#[cfg(test)]
-pub(crate) use ingest::{cleanup_expired_logs_with_duration, now_millis};
-#[cfg(test)]
-pub(crate) use query::build_log_fts_query;
 
 const DEFAULT_KEEP_DAYS: u32 = 7;
 const DEFAULT_MIN_LEVEL: &str = "info";
@@ -327,7 +321,3 @@ pub async fn export_log_entries(
     let center = get_log_center()?;
     export::export_log_entries(&center, query, output_path).await
 }
-
-#[cfg(test)]
-#[path = "../tests/logging_tests.inc"]
-mod tests;

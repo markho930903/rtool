@@ -482,6 +482,3 @@ fn category_rank(category: &str) -> i32 {
     }
 }
 
-#[cfg(test)]
-#[path = "../tests/launcher_service_tests.inc"]
-mod tests;

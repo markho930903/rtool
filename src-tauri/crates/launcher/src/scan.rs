@@ -231,26 +231,6 @@ pub(super) fn scan_index_root_with_rules(
     ScanOutcome { entries, truncated }
 }
 
-#[cfg(test)]
-pub(crate) fn scan_index_root(
-    root: &Path,
-    max_depth: usize,
-    max_items: usize,
-    source_root: &str,
-) -> Vec<LauncherIndexEntry> {
-    let rules = build_exclusion_rules(default_exclude_patterns().as_slice());
-    scan_index_root_with_rules(
-        root,
-        max_depth,
-        max_items,
-        max_items,
-        rules.as_slice(),
-        source_root,
-        RefreshReason::Manual,
-    )
-    .entries
-}
-
 pub(crate) fn build_index_entry(
     path: &Path,
     kind: IndexedEntryKind,

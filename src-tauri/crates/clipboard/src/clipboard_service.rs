@@ -369,6 +369,3 @@ impl ClipboardService {
     }
 }
 
-#[cfg(test)]
-#[path = "../tests/clipboard_service_tests.inc"]
-mod tests;

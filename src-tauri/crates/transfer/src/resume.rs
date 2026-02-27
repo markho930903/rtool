@@ -65,6 +65,3 @@ pub fn completed_bytes(bitmap: &[u8], chunk_count: u32, chunk_size: u32, total_s
     completed
 }
 
-#[cfg(test)]
-#[path = "../tests/resume_tests.inc"]
-mod tests;

@@ -223,8 +223,10 @@ mod tests {
         assert!(targets.iter().any(|args| {
             *args == ["x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"]
         }));
-        assert!(targets
-            .iter()
-            .any(|args| *args == ["-b", "com.apple.systempreferences"]));
+        assert!(
+            targets
+                .iter()
+                .any(|args| *args == ["-b", "com.apple.systempreferences"])
+        );
     }
 }

@@ -31,6 +31,12 @@ function normalizeIconifyClass(iconValue?: string): string | null {
 export function AppEntityIcon(props: AppEntityIconProps) {
   const { iconKind, iconValue, fallbackIcon = "i-noto:desktop-computer", imgClassName, iconClassName } = props;
   const [imageLoadFailed, setImageLoadFailed] = useState(false);
+  const resolvedImgClassName = imgClassName
+    ? cx("shrink-0 rounded-md object-cover", imgClassName)
+    : "h-8 w-8 shrink-0 rounded-md object-cover";
+  const resolvedIconClassName = iconClassName
+    ? cx("btn-icon shrink-0 text-text-muted", iconClassName)
+    : "btn-icon h-8 w-8 shrink-0 text-[1.05rem] text-text-muted";
 
   useEffect(() => {
     setImageLoadFailed(false);
@@ -41,7 +47,7 @@ export function AppEntityIcon(props: AppEntityIconProps) {
       <img
         src={iconValue}
         alt=""
-        className={cx("h-8 w-8 shrink-0 rounded-md object-cover", imgClassName)}
+        className={resolvedImgClassName}
         loading="lazy"
         decoding="async"
         onError={() => setImageLoadFailed(true)}
@@ -50,10 +56,5 @@ export function AppEntityIcon(props: AppEntityIconProps) {
   }
 
   const iconClass = normalizeIconifyClass(iconValue) ?? fallbackIcon;
-  return (
-    <span
-      className={cx("btn-icon h-8 w-8 shrink-0 text-[1.05rem] text-text-muted", iconClass, iconClassName)}
-      aria-hidden="true"
-    />
-  );
+  return <span className={cx(iconClass, resolvedIconClassName)} aria-hidden="true" />;
 }

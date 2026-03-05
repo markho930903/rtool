@@ -1,4 +1,5 @@
 use crate::host::LauncherHost;
+use crate::launcher::grouping::with_launcher_group;
 use crate::launcher::icon::resolve_builtin_icon;
 use crate::launcher::index::search_indexed_items_async;
 use anyhow::Context;
@@ -109,7 +110,7 @@ pub fn execute_launcher_action(
             open_main_with_route(app, route.clone()).map(|_| format!("route:{route}"))
         }
         LauncherActionDto::OpenBuiltinTool { tool_id } => {
-            let route = format!("/tools?tool={tool_id}");
+            let route = format!("/tools/{tool_id}");
             open_main_with_route(app, route.clone()).map(|_| format!("route:{route}"))
         }
         LauncherActionDto::OpenBuiltinWindow { window_label } => {
@@ -287,11 +288,12 @@ fn build_builtin_route_item(
     shortcut: Option<&str>,
 ) -> LauncherItemDto {
     let payload = resolve_builtin_icon(icon);
-    LauncherItemDto {
+    with_launcher_group(LauncherItemDto {
         id: id.to_string(),
         title,
         subtitle,
         category: "builtin".to_string(),
+        group: String::new(),
         source: Some(t(locale, "launcher.source.builtin")),
         shortcut: shortcut.map(ToString::to_string),
         score: 0,
@@ -300,7 +302,7 @@ fn build_builtin_route_item(
         action: LauncherActionDto::OpenBuiltinRoute {
             route: route.to_string(),
         },
-    }
+    })
 }
 
 fn build_builtin_tool_item(
@@ -312,11 +314,12 @@ fn build_builtin_tool_item(
     icon: &str,
 ) -> LauncherItemDto {
     let payload = resolve_builtin_icon(icon);
-    LauncherItemDto {
+    with_launcher_group(LauncherItemDto {
         id: id.to_string(),
         title,
         subtitle,
         category: "builtin".to_string(),
+        group: String::new(),
         source: Some(t(locale, "launcher.source.builtin")),
         shortcut: None,
         score: 0,
@@ -325,7 +328,7 @@ fn build_builtin_tool_item(
         action: LauncherActionDto::OpenBuiltinTool {
             tool_id: tool_id.to_string(),
         },
-    }
+    })
 }
 
 fn build_builtin_window_item(
@@ -338,11 +341,12 @@ fn build_builtin_window_item(
     shortcut: Option<&str>,
 ) -> LauncherItemDto {
     let payload = resolve_builtin_icon(icon);
-    LauncherItemDto {
+    with_launcher_group(LauncherItemDto {
         id: id.to_string(),
         title,
         subtitle,
         category: "builtin".to_string(),
+        group: String::new(),
         source: Some(t(locale, "launcher.source.builtin")),
         shortcut: shortcut.map(ToString::to_string),
         score: 0,
@@ -351,7 +355,7 @@ fn build_builtin_window_item(
         action: LauncherActionDto::OpenBuiltinWindow {
             window_label: window_label.to_string(),
         },
-    }
+    })
 }
 
 fn score_item(

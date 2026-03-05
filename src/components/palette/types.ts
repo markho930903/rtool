@@ -8,6 +8,8 @@ export type PaletteCategory =
   | "tool"
   | "system";
 
+export type LauncherGroup = "tool" | "social" | "efficiency" | "other";
+
 export type LauncherAction =
   | { kind: "open_builtin_route"; route: string }
   | { kind: "open_builtin_tool"; toolId: string }
@@ -21,6 +23,7 @@ export interface PaletteItem {
   title: string;
   subtitle: string;
   category: PaletteCategory | string;
+  group?: LauncherGroup | string;
   source?: string;
   shortcut?: string;
   score?: number;

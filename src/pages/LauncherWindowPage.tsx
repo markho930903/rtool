@@ -5,10 +5,8 @@ import { useTranslation } from "react-i18next";
 
 import { AppEntityIcon } from "@/components/icons/AppEntityIcon";
 import { BootOverlay, SkeletonComposer, type SkeletonItemSpec, useBootState } from "@/components/loading";
-import PaletteInput from "@/components/palette/PaletteInput";
-import PalettePreview from "@/components/palette/PalettePreview";
 import type { PaletteItem } from "@/components/palette/types";
-import { Button } from "@/components/ui";
+import { Button, Input } from "@/components/ui";
 import { useAsyncEffect } from "@/hooks/useAsyncEffect";
 import { useWindowFocusAutoHide } from "@/hooks/window/useWindowFocusAutoHide";
 import { useWindowLayoutPersistence } from "@/hooks/window/useWindowLayoutPersistence";
@@ -17,29 +15,35 @@ import { useLauncherStore } from "@/stores/launcher.store";
 
 const LAUNCHER_WINDOW_LABEL = "launcher";
 const WINDOW_LAYOUT_KEY = "launcher-window-layout";
+const LAUNCHER_GRID_CARD_MIN_WIDTH = 90;
+const LAUNCHER_GRID_GAP = 4;
+const LAUNCHER_GRID_MAX_COLUMNS = 6;
 
-interface GroupedItem {
+type LauncherTopTab = "all" | "application" | "file" | "builtin";
+type LauncherSectionKey = "builtin" | "application" | "file" | "other";
+
+interface FlatLauncherItem {
   item: PaletteItem;
-  index: number;
+  absoluteIndex: number;
+  section: LauncherSectionKey;
+  flatIndex: number;
 }
 
-interface GroupedCategory {
-  key: string;
+interface LauncherSection {
+  key: LauncherSectionKey;
   label: string;
-  items: GroupedItem[];
+  showHeader: boolean;
+  items: FlatLauncherItem[];
 }
 
-const LAUNCHER_LIST_SKELETON_ITEMS: SkeletonItemSpec[] = Array.from({ length: 6 }, (_, index) => ({
+const LAUNCHER_LIST_SKELETON_ITEMS: SkeletonItemSpec[] = Array.from({ length: 8 }, (_, index) => ({
   key: `launcher-skeleton-${index}`,
   body: [
     {
-      nodes: [
-        { widthClassName: "w-[62%]", heightClassName: "h-3", className: "bg-border-muted/70" },
-        { widthClassName: "w-[78%]", offsetTopClassName: "mt-2", className: "bg-border-muted/55" },
-      ],
+      nodes: [{ widthClassName: "w-full", heightClassName: "h-20", className: "bg-border-muted/55 rounded-lg" }],
     },
   ],
-  shimmerDelayMs: index * 80,
+  shimmerDelayMs: index * 70,
 }));
 
 function escapeRegExp(value: string): string {
@@ -91,50 +95,28 @@ function renderHighlightedText(text: string, context: HighlightContext): ReactNo
   });
 }
 
-function categoryLabel(key: string, t: (key: string, options?: Record<string, unknown>) => string): string {
-  if (key === "builtin") {
-    return t("category.builtin");
+function resolveSectionByCategory(category: string | undefined): LauncherSectionKey {
+  if (category === "builtin") {
+    return "builtin";
   }
 
-  if (key === "application") {
-    return t("category.application");
+  if (category === "application") {
+    return "application";
   }
 
-  if (key === "directory") {
-    return t("category.directory");
+  if (category === "file" || category === "directory") {
+    return "file";
   }
 
-  if (key === "file") {
-    return t("category.file");
-  }
-
-  if (key === "action") {
-    return t("category.action");
-  }
-
-  return t("category.other");
+  return "other";
 }
 
-function groupItems(
-  items: PaletteItem[],
-  t: (key: string, options?: Record<string, unknown>) => string,
-): GroupedCategory[] {
-  const groups = new Map<string, GroupedCategory>();
-
-  items.forEach((item, index) => {
-    const key = item.category || "other";
-    const label = categoryLabel(key, t);
-
-    if (!groups.has(key)) {
-      groups.set(key, { key, label, items: [] });
-    }
-
-    groups.get(key)?.items.push({ item, index });
-  });
-
-  return ["builtin", "application", "directory", "file", "action", "other"]
-    .map((key) => groups.get(key))
-    .filter((group): group is GroupedCategory => Boolean(group));
+function nextTopTab(current: LauncherTopTab, step: 1 | -1): LauncherTopTab {
+  const ordered: LauncherTopTab[] = ["all", "application", "file", "builtin"];
+  const currentIndex = ordered.indexOf(current);
+  const safeIndex = currentIndex < 0 ? 0 : currentIndex;
+  const nextIndex = (safeIndex + step + ordered.length) % ordered.length;
+  return ordered[nextIndex];
 }
 
 function LauncherItemIcon({ item }: { item: PaletteItem }) {
@@ -143,8 +125,8 @@ function LauncherItemIcon({ item }: { item: PaletteItem }) {
       iconKind={item.iconKind}
       iconValue={item.iconValue}
       fallbackIcon="i-noto:card-index-dividers"
-      imgClassName="h-5 w-5 shrink-0 rounded-sm object-cover"
-      iconClassName="h-5 w-5 shrink-0 text-[1.05rem] text-text-muted"
+      imgClassName="h-[52%] w-[52%] shrink-0 rounded-xl object-cover"
+      iconClassName="h-[52%] w-[52%] shrink-0 text-[1.9rem] text-text-muted"
     />
   );
 }
@@ -153,25 +135,28 @@ export default function LauncherWindowPage() {
   const { t } = useTranslation("palette");
   const appWindow = useMemo(() => getCurrentWindow(), []);
   const inputRef = useRef<HTMLInputElement>(null);
-  const launcherItemRefs = useRef<Map<string, HTMLLIElement>>(new Map());
+  const launcherItemRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
+  const gridRef = useRef<HTMLDivElement>(null);
   const [openCycle, setOpenCycle] = useState(1);
   const [searchSeed, setSearchSeed] = useState(0);
   const [hasSearchedOnce, setHasSearchedOnce] = useState(false);
   const [alwaysOnTop, setAlwaysOnTop] = useState(false);
+  const [activeTab, setActiveTab] = useState<LauncherTopTab>("all");
+  const [selectedVisibleIndex, setSelectedVisibleIndex] = useState(0);
+  const [gridColumnCount, setGridColumnCount] = useState(1);
   const alwaysOnTopRef = useRef(false);
 
   const query = useLauncherStore((state) => state.query);
   const items = useLauncherStore((state) => state.items);
-  const selectedIndex = useLauncherStore((state) => state.selectedIndex);
   const loading = useLauncherStore((state) => state.loading);
   const launcherError = useLauncherStore((state) => state.error);
   const reset = useLauncherStore((state) => state.reset);
   const search = useLauncherStore((state) => state.search);
-  const moveSelection = useLauncherStore((state) => state.moveSelection);
-  const setSelectedIndex = useLauncherStore((state) => state.setSelectedIndex);
+  const setStoreSelectedIndex = useLauncherStore((state) => state.setSelectedIndex);
   const executeSelected = useLauncherStore((state) => state.executeSelected);
   const setQuery = useLauncherStore((state) => state.setQuery);
   const syncLocaleFromBackend = useLocaleStore((state) => state.syncFromBackend);
+
   const searchWithBootMark = useCallback(
     async (limit?: number) => {
       setHasSearchedOnce(true);
@@ -179,6 +164,7 @@ export default function LauncherWindowPage() {
     },
     [search],
   );
+
   const bootReady = hasSearchedOnce && !loading;
   const { mounted: bootMounted, visible: bootVisible } = useBootState({
     cycleKey: openCycle,
@@ -189,10 +175,104 @@ export default function LauncherWindowPage() {
     exitMs: 160,
   });
 
-  const selectedItem = useMemo(() => items[selectedIndex] ?? null, [items, selectedIndex]);
-  const groupedItems = useMemo(() => groupItems(items, t), [items, t]);
+  const sectionLabelMap = useMemo(
+    () => ({
+      builtin: t("launcher.section.builtin"),
+      application: t("launcher.section.application"),
+      file: t("launcher.section.file"),
+      other: t("launcher.section.other"),
+    }),
+    [t],
+  );
+
+  const tabs = useMemo(
+    () => [
+      { key: "all" as const, label: t("launcher.tab.all") },
+      { key: "application" as const, label: t("launcher.tab.application") },
+      { key: "file" as const, label: t("launcher.tab.file") },
+      { key: "builtin" as const, label: t("launcher.tab.builtin") },
+    ],
+    [t],
+  );
+
+  const { sections, flatItems } = useMemo(() => {
+    const base = items.map((item, absoluteIndex) => ({
+      item,
+      absoluteIndex,
+      section: resolveSectionByCategory(item.category),
+    }));
+
+    const filtered =
+      activeTab === "all"
+        ? base
+        : base.filter((entry) => {
+            if (activeTab === "application") {
+              return entry.section === "application";
+            }
+
+            if (activeTab === "file") {
+              return entry.section === "file";
+            }
+
+            return entry.section === "builtin";
+          });
+
+    const pushWithFlatIndex = (entries: typeof filtered, offset: number) =>
+      entries.map((entry, localIndex) => ({
+        ...entry,
+        flatIndex: offset + localIndex,
+      }));
+
+    if (activeTab !== "all") {
+      const keyed = pushWithFlatIndex(filtered, 0);
+      const sectionKey: LauncherSectionKey =
+        activeTab === "application" ? "application" : activeTab === "file" ? "file" : "builtin";
+
+      return {
+        sections: [
+          {
+            key: sectionKey,
+            label: sectionLabelMap[sectionKey],
+            showHeader: false,
+            items: keyed,
+          },
+        ],
+        flatItems: keyed,
+      };
+    }
+
+    let cursor = 0;
+    const orderedSections: LauncherSectionKey[] = ["builtin", "application", "file", "other"];
+    const builtSections: LauncherSection[] = [];
+
+    for (const key of orderedSections) {
+      const chunk = filtered.filter((entry) => entry.section === key);
+      if (chunk.length === 0) {
+        continue;
+      }
+
+      const keyedChunk = pushWithFlatIndex(chunk, cursor);
+      cursor += keyedChunk.length;
+
+      builtSections.push({
+        key,
+        label: sectionLabelMap[key],
+        showHeader: true,
+        items: keyedChunk,
+      });
+    }
+
+    return {
+      sections: builtSections,
+      flatItems: builtSections.flatMap((section) => section.items),
+    };
+  }, [activeTab, items, sectionLabelMap]);
+
+  const selectedEntry = flatItems[selectedVisibleIndex] ?? null;
+  const selectedItem = selectedEntry?.item ?? null;
   const highlightContext = useMemo(() => createHighlightContext(query), [query]);
   const enabled = appWindow.label === LAUNCHER_WINDOW_LABEL;
+
   const resolveLayoutBounds = useCallback(async () => {
     const monitor = await currentMonitor();
     const monitorSize = monitor?.size;
@@ -275,6 +355,91 @@ export default function LauncherWindowPage() {
     selectedNode?.scrollIntoView({ block: "nearest" });
   }, [selectedItem?.id]);
 
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
+    const current = selectedEntry;
+    if (!current) {
+      return;
+    }
+
+    setStoreSelectedIndex(current.absoluteIndex);
+  }, [enabled, selectedEntry, setStoreSelectedIndex]);
+
+  useEffect(() => {
+    setSelectedVisibleIndex((current) => {
+      if (flatItems.length === 0) {
+        return 0;
+      }
+      return Math.min(current, flatItems.length - 1);
+    });
+  }, [flatItems]);
+
+  useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
+    const host = gridRef.current;
+    if (!host) {
+      return;
+    }
+
+    const updateColumns = () => {
+      const width = host.clientWidth;
+      const rawColumnCount = Math.floor((width + LAUNCHER_GRID_GAP) / (LAUNCHER_GRID_CARD_MIN_WIDTH + LAUNCHER_GRID_GAP));
+      const columnCount = Math.max(1, Math.min(LAUNCHER_GRID_MAX_COLUMNS, rawColumnCount));
+      setGridColumnCount(columnCount);
+    };
+
+    updateColumns();
+
+    const observer = new ResizeObserver(updateColumns);
+    observer.observe(host);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [enabled]);
+
+  const executeCurrentSelection = useCallback(() => {
+    const current = flatItems[selectedVisibleIndex];
+    if (!current) {
+      return;
+    }
+
+    setStoreSelectedIndex(current.absoluteIndex);
+    void executeSelected().then((result) => {
+      if (result?.ok) {
+        void appWindow.hide();
+      }
+    });
+  }, [appWindow, executeSelected, selectedVisibleIndex, setStoreSelectedIndex, flatItems]);
+
+  const moveGridSelection = useCallback(
+    (delta: number) => {
+      if (flatItems.length === 0) {
+        return;
+      }
+
+      setSelectedVisibleIndex((current) => {
+        const next = current + delta;
+        if (next < 0) {
+          return 0;
+        }
+
+        if (next >= flatItems.length) {
+          return flatItems.length - 1;
+        }
+
+        return next;
+      });
+    },
+    [flatItems.length],
+  );
+
   useAsyncEffect(
     async ({ stack }) => {
       if (!enabled) {
@@ -288,6 +453,8 @@ export default function LauncherWindowPage() {
         setOpenCycle((value) => value + 1);
         setSearchSeed((value) => value + 1);
         setHasSearchedOnce(false);
+        setActiveTab("all");
+        setSelectedVisibleIndex(0);
         reset();
 
         window.setTimeout(() => {
@@ -303,15 +470,41 @@ export default function LauncherWindowPage() {
           return;
         }
 
+        if ((event.metaKey || event.ctrlKey) && event.key === "ArrowLeft") {
+          event.preventDefault();
+          setActiveTab((current) => nextTopTab(current, -1));
+          setSelectedVisibleIndex(0);
+          return;
+        }
+
+        if ((event.metaKey || event.ctrlKey) && event.key === "ArrowRight") {
+          event.preventDefault();
+          setActiveTab((current) => nextTopTab(current, 1));
+          setSelectedVisibleIndex(0);
+          return;
+        }
+
+        if (event.key === "ArrowLeft") {
+          event.preventDefault();
+          moveGridSelection(-1);
+          return;
+        }
+
+        if (event.key === "ArrowRight") {
+          event.preventDefault();
+          moveGridSelection(1);
+          return;
+        }
+
         if (event.key === "ArrowDown") {
           event.preventDefault();
-          moveSelection(1);
+          moveGridSelection(gridColumnCount);
           return;
         }
 
         if (event.key === "ArrowUp") {
           event.preventDefault();
-          moveSelection(-1);
+          moveGridSelection(-gridColumnCount);
           return;
         }
 
@@ -320,11 +513,7 @@ export default function LauncherWindowPage() {
             return;
           }
           event.preventDefault();
-          void executeSelected().then((result) => {
-            if (result?.ok) {
-              void appWindow.hide();
-            }
-          });
+          executeCurrentSelection();
         }
       };
 
@@ -337,12 +526,11 @@ export default function LauncherWindowPage() {
       appWindow,
       cancelScheduledHide,
       enabled,
-      executeSelected,
-      moveSelection,
+      executeCurrentSelection,
+      gridColumnCount,
+      moveGridSelection,
       reset,
-      searchWithBootMark,
       syncAlwaysOnTopState,
-      syncLocaleFromBackend,
     ],
     {
       scope: "launcher-window",
@@ -370,157 +558,181 @@ export default function LauncherWindowPage() {
     return null;
   }
 
+  const activeTabLabel = tabs.find((tab) => tab.key === activeTab)?.label ?? t("launcher.tab.all");
   const alwaysOnTopLabel = alwaysOnTop ? t("launcher.pinWindowOff") : t("launcher.pinWindowOn");
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-transparent p-0">
-      <section className="rtool-glass-sheen-clip flex h-full w-full overflow-hidden bg-layout-titlebar shadow-surface backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]">
-        <div className="flex min-w-0 flex-[1.4] flex-col border-r border-layout-divider">
-          <PaletteInput
-            query={query}
-            loading={false}
-            onQueryChange={setQuery}
-            inputRef={inputRef}
-            trailingActions={
-              <Button
-                size="xs"
-                variant={alwaysOnTop ? "secondary" : "ghost"}
-                iconOnly
-                title={alwaysOnTopLabel}
-                aria-label={alwaysOnTopLabel}
-                onClick={handleAlwaysOnTopToggle}
-              >
-                <span
-                  className={[
-                    "inline-block leading-none text-[1.35rem]",
-                    alwaysOnTop ? "i-noto:pushpin" : "i-noto:round-pushpin",
-                  ].join(" ")}
-                  aria-hidden="true"
-                />
-              </Button>
-            }
-          />
-
-          {launcherError ? <div className="px-4 py-3 text-[13px] text-danger">{launcherError}</div> : null}
-
-          <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-1.5 pt-1">
-            {loading ? (
-              <div
-                className="relative sticky top-0 z-10 mb-2 h-[2px] overflow-hidden rounded bg-border-muted/65"
-                role="status"
-                aria-live="polite"
-              >
-                <span className="sr-only">{t("input.searching")}</span>
-                <span
-                  className="rtool-boot-shimmer-layer absolute inset-y-0 bg-gradient-to-r from-transparent via-shimmer-highlight/26 to-transparent"
-                  style={{
-                    left: "-30%",
-                    width: "30%",
-                    animation: "rtool-boot-shimmer 1s linear infinite",
-                  }}
-                />
-              </div>
-            ) : null}
-            {loading && items.length === 0 ? (
-              <SkeletonComposer
-                items={LAUNCHER_LIST_SKELETON_ITEMS}
-                className="p-2"
-                gapClassName="space-y-1.5"
-                itemSurfaceClassName="bg-surface-soft"
+      <section className="rtool-glass-sheen-clip flex h-full w-full flex-col overflow-hidden bg-layout-titlebar shadow-surface backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]">
+        <header className="border-b border-layout-divider px-3 pb-2 pt-2.5">
+          <div className="flex items-center gap-2 rounded-xl border border-border-glass bg-surface-glass-soft px-2.5 py-1.5">
+            <span className="i-noto:magnifying-glass-tilted-right text-[1.05rem] text-text-muted" aria-hidden="true" />
+            <Input
+              id="launcher-query-input"
+              variant="palette"
+              ref={inputRef}
+              name="launcherQuery"
+              autoComplete="off"
+              spellCheck={false}
+              aria-label={t("input.aria")}
+              value={query}
+              onChange={(event) => {
+                setQuery(event.currentTarget.value);
+                setSelectedVisibleIndex(0);
+              }}
+              placeholder={t("input.placeholder")}
+              className="text-sm"
+            />
+            <Button
+              size="xs"
+              variant={alwaysOnTop ? "secondary" : "ghost"}
+              iconOnly
+              title={alwaysOnTopLabel}
+              aria-label={alwaysOnTopLabel}
+              onClick={handleAlwaysOnTopToggle}
+            >
+              <span
+                className={[
+                  "inline-block leading-none text-[1.25rem]",
+                  alwaysOnTop ? "i-noto:pushpin" : "i-noto:round-pushpin",
+                ].join(" ")}
+                aria-hidden="true"
               />
-            ) : null}
-
-            {!loading && groupedItems.length === 0 ? (
-              <div className="p-3 text-[13px] text-text-muted">{t("launcher.noResults")}</div>
-            ) : null}
-
-            {!loading || items.length > 0
-              ? groupedItems.map((group) => (
-                  <div key={group.key} className="mb-1 last:mb-0">
-                    <div className="px-2 py-1 text-[11px] uppercase tracking-wide text-text-muted">{group.label}</div>
-                    <ul
-                      className="m-0 list-none p-0"
-                      role="list"
-                      aria-label={t("launcher.groupAria", { label: group.label })}
-                    >
-                      {group.items.map(({ item, index }) => {
-                        const isSelected = selectedIndex === index;
-                        return (
-                          <li
-                            key={item.id}
-                            className="mb-[3px] last:mb-0"
-                            ref={(node) => {
-                              if (node) {
-                                launcherItemRefs.current.set(item.id, node);
-                                return;
-                              }
-                              launcherItemRefs.current.delete(item.id);
-                            }}
-                          >
-                            <Button
-                              unstyled
-                              type="button"
-                              className={
-                                isSelected
-                                  ? "w-full rounded-md border border-border-glass-strong bg-surface-glass-soft px-2.5 py-2.25 text-left text-text-primary shadow-inset-soft transition-colors duration-[140ms] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                                  : "w-full rounded-md border border-transparent px-2.5 py-2.25 text-left text-text-secondary transition-colors duration-[140ms] hover:bg-surface-glass-soft hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                              }
-                              onMouseEnter={() => {
-                                if (selectedIndex !== index) {
-                                  setSelectedIndex(index);
-                                }
-                              }}
-                              onFocus={() => {
-                                if (selectedIndex !== index) {
-                                  setSelectedIndex(index);
-                                }
-                              }}
-                              onClick={() => {
-                                setSelectedIndex(index);
-                                void executeSelected().then((result) => {
-                                  if (result?.ok) {
-                                    void appWindow.hide();
-                                  }
-                                });
-                              }}
-                              aria-current={isSelected ? "true" : undefined}
-                            >
-                              <div className="flex items-start gap-2.5">
-                                <LauncherItemIcon item={item} />
-                                <div className="min-w-0">
-                                  <div className="truncate text-sm font-semibold text-text-primary">
-                                    {renderHighlightedText(item.title, highlightContext)}
-                                  </div>
-                                  <div className="mt-[3px] truncate text-xs text-text-secondary">
-                                    {renderHighlightedText(item.subtitle, highlightContext)}
-                                  </div>
-                                  {item.shortcut ? (
-                                    <div className="mt-1 text-[11px] text-text-muted">
-                                      {t("launcher.shortcut", { value: item.shortcut })}
-                                    </div>
-                                  ) : null}
-                                </div>
-                              </div>
-                            </Button>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  </div>
-                ))
-              : null}
+            </Button>
           </div>
 
-          <footer className="flex gap-4 border-t border-border-glass px-3 py-2 text-[11px] text-text-muted">
-            <span>{t("launcher.footer.select")}</span>
-            <span>{t("launcher.footer.open")}</span>
-            <span>{t("launcher.footer.close")}</span>
-          </footer>
+          <div className="mt-2.5 grid grid-cols-4 gap-2" role="tablist" aria-label={t("launcher.tab.aria")}>
+            {tabs.map((tab) => {
+              const active = tab.key === activeTab;
+              return (
+                <Button
+                  key={tab.key}
+                  unstyled
+                  className={
+                    active
+                      ? "rounded-lg border border-border-glass-strong bg-surface-glass-soft px-2 py-1.5 text-center text-xs font-semibold text-text-primary shadow-inset-soft"
+                      : "rounded-lg border border-border-glass bg-transparent px-2 py-1.5 text-center text-xs text-text-secondary hover:bg-surface-soft/60 hover:text-text-primary"
+                  }
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => {
+                    setActiveTab(tab.key);
+                    setSelectedVisibleIndex(0);
+                  }}
+                >
+                  {tab.label}
+                </Button>
+              );
+            })}
+          </div>
+        </header>
+
+        {launcherError ? <div className="px-4 py-2 text-[13px] text-danger">{launcherError}</div> : null}
+
+        <div ref={gridRef} className="min-h-0 flex-1 overflow-y-auto px-2 pb-1 pt-1">
+          {loading ? (
+            <div
+              className="relative sticky top-0 z-10 mb-2 h-[2px] overflow-hidden rounded bg-border-muted/65"
+              role="status"
+              aria-live="polite"
+            >
+              <span className="sr-only">{t("input.searching")}</span>
+              <span
+                className="rtool-boot-shimmer-layer absolute inset-y-0 bg-gradient-to-r from-transparent via-shimmer-highlight/26 to-transparent"
+                style={{
+                  left: "-30%",
+                  width: "30%",
+                  animation: "rtool-boot-shimmer 1s linear infinite",
+                }}
+              />
+            </div>
+          ) : null}
+
+          {loading && items.length === 0 ? (
+            <SkeletonComposer
+              items={LAUNCHER_LIST_SKELETON_ITEMS}
+              className="p-0"
+              gapClassName="grid grid-cols-4 gap-2"
+              itemSurfaceClassName="bg-surface-soft"
+            />
+          ) : null}
+
+          {!loading && flatItems.length === 0 ? (
+            <div className="rounded-lg border border-border-glass bg-surface-soft/40 px-3 py-3 text-[13px] text-text-muted">
+              {activeTab === "all" ? t("launcher.noResults") : t("launcher.noResultsInGroup", { group: activeTabLabel })}
+            </div>
+          ) : null}
+
+          {!loading || items.length > 0 ? (
+            <div aria-label={t("launcher.gridAria", { group: activeTabLabel })}>
+              {sections.map((section) => (
+                <section key={section.key} className="mb-1 last:mb-0">
+                  {section.showHeader ? (
+                    <h3 className="mb-0 px-0.5 text-[11px] font-medium uppercase tracking-wide text-text-muted">{section.label}</h3>
+                  ) : null}
+                  <div
+                    className="grid"
+                    style={{
+                      gap: `${LAUNCHER_GRID_GAP}px`,
+                      gridTemplateColumns: `repeat(${gridColumnCount}, minmax(0, 1fr))`,
+                    }}
+                  >
+                    {section.items.map((entry) => {
+                      const isSelected = selectedVisibleIndex === entry.flatIndex;
+                      return (
+                        <Button
+                          key={entry.item.id}
+                          unstyled
+                          ref={(node) => {
+                            if (node instanceof HTMLButtonElement) {
+                              launcherItemRefs.current.set(entry.item.id, node);
+                              return;
+                            }
+                            launcherItemRefs.current.delete(entry.item.id);
+                          }}
+                          className={
+                            isSelected
+                              ? "group flex aspect-square w-full flex-col items-center justify-center gap-0.5 rounded-xl px-0.5 py-0.5 text-center transition-colors duration-[140ms] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                              : "group flex aspect-square w-full flex-col items-center justify-center gap-0.5 rounded-xl px-0.5 py-0.5 text-center transition-colors duration-[140ms] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                          }
+                          onFocus={() => {
+                            if (selectedVisibleIndex !== entry.flatIndex) {
+                              setSelectedVisibleIndex(entry.flatIndex);
+                            }
+                          }}
+                          onClick={() => {
+                            if (selectedVisibleIndex !== entry.flatIndex) {
+                              setSelectedVisibleIndex(entry.flatIndex);
+                            }
+                            setStoreSelectedIndex(entry.absoluteIndex);
+                            void executeSelected().then((result) => {
+                              if (result?.ok) {
+                                void appWindow.hide();
+                              }
+                            });
+                          }}
+                          aria-current={isSelected ? "true" : undefined}
+                        >
+                          <LauncherItemIcon item={entry.item} />
+                          <div className="w-full truncate whitespace-nowrap text-xs font-medium leading-4 text-text-primary">
+                            {renderHighlightedText(entry.item.title, highlightContext)}
+                          </div>
+                        </Button>
+                      );
+                    })}
+                  </div>
+                </section>
+              ))}
+            </div>
+          ) : null}
         </div>
 
-        <div className="hidden min-w-[280px] flex-[0.95] md:block">
-          <PalettePreview selectedItem={selectedItem} context="launcher" />
-        </div>
+        <footer className="flex gap-4 border-t border-border-glass px-3 py-2 text-[11px] text-text-muted">
+          <span>{t("launcher.footer.move")}</span>
+          <span>{t("launcher.footer.switchCategory")}</span>
+          <span>{t("launcher.footer.open")}</span>
+          <span>{t("launcher.footer.close")}</span>
+        </footer>
       </section>
       {bootMounted ? <BootOverlay variant="launcher" visible={bootVisible} /> : null}
     </div>

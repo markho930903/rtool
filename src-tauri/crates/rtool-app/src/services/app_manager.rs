@@ -11,9 +11,8 @@ use rtool_discovery::app_manager::{
     cleanup_managed_app_residue, export_managed_app_scan_result, get_managed_app_detail,
     get_managed_app_detail_core, get_managed_app_detail_heavy, list_managed_apps,
     list_managed_apps_snapshot_meta, open_permission_help, open_uninstall_help,
-    poll_managed_apps_auto_refresh,
-    refresh_managed_apps_index, resolve_managed_app_sizes, scan_managed_app_residue,
-    set_managed_app_startup, uninstall_managed_app,
+    poll_managed_apps_auto_refresh, refresh_managed_apps_index, resolve_managed_app_sizes,
+    scan_managed_app_residue, set_managed_app_startup, uninstall_managed_app,
 };
 use rtool_platform::launcher::LauncherHost;
 

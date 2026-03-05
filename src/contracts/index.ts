@@ -114,6 +114,7 @@ export type LauncherItemDto = {
   title: string;
   subtitle: string;
   category: string;
+  group: string;
   source: string | null;
   shortcut: string | null;
   score: number;

@@ -1,4 +1,5 @@
 use super::*;
+use crate::launcher::grouping::with_launcher_group;
 
 #[derive(Debug, Clone)]
 pub struct IndexedSearchResult {
@@ -74,6 +75,7 @@ fn map_index_row_to_item(
                 title,
                 subtitle,
                 category: "application".to_string(),
+                group: String::new(),
                 source: Some(t(locale, "launcher.source.application")),
                 shortcut: None,
                 score: 0,
@@ -89,6 +91,7 @@ fn map_index_row_to_item(
                 title,
                 subtitle,
                 category: "directory".to_string(),
+                group: String::new(),
                 source: Some(t(locale, "launcher.source.directory")),
                 shortcut: None,
                 score: 0,
@@ -105,6 +108,7 @@ fn map_index_row_to_item(
                 title,
                 subtitle,
                 category: "file".to_string(),
+                group: String::new(),
                 source: Some(t(locale, "launcher.source.file")),
                 shortcut: None,
                 score: 0,
@@ -115,7 +119,7 @@ fn map_index_row_to_item(
         }
     };
 
-    Some(item)
+    Some(with_launcher_group(item))
 }
 
 fn non_empty_or_fallback(value: String, fallback: &str) -> String {

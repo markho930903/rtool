@@ -7,9 +7,11 @@ import ClipboardWindowPage from "@/pages/ClipboardWindowPage";
 import LauncherWindowPage from "@/pages/LauncherWindowPage";
 import LogCenterPage from "@/pages/LogCenterPage";
 import NotFoundPage from "@/pages/NotFoundPage";
-import SettingsPage from "@/pages/settings/SettingsPage";
 import ScreenshotOverlayPage from "@/pages/ScreenshotOverlayPage";
 import ScreenshotPinPage from "@/pages/ScreenshotPinPage";
+import SettingsPage from "@/pages/settings/SettingsPage";
+import ToolDetailPage from "@/pages/tools/ToolDetailPage";
+import ToolsGridPage from "@/pages/tools/ToolsGridPage";
 import ToolsPage from "@/pages/ToolsPage";
 import { getMainLayoutRouteConfig, getStandaloneRouteConfig, type AppRouteId } from "@/routers/routes.config";
 
@@ -28,6 +30,23 @@ const routeElementMap: Record<AppRouteId, ReactElement> = {
 
 const mainLayoutChildren: RouteObject[] = getMainLayoutRouteConfig().map((item) => {
   const element = routeElementMap[item.id];
+  if (item.id === "tools") {
+    return {
+      path: item.routePath,
+      element,
+      children: [
+        {
+          index: true,
+          element: <ToolsGridPage />,
+        },
+        {
+          path: ":toolId",
+          element: <ToolDetailPage />,
+        },
+      ],
+    };
+  }
+
   if (item.index) {
     return {
       index: true,

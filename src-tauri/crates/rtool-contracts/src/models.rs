@@ -182,6 +182,7 @@ pub struct LauncherItemDto {
     pub title: String,
     pub subtitle: String,
     pub category: String,
+    pub group: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -18,6 +18,10 @@ const APP_ICON_FALLBACK_TTL: Duration = Duration::from_secs(60 * 10);
 const FILE_ICON_TTL: Duration = Duration::from_secs(60 * 60 * 24 * 30);
 const FALLBACK_APP_ICON: &str = "i-noto:desktop-computer";
 const FALLBACK_FILE_ICON: &str = "i-noto:page-facing-up";
+#[cfg(target_os = "macos")]
+const MACOS_APP_ICON_RENDER_SIZE: u32 = 256;
+#[cfg(target_os = "macos")]
+const APP_ICON_CACHE_PROFILE: &str = "v2-256";
 
 #[derive(Debug, Clone)]
 pub struct IconPayload {
@@ -73,7 +77,7 @@ pub fn resolve_application_icon(app: &dyn LauncherHost, app_path: &Path) -> Icon
     #[cfg(target_os = "macos")]
     {
         if let Some(source) = resolve_macos_icon_source(app_path) {
-            let key = format!("app:{app_path_key}:{}", source.signature);
+            let key = format!("app:{app_path_key}:{}:{APP_ICON_CACHE_PROFILE}", source.signature);
             if let Some(payload) = read_cached_icon(app, &key, APP_ICON_TTL) {
                 return payload;
             }
@@ -241,11 +245,12 @@ fn render_macos_icon_payload(
     app: &dyn LauncherHost,
     source: &MacIconSource,
 ) -> Option<IconPayload> {
+    let render_signature = format!("{}:{APP_ICON_CACHE_PROFILE}", source.signature);
     let output_png = app
         .app_data_dir()
         .unwrap_or_else(|_| std::env::temp_dir())
         .join("launcher_icon_cache")
-        .join(format!("{}.png", stable_hash(source.signature.as_str())));
+        .join(format!("{}.png", stable_hash(render_signature.as_str())));
 
     if !output_png.exists() {
         if let Some(parent) = output_png.parent()
@@ -265,8 +270,8 @@ fn render_macos_icon_payload(
             .arg("png")
             .arg(&source.icon_path)
             .arg("--resampleHeightWidth")
-            .arg("64")
-            .arg("64")
+            .arg(MACOS_APP_ICON_RENDER_SIZE.to_string())
+            .arg(MACOS_APP_ICON_RENDER_SIZE.to_string())
             .arg("--out")
             .arg(&output_png)
             .status()
@@ -276,6 +281,7 @@ fn render_macos_icon_payload(
             tracing::debug!(
                 event = "icon_sips_convert_failed",
                 icon_path = %source.icon_path.to_string_lossy(),
+                render_size = MACOS_APP_ICON_RENDER_SIZE,
                 status = format!("{status}")
             );
             return None;

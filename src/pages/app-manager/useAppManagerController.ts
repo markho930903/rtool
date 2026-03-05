@@ -1,5 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   AppManagerActionResult,
@@ -13,6 +13,8 @@ import type {
   ManagedAppDetail,
 } from "@/components/app-manager/types";
 import { useAsyncEffect } from "@/hooks/useAsyncEffect";
+import type { AppDetailPaneModel } from "@/pages/app-manager/AppDetailPane";
+import type { AppListPaneModel } from "@/pages/app-manager/AppListPane";
 import {
   appManagerCleanup,
   appManagerExportScanResult,
@@ -33,6 +35,7 @@ const PAGE_SIZE = 120;
 const SIZE_BATCH = 10;
 const KEYWORD_DEBOUNCE_MS = 220;
 type AppSizeState = "pending" | "resolving" | "exact" | "estimated";
+type LoadingByAppIdSetter = Dispatch<SetStateAction<Record<string, boolean>>>;
 
 function uniqueById(items: ManagedApp[]): ManagedApp[] {
   const map = new Map<string, ManagedApp>();
@@ -69,6 +72,21 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);
   });
+}
+
+function formatIndexedAt(timestamp: number | null): string {
+  if (!timestamp || !Number.isFinite(timestamp) || timestamp <= 0) {
+    return "-";
+  }
+  return new Date(timestamp * 1000).toLocaleString();
+}
+
+interface SelectedAppActionConfig<T> {
+  setLoadingByAppId: LoadingByAppIdSetter;
+  clearError: () => void;
+  run: (app: ManagedApp) => Promise<T>;
+  onSuccess: (app: ManagedApp, result: T) => Promise<void> | void;
+  onError: (message: string) => void;
 }
 
 export function useAppManagerController() {
@@ -690,99 +708,99 @@ export function useAppManagerController() {
     });
   }, [runCleanup, selectedApp, selectedCleanupResult]);
 
+  const runSelectedAppAction = useCallback(
+    async function runSelectedAppActionInternal<T>(config: SelectedAppActionConfig<T>): Promise<void> {
+      if (!selectedApp) {
+        return;
+      }
+
+      const appId = selectedApp.id;
+      config.setLoadingByAppId((prev) => ({ ...prev, [appId]: true }));
+      config.clearError();
+
+      try {
+        const result = await config.run(selectedApp);
+        await config.onSuccess(selectedApp, result);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        config.onError(message);
+      } finally {
+        config.setLoadingByAppId((prev) => ({ ...prev, [appId]: false }));
+      }
+    },
+    [selectedApp],
+  );
+
   const toggleStartup = useCallback(async () => {
-    if (!selectedApp) {
-      return;
-    }
-    const appId = selectedApp.id;
-    setStartupLoadingByAppId((prev) => ({ ...prev, [appId]: true }));
-    setActionError(null);
-    try {
-      const result = await appManagerSetStartup({
-        appId,
-        enabled: !selectedApp.startupEnabled,
-      });
-      setActionResultByAppId((prev) => ({ ...prev, [appId]: result }));
-      await loadListFirstPage(keywordRef.current);
-      await loadDetailCore(appId, true);
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setStartupLoadingByAppId((prev) => ({ ...prev, [appId]: false }));
-    }
-  }, [loadDetailCore, loadListFirstPage, selectedApp]);
+    await runSelectedAppAction({
+      setLoadingByAppId: setStartupLoadingByAppId,
+      clearError: () => setActionError(null),
+      run: (app) =>
+        appManagerSetStartup({
+          appId: app.id,
+          enabled: !app.startupEnabled,
+        }),
+      onSuccess: async (app, result) => {
+        setActionResultByAppId((prev) => ({ ...prev, [app.id]: result }));
+        await loadListFirstPage(keywordRef.current);
+        await loadDetailCore(app.id, true);
+      },
+      onError: setActionError,
+    });
+  }, [loadDetailCore, loadListFirstPage, runSelectedAppAction]);
 
   const runUninstall = useCallback(async () => {
-    if (!selectedApp) {
-      return;
-    }
-    const appId = selectedApp.id;
-    setUninstallLoadingByAppId((prev) => ({ ...prev, [appId]: true }));
-    setActionError(null);
-    try {
-      const result = await appManagerUninstall({
-        appId,
-        confirmedFingerprint: selectedApp.fingerprint,
-      });
-      setActionResultByAppId((prev) => ({ ...prev, [appId]: result }));
-      await loadListFirstPage(keywordRef.current);
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setUninstallLoadingByAppId((prev) => ({ ...prev, [appId]: false }));
-    }
-  }, [loadListFirstPage, selectedApp]);
+    await runSelectedAppAction({
+      setLoadingByAppId: setUninstallLoadingByAppId,
+      clearError: () => setActionError(null),
+      run: (app) =>
+        appManagerUninstall({
+          appId: app.id,
+          confirmedFingerprint: app.fingerprint,
+        }),
+      onSuccess: async (app, result) => {
+        setActionResultByAppId((prev) => ({ ...prev, [app.id]: result }));
+        await loadListFirstPage(keywordRef.current);
+      },
+      onError: setActionError,
+    });
+  }, [loadListFirstPage, runSelectedAppAction]);
 
   const openUninstallHelp = useCallback(async () => {
-    if (!selectedApp) {
-      return;
-    }
-    const appId = selectedApp.id;
-    setOpenHelpLoadingByAppId((prev) => ({ ...prev, [appId]: true }));
-    setActionError(null);
-    try {
-      const result = await appManagerOpenUninstallHelp(appId);
-      setActionResultByAppId((prev) => ({ ...prev, [appId]: result }));
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setOpenHelpLoadingByAppId((prev) => ({ ...prev, [appId]: false }));
-    }
-  }, [selectedApp]);
+    await runSelectedAppAction({
+      setLoadingByAppId: setOpenHelpLoadingByAppId,
+      clearError: () => setActionError(null),
+      run: (app) => appManagerOpenUninstallHelp(app.id),
+      onSuccess: (app, result) => {
+        setActionResultByAppId((prev) => ({ ...prev, [app.id]: result }));
+      },
+      onError: setActionError,
+    });
+  }, [runSelectedAppAction]);
 
   const openPermissionHelp = useCallback(async () => {
-    if (!selectedApp) {
-      return;
-    }
-    const appId = selectedApp.id;
-    setOpenPermissionHelpLoadingByAppId((prev) => ({ ...prev, [appId]: true }));
-    setActionError(null);
-    try {
-      const result = await appManagerOpenPermissionHelp(appId);
-      setActionResultByAppId((prev) => ({ ...prev, [appId]: result }));
-    } catch (error) {
-      setActionError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setOpenPermissionHelpLoadingByAppId((prev) => ({ ...prev, [appId]: false }));
-    }
-  }, [selectedApp]);
+    await runSelectedAppAction({
+      setLoadingByAppId: setOpenPermissionHelpLoadingByAppId,
+      clearError: () => setActionError(null),
+      run: (app) => appManagerOpenPermissionHelp(app.id),
+      onSuccess: (app, result) => {
+        setActionResultByAppId((prev) => ({ ...prev, [app.id]: result }));
+      },
+      onError: setActionError,
+    });
+  }, [runSelectedAppAction]);
 
   const exportScanResult = useCallback(async () => {
-    if (!selectedApp) {
-      return;
-    }
-    const appId = selectedApp.id;
-    setExportLoadingByAppId((prev) => ({ ...prev, [appId]: true }));
-    setExportError(null);
-    try {
-      const result = await appManagerExportScanResult(appId);
-      setExportResultByAppId((prev) => ({ ...prev, [appId]: result }));
-    } catch (error) {
-      setExportError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setExportLoadingByAppId((prev) => ({ ...prev, [appId]: false }));
-    }
-  }, [selectedApp]);
+    await runSelectedAppAction({
+      setLoadingByAppId: setExportLoadingByAppId,
+      clearError: () => setExportError(null),
+      run: (app) => appManagerExportScanResult(app.id),
+      onSuccess: (app, result) => {
+        setExportResultByAppId((prev) => ({ ...prev, [app.id]: result }));
+      },
+      onError: setExportError,
+    });
+  }, [runSelectedAppAction]);
 
   const openExportDirectory = useCallback(async () => {
     if (!selectedApp) {
@@ -837,21 +855,25 @@ export function useAppManagerController() {
     await loadListPage(nextCursor, false, keywordRef.current);
   }, [loadListPage, loadingMore, nextCursor]);
 
-  const list = {
+  const listPaneModel: AppListPaneModel = {
     items,
     loading: loading || refreshing,
     loadingMore,
     hasMore,
     keyword,
     totalCount,
-    indexedAt,
     revision,
     indexState,
     listError,
     selectedAppId,
+    indexedAtText: formatIndexedAt(indexedAt),
+    onKeywordChange: setKeyword,
+    onSelect: selectApp,
+    onRefresh: refreshList,
+    onLoadMore,
   };
 
-  const detail = {
+  const detailPaneModel: AppDetailPaneModel = {
     selectedApp,
     coreDetail: selectedCore,
     heavyDetail: selectedHeavy,
@@ -875,13 +897,6 @@ export function useAppManagerController() {
     exportError,
     actionResult: selectedActionResult,
     actionError,
-  };
-
-  const actions = {
-    setKeyword,
-    setSelectedAppId: selectApp,
-    refreshList,
-    onLoadMore,
     onToggleResidue: toggleSelectedResidue,
     onSelectAllResidues: selectAllResiduesForSelectedApp,
     onToggleIncludeMain: setSelectedIncludeMain,
@@ -898,7 +913,7 @@ export function useAppManagerController() {
     onOpenExportDirectory: openExportDirectory,
   };
 
-  return { list, detail, actions };
+  return { listPaneModel, detailPaneModel };
 }
 
 export type AppManagerController = ReturnType<typeof useAppManagerController>;

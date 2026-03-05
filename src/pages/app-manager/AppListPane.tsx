@@ -7,7 +7,7 @@ import { LoadingIndicator } from "@/components/loading";
 import { Button, Input } from "@/components/ui";
 import { formatBytes, toBreadcrumb } from "@/pages/app-manager/format";
 
-interface AppListPaneProps {
+export interface AppListPaneModel {
   items: ManagedApp[];
   selectedAppId: string | null;
   loading: boolean;
@@ -16,12 +16,17 @@ interface AppListPaneProps {
   listError: string | null;
   keyword: string;
   indexedAtText: string;
+  revision: number;
   indexState: AppManagerIndexState;
   totalCount: number;
   onKeywordChange: (value: string) => void;
   onSelect: (appId: string) => void;
   onRefresh: () => void;
   onLoadMore: () => void;
+}
+
+interface AppListPaneProps {
+  model: AppListPaneModel;
 }
 
 interface AppListRowProps {
@@ -77,7 +82,7 @@ export function AppListPane(props: AppListPaneProps): ReactElement {
     onSelect,
     onRefresh,
     onLoadMore,
-  } = props;
+  } = props.model;
   const isInitialLoading = loading && items.length === 0;
   const showEmptyState = !loading && items.length === 0;
   const refreshIconClassName = `i-lucide:refresh-cw h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`;

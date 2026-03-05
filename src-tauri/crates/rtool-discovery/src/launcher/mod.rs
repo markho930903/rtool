@@ -4,7 +4,7 @@ pub mod grouping;
 pub mod icon;
 #[path = "index.rs"]
 pub mod index;
-#[path = "service.rs"]
+#[path = "service/mod.rs"]
 pub mod service;
 
 pub use grouping::*;

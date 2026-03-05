@@ -1,14 +1,9 @@
 use super::*;
 
-#[path = "api/actions.rs"]
 mod actions;
-#[path = "api/details.rs"]
 mod details;
-#[path = "api/indexing.rs"]
 mod indexing;
-#[path = "api/query.rs"]
 mod query;
-#[path = "api/residue.rs"]
 mod residue;
 
 pub use actions::*;

@@ -62,7 +62,7 @@ const CLEANUP_SECTION_META: CleanupSectionMeta[] = [
   },
 ];
 
-interface AppDetailPaneProps {
+export interface AppDetailPaneModel {
   selectedApp: ManagedApp | null;
   coreDetail: ManagedAppDetail | null;
   heavyDetail: AppManagerResidueScanResult | null;
@@ -100,6 +100,10 @@ interface AppDetailPaneProps {
   onUninstall: () => void | Promise<void>;
   onExportScanResult: () => void | Promise<void>;
   onOpenExportDirectory: () => void | Promise<void>;
+}
+
+interface AppDetailPaneProps {
+  model: AppDetailPaneModel;
 }
 
 function isFileProviderPermissionWarning(warning: AppManagerScanWarning): boolean {
@@ -308,7 +312,7 @@ function AppDetailPaneImpl(props: AppDetailPaneProps): ReactElement {
     onUninstall,
     onExportScanResult,
     onOpenExportDirectory,
-  } = props;
+  } = props.model;
 
   if (!selectedApp) {
     return <DiskPlaceholder title={t("detail.emptyTitle")} desc={t("detail.empty")} />;

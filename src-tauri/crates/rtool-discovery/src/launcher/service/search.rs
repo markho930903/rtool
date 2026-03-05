@@ -2,26 +2,59 @@ use crate::host::LauncherHost;
 use crate::launcher::grouping::with_launcher_group;
 use crate::launcher::icon::resolve_builtin_icon;
 use crate::launcher::index::search_indexed_items_async;
-use anyhow::Context;
-use rtool_contracts::models::{
-    ClipboardWindowOpenedPayload, LauncherActionDto, LauncherItemDto, ScreenshotWindowOpenedPayload,
-};
-use rtool_contracts::{AppError, AppResult, ResultExt};
+use rtool_contracts::models::{LauncherActionDto, LauncherItemDto};
 use rtool_data::db::DbConn;
 use rtool_kernel::i18n::{DEFAULT_RESOLVED_LOCALE, ResolvedAppLocale, t};
-use serde::Serialize;
-use serde_json::json;
-use std::path::Path;
-use std::process::Command;
 use std::time::Instant;
 
 const DEFAULT_RESULT_LIMIT: usize = 60;
 const MAX_RESULT_LIMIT: usize = 120;
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct NavigatePayload {
-    route: String,
+#[derive(Debug, Clone, Default)]
+pub struct LauncherSearchDiagnostics {
+    pub index_used: bool,
+    pub index_failed: bool,
+    pub index_query_duration_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LocaleKind {
+    Zh,
+    En,
+    Other,
+}
+
+impl LocaleKind {
+    fn from_resolved(locale: &str) -> Self {
+        let lower = locale.to_ascii_lowercase();
+        if lower.starts_with("zh") {
+            return Self::Zh;
+        }
+        if lower.starts_with("en") {
+            return Self::En;
+        }
+        Self::Other
+    }
+}
+
+#[derive(Debug, Clone)]
+struct QueryPattern<'a> {
+    text: &'a str,
+    tokens: Vec<&'a str>,
+}
+
+impl<'a> QueryPattern<'a> {
+    fn new(text: &'a str) -> Self {
+        let tokens = text
+            .split_whitespace()
+            .filter(|token| !token.is_empty())
+            .collect();
+        Self { text, tokens }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.text.is_empty()
+    }
 }
 
 fn current_locale(app: &dyn LauncherHost) -> ResolvedAppLocale {
@@ -29,13 +62,6 @@ fn current_locale(app: &dyn LauncherHost) -> ResolvedAppLocale {
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
         .unwrap_or_else(|| DEFAULT_RESOLVED_LOCALE.to_string())
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct LauncherSearchDiagnostics {
-    pub index_used: bool,
-    pub index_failed: bool,
-    pub index_query_duration_ms: Option<u64>,
 }
 
 fn elapsed_ms(started_at: Instant) -> u64 {
@@ -49,11 +75,14 @@ pub async fn search_launcher_async(
     limit: Option<u16>,
 ) -> (Vec<LauncherItemDto>, LauncherSearchDiagnostics) {
     let normalized = normalize_query(query);
+    let query_pattern = QueryPattern::new(&normalized);
     let locale = current_locale(app);
+    let locale_kind = LocaleKind::from_resolved(&locale);
     let result_limit = limit
         .map(usize::from)
         .unwrap_or(DEFAULT_RESULT_LIMIT)
         .clamp(1, MAX_RESULT_LIMIT);
+
     let mut diagnostics = LauncherSearchDiagnostics::default();
     let mut items = builtin_items(&locale);
 
@@ -82,7 +111,7 @@ pub async fn search_launcher_async(
 
     let mut matched: Vec<LauncherItemDto> = items
         .into_iter()
-        .filter_map(|item| score_item(item, &normalized, &locale))
+        .filter_map(|item| score_item(item, &query_pattern, locale_kind))
         .collect();
 
     matched.sort_by(|left, right| {
@@ -99,127 +128,6 @@ pub async fn search_launcher_async(
 
 fn should_hide_item_without_query(item: &LauncherItemDto) -> bool {
     matches!(&item.action, LauncherActionDto::OpenBuiltinTool { .. })
-}
-
-pub fn execute_launcher_action(
-    app: &dyn LauncherHost,
-    action: &LauncherActionDto,
-) -> AppResult<String> {
-    match action {
-        LauncherActionDto::OpenBuiltinRoute { route } => {
-            open_main_with_route(app, route.clone()).map(|_| format!("route:{route}"))
-        }
-        LauncherActionDto::OpenBuiltinTool { tool_id } => {
-            let route = format!("/tools/{tool_id}");
-            open_main_with_route(app, route.clone()).map(|_| format!("route:{route}"))
-        }
-        LauncherActionDto::OpenBuiltinWindow { window_label } => {
-            let screenshot_payload = if window_label == "screenshot_overlay" {
-                let session = rtool_capture::start_session(None)?;
-                if let Some(display) = session
-                    .displays
-                    .iter()
-                    .find(|item| item.id == session.active_display_id)
-                    .or_else(|| session.displays.first())
-                    && let Some(window) = app.get_webview_window(window_label)
-                {
-                    window.set_position(f64::from(display.x), f64::from(display.y))?;
-                    window.set_size(f64::from(display.width), f64::from(display.height))?;
-                }
-                Some(
-                    serde_json::to_value(ScreenshotWindowOpenedPayload { session })
-                        .with_context(|| "构造截图窗口事件载荷失败".to_string())
-                        .with_code("launcher_emit_payload_failed", "打开窗口失败")?,
-                )
-            } else {
-                None
-            };
-
-            open_window(app, window_label)?;
-
-            if window_label == "clipboard_history" {
-                if let Err(error) = app.apply_clipboard_window_mode(false, "launcher_open") {
-                    tracing::warn!(
-                        event = "clipboard_window_mode_apply_failed",
-                        source = "launcher_open",
-                        compact = false,
-                        error = error.to_string()
-                    );
-                }
-                let payload = serde_json::to_value(ClipboardWindowOpenedPayload { compact: false })
-                    .with_context(|| "构造剪贴板窗口事件载荷失败".to_string())
-                    .with_code("launcher_emit_payload_failed", "打开窗口失败")?;
-                app.emit("rtool://clipboard-window/opened", payload)
-                    .map_err(|error| error.with_context("windowLabel", window_label))?;
-            } else if let Some(payload) = screenshot_payload {
-                app.emit("rtool://screenshot-window/opened", payload)
-                    .map_err(|error| error.with_context("windowLabel", window_label))?;
-            }
-
-            Ok(format!("window:{window_label}"))
-        }
-        LauncherActionDto::OpenDirectory { path }
-        | LauncherActionDto::OpenFile { path }
-        | LauncherActionDto::OpenApplication { path } => {
-            open_path(Path::new(path)).map(|_| format!("path:{path}"))
-        }
-    }
-}
-
-fn open_main_with_route(app: &dyn LauncherHost, route: String) -> AppResult<()> {
-    open_window(app, "main")?;
-    app.emit("rtool://main/navigate", json!(NavigatePayload { route }))
-        .map_err(|error| {
-            error
-                .with_code("launcher_navigate_failed", "打开页面失败")
-                .with_context("event", "rtool://main/navigate")
-        })
-}
-
-fn open_window(app: &dyn LauncherHost, label: &str) -> AppResult<()> {
-    let window = app.get_webview_window(label).ok_or_else(|| {
-        AppError::new("launcher_window_not_found", "目标窗口不存在").with_context("label", label)
-    })?;
-
-    window
-        .show()
-        .with_context(|| format!("显示窗口失败: {label}"))
-        .with_code("launcher_window_show_failed", "打开窗口失败")?;
-    window
-        .set_focus()
-        .with_context(|| format!("聚焦窗口失败: {label}"))
-        .with_code("launcher_window_focus_failed", "打开窗口失败")
-}
-
-fn open_path(path: &Path) -> AppResult<()> {
-    if !path.exists() {
-        return Err(
-            AppError::new("launcher_path_not_found", "打开失败：路径不存在")
-                .with_context("path", path.to_string_lossy().to_string()),
-        );
-    }
-
-    let status = if cfg!(target_os = "macos") {
-        Command::new("open").arg(path).status()
-    } else if cfg!(target_os = "windows") {
-        Command::new("cmd")
-            .arg("/C")
-            .arg("start")
-            .arg("")
-            .arg(path)
-            .status()
-    } else {
-        Command::new("xdg-open").arg(path).status()
-    }
-    .with_context(|| format!("执行系统打开命令失败: {}", path.to_string_lossy()))
-    .with_code("launcher_path_open_failed", "打开失败")?;
-
-    if status.success() {
-        Ok(())
-    } else {
-        Err(AppError::new("launcher_path_open_failed", "打开失败")
-            .with_context("status", status.to_string()))
-    }
 }
 
 fn builtin_items(locale: &str) -> Vec<LauncherItemDto> {
@@ -360,22 +268,22 @@ fn build_builtin_window_item(
 
 fn score_item(
     mut item: LauncherItemDto,
-    normalized_query: &str,
-    locale: &str,
+    query: &QueryPattern<'_>,
+    locale_kind: LocaleKind,
 ) -> Option<LauncherItemDto> {
-    if normalized_query.is_empty() && should_hide_item_without_query(&item) {
+    if query.is_empty() && should_hide_item_without_query(&item) {
         return None;
     }
 
     let base = category_weight(&item.category);
-    if normalized_query.is_empty() {
+    if query.is_empty() {
         item.score = base;
         return Some(item);
     }
 
-    let title_score = calculate_match_score(&item.title, normalized_query);
-    let subtitle_score = calculate_match_score(&item.subtitle, normalized_query);
-    let alias_score = calculate_alias_score(&item, normalized_query, locale);
+    let title_score = calculate_match_score(&item.title, query);
+    let subtitle_score = calculate_match_score(&item.subtitle, query);
+    let alias_score = calculate_alias_score(&item, query, locale_kind);
 
     let best = title_score.max(subtitle_score).max(alias_score);
     if best <= 0 {
@@ -387,14 +295,18 @@ fn score_item(
     Some(item)
 }
 
-fn calculate_alias_score(item: &LauncherItemDto, normalized_query: &str, locale: &str) -> i32 {
-    if normalized_query.is_empty() {
+fn calculate_alias_score(
+    item: &LauncherItemDto,
+    query: &QueryPattern<'_>,
+    locale_kind: LocaleKind,
+) -> i32 {
+    if query.is_empty() {
         return 0;
     }
 
     let mut best = 0;
-    for alias in alias_terms(item.id.as_str(), locale) {
-        let score = calculate_match_score(alias, normalized_query);
+    for alias in alias_terms(item.id.as_str(), locale_kind) {
+        let score = calculate_match_score(alias, query);
         if score > best {
             best = score;
         }
@@ -402,62 +314,62 @@ fn calculate_alias_score(item: &LauncherItemDto, normalized_query: &str, locale:
     best
 }
 
-fn alias_terms(id: &str, locale: &str) -> &'static [&'static str] {
+fn alias_terms(id: &str, locale_kind: LocaleKind) -> &'static [&'static str] {
     match id {
-        "builtin.tools" | "action.open-tools" if is_zh_locale(locale) => {
+        "builtin.tools" | "action.open-tools" if locale_kind == LocaleKind::Zh => {
             &["open tools", "toolbox", "tools", "utilities"]
         }
-        "builtin.tools" | "action.open-tools" if is_en_locale(locale) => {
+        "builtin.tools" | "action.open-tools" if locale_kind == LocaleKind::En => {
             &["打开工具箱", "工具箱", "工具", "实用工具"]
         }
-        "builtin.clipboard" if is_zh_locale(locale) => {
+        "builtin.clipboard" if locale_kind == LocaleKind::Zh => {
             &["clipboard", "clipboard history", "clip history"]
         }
-        "builtin.clipboard" if is_en_locale(locale) => &["剪贴板", "剪贴板历史", "复制历史"],
-        "builtin.tool.base64" if is_zh_locale(locale) => {
+        "builtin.clipboard" if locale_kind == LocaleKind::En => {
+            &["剪贴板", "剪贴板历史", "复制历史"]
+        }
+        "builtin.tool.base64" if locale_kind == LocaleKind::Zh => {
             &["base64", "encode", "decode", "tool base64"]
         }
-        "builtin.tool.base64" if is_en_locale(locale) => &["base64", "编码", "解码", "工具"],
-        "builtin.tool.regex" if is_zh_locale(locale) => &["regex", "regular expression", "regexp"],
-        "builtin.tool.regex" if is_en_locale(locale) => &["正则", "正则表达式", "匹配工具"],
-        "builtin.tool.timestamp" if is_zh_locale(locale) => &["timestamp", "time", "unix time"],
-        "builtin.tool.timestamp" if is_en_locale(locale) => &["时间戳", "时间", "时间转换"],
+        "builtin.tool.base64" if locale_kind == LocaleKind::En => {
+            &["base64", "编码", "解码", "工具"]
+        }
+        "builtin.tool.regex" if locale_kind == LocaleKind::Zh => {
+            &["regex", "regular expression", "regexp"]
+        }
+        "builtin.tool.regex" if locale_kind == LocaleKind::En => {
+            &["正则", "正则表达式", "匹配工具"]
+        }
+        "builtin.tool.timestamp" if locale_kind == LocaleKind::Zh => {
+            &["timestamp", "time", "unix time"]
+        }
+        "builtin.tool.timestamp" if locale_kind == LocaleKind::En => {
+            &["时间戳", "时间", "时间转换"]
+        }
         _ => &[],
     }
 }
 
-fn is_zh_locale(locale: &str) -> bool {
-    locale.to_ascii_lowercase().starts_with("zh")
-}
-
-fn is_en_locale(locale: &str) -> bool {
-    locale.to_ascii_lowercase().starts_with("en")
-}
-
-fn calculate_match_score(source: &str, query: &str) -> i32 {
+fn calculate_match_score(source: &str, query: &QueryPattern<'_>) -> i32 {
     let normalized = normalize_query(source);
     if normalized.is_empty() || query.is_empty() {
         return 0;
     }
 
-    if normalized == query {
+    if normalized == query.text {
         return 140;
     }
 
-    if normalized.starts_with(query) {
+    if normalized.starts_with(query.text) {
         return 120;
     }
 
-    if normalized.contains(query) {
+    if normalized.contains(query.text) {
         return 95;
     }
 
     let mut score = 0;
-    for token in query.split_whitespace() {
-        if token.is_empty() {
-            continue;
-        }
-
+    for token in &query.tokens {
         if normalized.starts_with(token) {
             score += 24;
         } else if normalized.contains(token) {
@@ -489,5 +401,85 @@ fn category_rank(category: &str) -> i32 {
         "directory" => 2,
         "file" => 3,
         _ => 4,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_item(
+        id: &str,
+        title: &str,
+        subtitle: &str,
+        action: LauncherActionDto,
+    ) -> LauncherItemDto {
+        LauncherItemDto {
+            id: id.to_string(),
+            title: title.to_string(),
+            subtitle: subtitle.to_string(),
+            category: "builtin".to_string(),
+            group: String::new(),
+            source: None,
+            shortcut: None,
+            score: 0,
+            icon_kind: "iconify".to_string(),
+            icon_value: "i-noto:card-index-dividers".to_string(),
+            action,
+        }
+    }
+
+    #[test]
+    fn locale_kind_is_detected_once() {
+        assert_eq!(LocaleKind::from_resolved("zh-CN"), LocaleKind::Zh);
+        assert_eq!(LocaleKind::from_resolved("EN-us"), LocaleKind::En);
+        assert_eq!(LocaleKind::from_resolved("ja-JP"), LocaleKind::Other);
+    }
+
+    #[test]
+    fn query_pattern_keeps_tokens() {
+        let query = QueryPattern::new("foo   bar baz");
+        assert_eq!(query.tokens, vec!["foo", "bar", "baz"]);
+    }
+
+    #[test]
+    fn builtin_tool_hidden_without_query() {
+        let item = sample_item(
+            "builtin.tool.base64",
+            "Base64",
+            "Encode decode",
+            LauncherActionDto::OpenBuiltinTool {
+                tool_id: "base64".to_string(),
+            },
+        );
+        assert!(score_item(item, &QueryPattern::new(""), LocaleKind::Zh).is_none());
+    }
+
+    #[test]
+    fn alias_score_uses_locale_bucket() {
+        let item = sample_item(
+            "builtin.tool.regex",
+            "Regex",
+            "Regular expression",
+            LauncherActionDto::OpenBuiltinTool {
+                tool_id: "regex".to_string(),
+            },
+        );
+
+        let zh_query = QueryPattern::new("regexp");
+        assert!(calculate_alias_score(&item, &zh_query, LocaleKind::Zh) > 0);
+
+        let en_query = QueryPattern::new("正则表达式");
+        assert!(calculate_alias_score(&item, &en_query, LocaleKind::En) > 0);
+    }
+
+    #[test]
+    fn match_score_prefers_exact_then_prefix() {
+        let exact = calculate_match_score("base64", &QueryPattern::new("base64"));
+        let prefix = calculate_match_score("base64 encode", &QueryPattern::new("base64"));
+        let contains = calculate_match_score("tool for base64", &QueryPattern::new("base64"));
+
+        assert!(exact > prefix);
+        assert!(prefix > contains);
     }
 }

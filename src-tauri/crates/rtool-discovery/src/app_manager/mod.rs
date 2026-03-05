@@ -33,7 +33,7 @@ use std::process::Command;
 use std::sync::{Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-#[path = "api.rs"]
+#[path = "api/mod.rs"]
 mod api;
 #[path = "cleanup.rs"]
 mod cleanup;

@@ -31,7 +31,6 @@ import {
 
 const PAGE_SIZE = 120;
 const SIZE_BATCH = 10;
-const SIZE_PRIORITY_COUNT = 24;
 const KEYWORD_DEBOUNCE_MS = 220;
 type AppSizeState = "pending" | "resolving" | "exact" | "estimated";
 
@@ -120,6 +119,7 @@ export function useAppManagerController() {
   const sizeStateRef = useRef<Record<string, AppSizeState>>({});
 
   const itemsRef = useRef<ManagedApp[]>([]);
+  const selectedAppIdRef = useRef<string | null>(null);
   const keywordRef = useRef("");
   const listRequestSeqRef = useRef(0);
   const firstListLoadDoneRef = useRef(false);
@@ -139,6 +139,10 @@ export function useAppManagerController() {
   useEffect(() => {
     itemsRef.current = items;
   }, [items]);
+
+  useEffect(() => {
+    selectedAppIdRef.current = selectedAppId;
+  }, [selectedAppId]);
 
   useEffect(() => {
     keywordRef.current = keyword;
@@ -318,14 +322,9 @@ export function useAppManagerController() {
         setActionResultByAppId((prev) => retainById(prev, keep));
       }
 
-      const priority = nextItems.slice(0, SIZE_PRIORITY_COUNT).map((item) => item.id);
-      const rest = nextItems.slice(SIZE_PRIORITY_COUNT).map((item) => item.id);
-      enqueueSizeResolution(priority, true);
-      enqueueSizeResolution(rest, false);
-
       return merged;
     },
-    [enqueueSizeResolution],
+    [],
   );
 
   const loadListPage = useCallback(
@@ -361,7 +360,7 @@ export function useAppManagerController() {
           if (current && mergedItems.some((item) => item.id === current)) {
             return current;
           }
-          return mergedItems[0]?.id ?? null;
+          return null;
         });
       } catch (error) {
         if (requestSeq !== listRequestSeqRef.current) {
@@ -819,6 +818,18 @@ export function useAppManagerController() {
 
   const hasMore = Boolean(nextCursor);
 
+  const selectApp = useCallback(
+    (appId: string) => {
+      setSelectedAppId(appId);
+      if (selectedAppIdRef.current === appId) {
+        void loadDetailCore(appId);
+        void loadDetailHeavy(appId);
+        enqueueSizeResolution([appId], true);
+      }
+    },
+    [enqueueSizeResolution, loadDetailCore, loadDetailHeavy],
+  );
+
   const onLoadMore = useCallback(async () => {
     if (!nextCursor || loadingMore) {
       return;
@@ -868,7 +879,7 @@ export function useAppManagerController() {
 
   const actions = {
     setKeyword,
-    setSelectedAppId,
+    setSelectedAppId: selectApp,
     refreshList,
     onLoadMore,
     onToggleResidue: toggleSelectedResidue,

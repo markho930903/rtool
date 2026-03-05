@@ -19,118 +19,103 @@ use rtool_platform::launcher::LauncherHost;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct AppManagerApplicationService;
 
+macro_rules! forward_no_arg {
+    ($name:ident, $result:ty, $target:path) => {
+        pub fn $name(self, host: &dyn LauncherHost) -> AppResult<$result> {
+            $target(host)
+        }
+    };
+}
+
+macro_rules! forward_with_arg {
+    ($name:ident, $arg:ident : $arg_ty:ty, $result:ty, $target:path) => {
+        pub fn $name(self, host: &dyn LauncherHost, $arg: $arg_ty) -> AppResult<$result> {
+            $target(host, $arg)
+        }
+    };
+}
+
 impl AppManagerApplicationService {
-    pub fn list(
-        self,
-        host: &dyn LauncherHost,
-        query: AppManagerQueryDto,
-    ) -> AppResult<AppManagerPageDto> {
-        list_managed_apps(host, query)
-    }
-
-    pub fn list_snapshot_meta(
-        self,
-        host: &dyn LauncherHost,
-    ) -> AppResult<AppManagerSnapshotMetaDto> {
-        list_managed_apps_snapshot_meta(host)
-    }
-
-    pub fn resolve_sizes(
-        self,
-        host: &dyn LauncherHost,
+    forward_with_arg!(list, query: AppManagerQueryDto, AppManagerPageDto, list_managed_apps);
+    forward_no_arg!(
+        list_snapshot_meta,
+        AppManagerSnapshotMetaDto,
+        list_managed_apps_snapshot_meta
+    );
+    forward_with_arg!(
+        resolve_sizes,
         input: AppManagerResolveSizesInputDto,
-    ) -> AppResult<AppManagerResolveSizesResultDto> {
-        resolve_managed_app_sizes(host, input)
-    }
-
-    pub fn get_detail(
-        self,
-        host: &dyn LauncherHost,
+        AppManagerResolveSizesResultDto,
+        resolve_managed_app_sizes
+    );
+    forward_with_arg!(
+        get_detail,
         query: AppManagerDetailQueryDto,
-    ) -> AppResult<ManagedAppDetailDto> {
-        get_managed_app_detail(host, query)
-    }
-
-    pub fn get_detail_core(
-        self,
-        host: &dyn LauncherHost,
+        ManagedAppDetailDto,
+        get_managed_app_detail
+    );
+    forward_with_arg!(
+        get_detail_core,
         query: AppManagerDetailQueryDto,
-    ) -> AppResult<ManagedAppDetailDto> {
-        get_managed_app_detail_core(host, query)
-    }
-
-    pub fn get_detail_heavy(
-        self,
-        host: &dyn LauncherHost,
+        ManagedAppDetailDto,
+        get_managed_app_detail_core
+    );
+    forward_with_arg!(
+        get_detail_heavy,
         input: AppManagerResidueScanInputDto,
-    ) -> AppResult<AppManagerResidueScanResultDto> {
-        get_managed_app_detail_heavy(host, input)
-    }
-
-    pub fn scan_residue(
-        self,
-        host: &dyn LauncherHost,
+        AppManagerResidueScanResultDto,
+        get_managed_app_detail_heavy
+    );
+    forward_with_arg!(
+        scan_residue,
         input: AppManagerResidueScanInputDto,
-    ) -> AppResult<AppManagerResidueScanResultDto> {
-        scan_managed_app_residue(host, input)
-    }
-
-    pub fn cleanup(
-        self,
-        host: &dyn LauncherHost,
+        AppManagerResidueScanResultDto,
+        scan_managed_app_residue
+    );
+    forward_with_arg!(
+        cleanup,
         input: AppManagerCleanupInputDto,
-    ) -> AppResult<AppManagerCleanupResultDto> {
-        cleanup_managed_app_residue(host, input)
-    }
-
-    pub fn export_scan_result(
-        self,
-        host: &dyn LauncherHost,
+        AppManagerCleanupResultDto,
+        cleanup_managed_app_residue
+    );
+    forward_with_arg!(
+        export_scan_result,
         input: AppManagerExportScanInputDto,
-    ) -> AppResult<AppManagerExportScanResultDto> {
-        export_managed_app_scan_result(host, input)
-    }
-
-    pub fn refresh_index(self, host: &dyn LauncherHost) -> AppResult<AppManagerActionResultDto> {
-        refresh_managed_apps_index(host)
-    }
-
-    pub fn set_startup(
-        self,
-        host: &dyn LauncherHost,
+        AppManagerExportScanResultDto,
+        export_managed_app_scan_result
+    );
+    forward_no_arg!(
+        refresh_index,
+        AppManagerActionResultDto,
+        refresh_managed_apps_index
+    );
+    forward_with_arg!(
+        set_startup,
         input: AppManagerStartupUpdateInputDto,
-    ) -> AppResult<AppManagerActionResultDto> {
-        set_managed_app_startup(host, input)
-    }
-
-    pub fn uninstall(
-        self,
-        host: &dyn LauncherHost,
+        AppManagerActionResultDto,
+        set_managed_app_startup
+    );
+    forward_with_arg!(
+        uninstall,
         input: AppManagerUninstallInputDto,
-    ) -> AppResult<AppManagerActionResultDto> {
-        uninstall_managed_app(host, input)
-    }
-
-    pub fn open_uninstall_help(
-        self,
-        host: &dyn LauncherHost,
+        AppManagerActionResultDto,
+        uninstall_managed_app
+    );
+    forward_with_arg!(
+        open_uninstall_help,
         app_id: String,
-    ) -> AppResult<AppManagerActionResultDto> {
-        open_uninstall_help(host, app_id)
-    }
-
-    pub fn open_permission_help(
-        self,
-        host: &dyn LauncherHost,
+        AppManagerActionResultDto,
+        open_uninstall_help
+    );
+    forward_with_arg!(
+        open_permission_help,
         app_id: String,
-    ) -> AppResult<AppManagerActionResultDto> {
-        open_permission_help(host, app_id)
-    }
-
-    pub fn poll_auto_refresh(
-        self,
-        host: &dyn LauncherHost,
-    ) -> AppResult<Option<AppManagerIndexUpdatedPayloadDto>> {
-        poll_managed_apps_auto_refresh(host)
-    }
+        AppManagerActionResultDto,
+        open_permission_help
+    );
+    forward_no_arg!(
+        poll_auto_refresh,
+        Option<AppManagerIndexUpdatedPayloadDto>,
+        poll_managed_apps_auto_refresh
+    );
 }

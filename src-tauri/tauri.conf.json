@@ -29,6 +29,7 @@
       },
       {
         "label": "clipboard_history",
+        "create": false,
         "title": "剪贴板历史",
         "url": "/#/clipboard",
         "width": 960,
@@ -44,6 +45,7 @@
       },
       {
         "label": "launcher",
+        "create": false,
         "title": "启动器",
         "url": "/#/launcher",
         "width": 820,
@@ -57,6 +59,7 @@
       },
       {
         "label": "screenshot_overlay",
+        "create": false,
         "title": "截图悬浮",
         "url": "/#/screenshot",
         "width": 1280,
@@ -70,6 +73,7 @@
       },
       {
         "label": "screenshot_pin_1",
+        "create": false,
         "title": "截图贴图",
         "url": "/#/screenshot-pin",
         "width": 360,
@@ -83,6 +87,7 @@
       },
       {
         "label": "screenshot_pin_2",
+        "create": false,
         "title": "截图贴图",
         "url": "/#/screenshot-pin",
         "width": 360,
@@ -96,6 +101,7 @@
       },
       {
         "label": "screenshot_pin_3",
+        "create": false,
         "title": "截图贴图",
         "url": "/#/screenshot-pin",
         "width": 360,
@@ -109,6 +115,7 @@
       },
       {
         "label": "screenshot_pin_4",
+        "create": false,
         "title": "截图贴图",
         "url": "/#/screenshot-pin",
         "width": 360,
@@ -122,6 +129,7 @@
       },
       {
         "label": "screenshot_pin_5",
+        "create": false,
         "title": "截图贴图",
         "url": "/#/screenshot-pin",
         "width": 360,
@@ -135,6 +143,7 @@
       },
       {
         "label": "screenshot_pin_6",
+        "create": false,
         "title": "截图贴图",
         "url": "/#/screenshot-pin",
         "width": 360,

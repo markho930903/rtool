@@ -3,6 +3,7 @@ use crate::constants::{
     RUNTIME_WORKER_SCREENSHOT, SCREENSHOT_OPERATION_RESULT_EVENT, SCREENSHOT_PIN_WINDOW_LABELS,
     SCREENSHOT_PIN_WINDOW_OPENED_EVENT,
 };
+use crate::platform::native_ui::window_factory::ensure_webview_window;
 use crate::shared::command_response::CommandPayloadContext;
 use crate::shared::command_runtime::{run_command_async, run_command_sync};
 use crate::shared::request_context::InvokeMeta;
@@ -149,10 +150,18 @@ fn choose_pin_window_label(app: &AppHandle, max_instances: u32) -> AppResult<Str
     }
 
     for label in &labels {
-        let window = app.get_webview_window(label).ok_or_else(|| {
-            AppError::new("screenshot_pin_window_not_found", "截图贴图窗口未注册")
-                .with_context("windowLabel", (*label).to_string())
-        })?;
+        let window = match app.get_webview_window(label) {
+            Some(window) => window,
+            None => {
+                return ensure_webview_window(app, label)
+                    .map(|_| (*label).to_string())
+                    .map_err(|error| {
+                        error
+                            .with_context("windowLabel", (*label).to_string())
+                            .with_context("phase", "pin_window_allocate")
+                    });
+            }
+        };
         if window.is_visible().unwrap_or(false) {
             continue;
         }
@@ -217,10 +226,7 @@ fn apply_pin_window_geometry(
     width: u32,
     height: u32,
 ) -> AppResult<()> {
-    let window = app.get_webview_window(window_label).ok_or_else(|| {
-        AppError::new("screenshot_pin_window_not_found", "截图贴图窗口未注册")
-            .with_context("windowLabel", window_label.to_string())
-    })?;
+    let window = ensure_webview_window(app, window_label)?;
 
     window.set_always_on_top(true).map_err(|error| {
         AppError::new(

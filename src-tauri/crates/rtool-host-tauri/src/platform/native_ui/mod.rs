@@ -2,6 +2,7 @@ pub(crate) mod clipboard_window;
 pub(crate) mod shortcuts;
 pub(crate) mod tray;
 pub(crate) mod window_chrome;
+pub(crate) mod window_factory;
 pub(crate) mod windows;
 
 use tauri::{AppHandle, Runtime};

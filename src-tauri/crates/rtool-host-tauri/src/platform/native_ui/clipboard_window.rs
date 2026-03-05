@@ -3,9 +3,10 @@ use crate::constants::{
     CLIPBOARD_COMPACT_WIDTH_LOGICAL, CLIPBOARD_MIN_HEIGHT_LOGICAL, CLIPBOARD_REGULAR_WIDTH_LOGICAL,
     CLIPBOARD_WINDOW_LABEL,
 };
+use crate::platform::native_ui::window_factory::ensure_webview_window;
 use anyhow::Context;
 use rtool_contracts::models::ClipboardWindowModeAppliedDto;
-use rtool_contracts::{AppError, AppResult, ResultExt};
+use rtool_contracts::{AppResult, ResultExt};
 use tauri::{AppHandle, LogicalSize, Manager, PhysicalPosition};
 
 fn clamp_clipboard_window_position(
@@ -30,9 +31,7 @@ pub(crate) fn apply_clipboard_window_mode(
     compact: bool,
     source: &str,
 ) -> AppResult<ClipboardWindowModeAppliedDto> {
-    let window = app
-        .get_webview_window(CLIPBOARD_WINDOW_LABEL)
-        .ok_or_else(|| AppError::new("clipboard_window_not_found", "剪贴板窗口不存在"))?;
+    let window = ensure_webview_window(app, CLIPBOARD_WINDOW_LABEL)?;
 
     let scale_factor = window
         .scale_factor()

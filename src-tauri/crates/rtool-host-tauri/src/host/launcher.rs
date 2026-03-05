@@ -66,8 +66,8 @@ impl LauncherHost for TauriLauncherHost {
     }
 
     fn get_webview_window(&self, label: &str) -> Option<Box<dyn LauncherWindow>> {
-        self.app
-            .get_webview_window(label)
+        crate::platform::native_ui::window_factory::ensure_webview_window(&self.app, label)
+            .ok()
             .map(|window| Box::new(TauriLauncherWindow::new(window)) as Box<dyn LauncherWindow>)
     }
 

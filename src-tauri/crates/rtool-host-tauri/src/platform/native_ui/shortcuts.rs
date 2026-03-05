@@ -6,6 +6,7 @@ use crate::constants::{
 use crate::platform::native_ui::clipboard_window::{
     apply_clipboard_window_mode, set_clipboard_window_compact_state,
 };
+use crate::platform::native_ui::window_factory::ensure_webview_window;
 use crate::platform::native_ui::windows::toggle_launcher_window;
 use rtool_app::ScreenshotApplicationService;
 use rtool_contracts::models::{ClipboardWindowOpenedPayload, ScreenshotWindowOpenedPayload};
@@ -109,8 +110,17 @@ fn emit_clipboard_window_opened(app: &AppHandle, compact: bool) {
 }
 
 fn handle_clipboard_window_shortcut(app: &AppHandle, requested_compact: bool) {
-    let Some(window) = app.get_webview_window(CLIPBOARD_WINDOW_LABEL) else {
-        return;
+    let window = match ensure_webview_window(app, CLIPBOARD_WINDOW_LABEL) {
+        Ok(window) => window,
+        Err(error) => {
+            tracing::warn!(
+                event = "window_create_failed",
+                window = CLIPBOARD_WINDOW_LABEL,
+                code = error.code.as_str(),
+                message = error.message.as_str()
+            );
+            return;
+        }
     };
 
     let is_visible = window.is_visible().unwrap_or(false);
@@ -214,13 +224,17 @@ fn handle_screenshot_shortcut(app: &AppHandle) {
         }
     };
 
-    let Some(window) = app.get_webview_window(SCREENSHOT_WINDOW_LABEL) else {
-        tracing::warn!(
-            event = "window_show_failed",
-            window = SCREENSHOT_WINDOW_LABEL,
-            error = "window_not_found"
-        );
-        return;
+    let window = match ensure_webview_window(app, SCREENSHOT_WINDOW_LABEL) {
+        Ok(window) => window,
+        Err(error) => {
+            tracing::warn!(
+                event = "window_create_failed",
+                window = SCREENSHOT_WINDOW_LABEL,
+                code = error.code.as_str(),
+                message = error.message.as_str()
+            );
+            return;
+        }
     };
 
     if let Some(display) = session

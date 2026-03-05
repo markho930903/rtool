@@ -2,6 +2,7 @@ use crate::constants::{
     CLIPBOARD_WINDOW_LABEL, LAUNCHER_OPENED_EVENT, LAUNCHER_WINDOW_LABEL, MAIN_WINDOW_LABEL,
     SCREENSHOT_PIN_WINDOW_LABELS, SCREENSHOT_WINDOW_LABEL,
 };
+use crate::platform::native_ui::window_factory::ensure_webview_window;
 use rtool_app::LocaleApplicationService;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
@@ -44,39 +45,50 @@ pub(crate) fn refresh_window_titles<R: Runtime>(app: &AppHandle<R>, locale: &str
 }
 
 pub(crate) fn toggle_launcher_window(app: &AppHandle) {
-    if let Some(window) = app.get_webview_window(LAUNCHER_WINDOW_LABEL) {
-        if window.is_visible().unwrap_or(false) {
-            if let Err(error) = window.hide() {
-                tracing::warn!(
-                    event = "window_hide_failed",
-                    window = LAUNCHER_WINDOW_LABEL,
-                    error = error.to_string()
-                );
-            }
+    let window = match ensure_webview_window(app, LAUNCHER_WINDOW_LABEL) {
+        Ok(window) => window,
+        Err(error) => {
+            tracing::warn!(
+                event = "window_create_failed",
+                window = LAUNCHER_WINDOW_LABEL,
+                code = error.code.as_str(),
+                message = error.message.as_str()
+            );
             return;
         }
+    };
 
-        if let Err(error) = window.show() {
+    if window.is_visible().unwrap_or(false) {
+        if let Err(error) = window.hide() {
             tracing::warn!(
-                event = "window_show_failed",
+                event = "window_hide_failed",
                 window = LAUNCHER_WINDOW_LABEL,
                 error = error.to_string()
             );
         }
-        if let Err(error) = window.set_focus() {
-            tracing::warn!(
-                event = "window_focus_failed",
-                window = LAUNCHER_WINDOW_LABEL,
-                error = error.to_string()
-            );
-        }
-        if let Err(error) = app.emit(LAUNCHER_OPENED_EVENT, ()) {
-            tracing::warn!(
-                event = "window_event_emit_failed",
-                event_name = LAUNCHER_OPENED_EVENT,
-                error = error.to_string()
-            );
-        }
+        return;
+    }
+
+    if let Err(error) = window.show() {
+        tracing::warn!(
+            event = "window_show_failed",
+            window = LAUNCHER_WINDOW_LABEL,
+            error = error.to_string()
+        );
+    }
+    if let Err(error) = window.set_focus() {
+        tracing::warn!(
+            event = "window_focus_failed",
+            window = LAUNCHER_WINDOW_LABEL,
+            error = error.to_string()
+        );
+    }
+    if let Err(error) = app.emit(LAUNCHER_OPENED_EVENT, ()) {
+        tracing::warn!(
+            event = "window_event_emit_failed",
+            event_name = LAUNCHER_OPENED_EVENT,
+            error = error.to_string()
+        );
     }
 }
 

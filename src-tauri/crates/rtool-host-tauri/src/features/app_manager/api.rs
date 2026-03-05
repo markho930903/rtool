@@ -1,125 +1,44 @@
 use crate::app::state::AppState;
 use crate::shared::request_context::InvokeMeta;
-use rtool_contracts::InvokeError;
+use rtool_contracts::{AppResult, InvokeError};
 use serde::Serialize;
 use serde_json::Value;
 use tauri::State;
 
-use super::operations::{
-    app_manager_cleanup, app_manager_export_scan_result, app_manager_get_detail,
-    app_manager_get_detail_core, app_manager_get_detail_heavy, app_manager_list,
-    app_manager_list_snapshot_meta, app_manager_open_permission_help,
-    app_manager_open_uninstall_help, app_manager_refresh_index, app_manager_resolve_sizes,
-    app_manager_reveal_path, app_manager_scan_residue, app_manager_set_startup,
-    app_manager_uninstall,
-};
+use super::operations::{run_app_manager_operation, run_reveal_path};
 use super::types::{APP_MANAGER_COMMAND_CONTEXT, AppManagerRequest};
 
-fn serialize_response<T>(kind: &'static str, value: T) -> Result<Value, InvokeError>
+async fn dispatch_operation<T, F>(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+    request_id: Option<String>,
+    window_label: Option<String>,
+    kind: &'static str,
+    command_name: &'static str,
+    refresh_on_success: bool,
+    operation: F,
+) -> Result<Value, InvokeError>
 where
-    T: Serialize,
+    T: Serialize + Send + 'static,
+    F: FnOnce(
+            rtool_app::AppManagerApplicationService,
+            crate::host::launcher::TauriLauncherHost,
+        ) -> AppResult<T>
+        + Send
+        + 'static,
 {
+    let value = run_app_manager_operation(
+        app,
+        state,
+        request_id,
+        window_label,
+        command_name,
+        refresh_on_success,
+        operation,
+    )
+    .await?;
+
     APP_MANAGER_COMMAND_CONTEXT.serialize(kind, value)
-}
-
-macro_rules! dispatch_command {
-    ($kind:literal, $expr:expr) => {
-        serialize_response($kind, $expr.await?)
-    };
-}
-
-async fn dispatch_query_commands(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-    request: AppManagerRequest,
-    request_id: Option<String>,
-    window_label: Option<String>,
-) -> Result<Value, InvokeError> {
-    match request {
-        AppManagerRequest::List(payload) => dispatch_command!(
-            "list",
-            app_manager_list(app, state, payload.query, request_id, window_label)
-        ),
-        AppManagerRequest::GetDetail(payload) => dispatch_command!(
-            "get_detail",
-            app_manager_get_detail(app, state, payload.query, request_id, window_label)
-        ),
-        AppManagerRequest::ListSnapshotMeta => dispatch_command!(
-            "list_snapshot_meta",
-            app_manager_list_snapshot_meta(app, state, request_id, window_label)
-        ),
-        AppManagerRequest::ResolveSizes(payload) => dispatch_command!(
-            "resolve_sizes",
-            app_manager_resolve_sizes(app, state, payload.input, request_id, window_label)
-        ),
-        AppManagerRequest::GetDetailCore(payload) => dispatch_command!(
-            "get_detail_core",
-            app_manager_get_detail_core(app, state, payload.query, request_id, window_label)
-        ),
-        AppManagerRequest::GetDetailHeavy(payload) => dispatch_command!(
-            "get_detail_heavy",
-            app_manager_get_detail_heavy(app, state, payload.input, request_id, window_label)
-        ),
-        AppManagerRequest::ScanResidue(payload) => dispatch_command!(
-            "scan_residue",
-            app_manager_scan_residue(app, state, payload.input, request_id, window_label)
-        ),
-        AppManagerRequest::ExportScanResult(payload) => dispatch_command!(
-            "export_scan_result",
-            app_manager_export_scan_result(app, state, payload.input, request_id, window_label)
-        ),
-        _ => unreachable!("non-query command routed to dispatch_query_commands"),
-    }
-}
-
-async fn dispatch_action_commands(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-    request: AppManagerRequest,
-    request_id: Option<String>,
-    window_label: Option<String>,
-) -> Result<Value, InvokeError> {
-    match request {
-        AppManagerRequest::Cleanup(payload) => dispatch_command!(
-            "cleanup",
-            app_manager_cleanup(app, state, payload.input, request_id, window_label)
-        ),
-        AppManagerRequest::RefreshIndex => dispatch_command!(
-            "refresh_index",
-            app_manager_refresh_index(app, state, request_id, window_label)
-        ),
-        AppManagerRequest::SetStartup(payload) => dispatch_command!(
-            "set_startup",
-            app_manager_set_startup(app, state, payload.input, request_id, window_label)
-        ),
-        AppManagerRequest::Uninstall(payload) => dispatch_command!(
-            "uninstall",
-            app_manager_uninstall(app, state, payload.input, request_id, window_label)
-        ),
-        AppManagerRequest::OpenUninstallHelp(payload) => dispatch_command!(
-            "open_uninstall_help",
-            app_manager_open_uninstall_help(app, state, payload.app_id, request_id, window_label)
-        ),
-        AppManagerRequest::OpenPermissionHelp(payload) => dispatch_command!(
-            "open_permission_help",
-            app_manager_open_permission_help(app, state, payload.app_id, request_id, window_label)
-        ),
-        _ => unreachable!("non-action command routed to dispatch_action_commands"),
-    }
-}
-
-fn dispatch_local_commands(
-    request: AppManagerRequest,
-    request_id: Option<String>,
-    window_label: Option<String>,
-) -> Result<Value, InvokeError> {
-    match request {
-        AppManagerRequest::RevealPath(payload) => {
-            app_manager_reveal_path(payload.path, request_id, window_label)?;
-            Ok(Value::Null)
-        }
-        _ => unreachable!("non-local command routed to dispatch_local_commands"),
-    }
 }
 
 pub(crate) async fn handle_app_manager(
@@ -131,26 +50,206 @@ pub(crate) async fn handle_app_manager(
     let (request_id, window_label) = meta.unwrap_or_default().split();
 
     match request {
-        AppManagerRequest::List(_)
-        | AppManagerRequest::GetDetail(_)
-        | AppManagerRequest::ListSnapshotMeta
-        | AppManagerRequest::ResolveSizes(_)
-        | AppManagerRequest::GetDetailCore(_)
-        | AppManagerRequest::GetDetailHeavy(_)
-        | AppManagerRequest::ScanResidue(_)
-        | AppManagerRequest::ExportScanResult(_) => {
-            dispatch_query_commands(app, state, request, request_id, window_label).await
+        AppManagerRequest::List(payload) => {
+            let query = payload.query.unwrap_or_default();
+            dispatch_operation(
+                app,
+                state,
+                request_id,
+                window_label,
+                "list",
+                "app_manager_list",
+                false,
+                move |service, host| service.list(&host, query),
+            )
+            .await
         }
-        AppManagerRequest::Cleanup(_)
-        | AppManagerRequest::RefreshIndex
-        | AppManagerRequest::SetStartup(_)
-        | AppManagerRequest::Uninstall(_)
-        | AppManagerRequest::OpenUninstallHelp(_)
-        | AppManagerRequest::OpenPermissionHelp(_) => {
-            dispatch_action_commands(app, state, request, request_id, window_label).await
+        AppManagerRequest::GetDetail(payload) => {
+            dispatch_operation(
+                app,
+                state,
+                request_id,
+                window_label,
+                "get_detail",
+                "app_manager_get_detail",
+                false,
+                move |service, host| service.get_detail(&host, payload.query),
+            )
+            .await
         }
-        AppManagerRequest::RevealPath(_) => {
-            dispatch_local_commands(request, request_id, window_label)
+        AppManagerRequest::ListSnapshotMeta => {
+            dispatch_operation(
+                app,
+                state,
+                request_id,
+                window_label,
+                "list_snapshot_meta",
+                "app_manager_list_snapshot_meta",
+                false,
+                move |service, host| service.list_snapshot_meta(&host),
+            )
+            .await
+        }
+        AppManagerRequest::ResolveSizes(payload) => {
+            dispatch_operation(
+                app,
+                state,
+                request_id,
+                window_label,
+                "resolve_sizes",
+                "app_manager_resolve_sizes",
+                false,
+                move |service, host| {
+                    service.resolve_sizes(&host, payload.input)
+                },
+            )
+            .await
+        }
+        AppManagerRequest::GetDetailCore(payload) => {
+            dispatch_operation(
+                app,
+                state,
+                request_id,
+                window_label,
+                "get_detail_core",
+                "app_manager_get_detail_core",
+                false,
+                move |service, host| {
+                    service.get_detail_core(&host, payload.query)
+                },
+            )
+            .await
+        }
+        AppManagerRequest::GetDetailHeavy(payload) => {
+            dispatch_operation(
+                app,
+                state,
+                request_id,
+                window_label,
+                "get_detail_heavy",
+                "app_manager_get_detail_heavy",
+                false,
+                move |service, host| {
+                    service.get_detail_heavy(&host, payload.input)
+                },
+            )
+            .await
+        }
+        AppManagerRequest::ScanResidue(payload) => {
+            dispatch_operation(
+                app,
+                state,
+                request_id,
+                window_label,
+                "scan_residue",
+                "app_manager_scan_residue",
+                false,
+                move |service, host| {
+                    service.scan_residue(&host, payload.input)
+                },
+            )
+            .await
+        }
+        AppManagerRequest::Cleanup(payload) => {
+            dispatch_operation(
+                app,
+                state,
+                request_id,
+                window_label,
+                "cleanup",
+                "app_manager_cleanup",
+                true,
+                move |service, host| service.cleanup(&host, payload.input),
+            )
+            .await
+        }
+        AppManagerRequest::ExportScanResult(payload) => {
+            dispatch_operation(
+                app,
+                state,
+                request_id,
+                window_label,
+                "export_scan_result",
+                "app_manager_export_scan_result",
+                false,
+                move |service, host| {
+                    service.export_scan_result(&host, payload.input)
+                },
+            )
+            .await
+        }
+        AppManagerRequest::RefreshIndex => {
+            dispatch_operation(
+                app,
+                state,
+                request_id,
+                window_label,
+                "refresh_index",
+                "app_manager_refresh_index",
+                true,
+                move |service, host| service.refresh_index(&host),
+            )
+            .await
+        }
+        AppManagerRequest::SetStartup(payload) => {
+            dispatch_operation(
+                app,
+                state,
+                request_id,
+                window_label,
+                "set_startup",
+                "app_manager_set_startup",
+                true,
+                move |service, host| service.set_startup(&host, payload.input),
+            )
+            .await
+        }
+        AppManagerRequest::Uninstall(payload) => {
+            dispatch_operation(
+                app,
+                state,
+                request_id,
+                window_label,
+                "uninstall",
+                "app_manager_uninstall",
+                true,
+                move |service, host| service.uninstall(&host, payload.input),
+            )
+            .await
+        }
+        AppManagerRequest::OpenUninstallHelp(payload) => {
+            dispatch_operation(
+                app,
+                state,
+                request_id,
+                window_label,
+                "open_uninstall_help",
+                "app_manager_open_uninstall_help",
+                false,
+                move |service, host| {
+                    service.open_uninstall_help(&host, payload.app_id)
+                },
+            )
+            .await
+        }
+        AppManagerRequest::OpenPermissionHelp(payload) => {
+            dispatch_operation(
+                app,
+                state,
+                request_id,
+                window_label,
+                "open_permission_help",
+                "app_manager_open_permission_help",
+                false,
+                move |service, host| {
+                    service.open_permission_help(&host, payload.app_id)
+                },
+            )
+            .await
+        }
+        AppManagerRequest::RevealPath(payload) => {
+            run_reveal_path(payload.path, request_id, window_label)?;
+            Ok(Value::Null)
         }
     }
 }

@@ -1,0 +1,16 @@
+[package]
+name = "rtool-logging"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rtool_contracts = { workspace = true }
+rtool_data = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+libsql = { workspace = true }
+tracing = { workspace = true }
+tracing-appender = { workspace = true }
+tracing-subscriber = { workspace = true }
+tokio = { workspace = true }

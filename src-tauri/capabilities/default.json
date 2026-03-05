@@ -1,0 +1,31 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Capability for the app windows",
+  "windows": [
+    "main",
+    "clipboard_history",
+    "launcher",
+    "screenshot_overlay",
+    "screenshot_pin_1",
+    "screenshot_pin_2",
+    "screenshot_pin_3",
+    "screenshot_pin_4",
+    "screenshot_pin_5",
+    "screenshot_pin_6"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-hide",
+    "core:window:allow-minimize",
+    "core:window:allow-show",
+    "core:window:allow-start-dragging",
+    "core:window:allow-set-size",
+    "core:window:allow-set-position",
+    "core:window:allow-is-always-on-top",
+    "core:window:allow-set-always-on-top",
+    "dialog:default",
+    "opener:default",
+    "global-shortcut:default"
+  ]
+}

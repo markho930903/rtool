@@ -1,0 +1,23 @@
+[package]
+name = "rtool-capture"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rtool_contracts = { workspace = true }
+rtool_data = { workspace = true }
+anyhow = { workspace = true }
+arboard = { workspace = true }
+base64 = { workspace = true }
+image = { workspace = true }
+regex = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+sysinfo = { workspace = true }
+walkdir = { workspace = true }
+uuid = { workspace = true }
+xcap = { workspace = true }
+time = { version = "0.3.41", features = ["formatting", "macros"] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_System_ProcessStatus", "Win32_System_Threading"] }

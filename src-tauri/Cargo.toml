@@ -1,0 +1,82 @@
+[workspace]
+members = [
+    "crates/rtool-contracts",
+    "crates/rtool-kernel",
+    "crates/rtool-data",
+    "crates/rtool-platform",
+    "crates/rtool-capture",
+    "crates/rtool-discovery",
+    "crates/rtool-logging",
+    "crates/rtool-settings",
+    "crates/rtool-app",
+    "crates/rtool-host-tauri",
+]
+resolver = "2"
+
+[workspace.dependencies]
+anyhow = { version = "1.0.102", features = ["backtrace"] }
+arboard = "3.6.1"
+base64 = "0.22.1"
+blake3 = "1.8.3"
+chacha20poly1305 = { version = "0.10.1", features = ["std"] }
+image = { version = "0.25.9", default-features = false, features = ["png"] }
+libsql = { version = "0.9.29", default-features = false, features = ["core"] }
+xcap = "0.8.3"
+rand = "0.10.0"
+regex = "1.12.3"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+sysinfo = "0.38.2"
+tauri = { version = "2.10.2", features = ["macos-private-api", "tray-icon", "protocol-asset"] }
+tauri-build = { version = "2.5.5", features = [] }
+tauri-plugin-clipboard = "2.1.11"
+tauri-plugin-dialog = "2.6.0"
+tauri-plugin-global-shortcut = "2.3.1"
+tauri-plugin-opener = "2.5.3"
+tokio = { version = "1.49.0", features = ["macros", "rt-multi-thread", "net", "time", "sync", "fs", "io-util"] }
+tracing = "0.1.44"
+tracing-appender = "0.2.4"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "fmt", "json", "time"] }
+uuid = { version = "1.21.0", features = ["v4", "serde"] }
+walkdir = "2.5.0"
+wincode = { version = "0.4.4", features = ["derive"] }
+zip = { version = "8.1.0", default-features = false, features = ["deflate"] }
+
+rtool_contracts = { package = "rtool-contracts", path = "crates/rtool-contracts" }
+rtool_kernel = { package = "rtool-kernel", path = "crates/rtool-kernel" }
+rtool_data = { package = "rtool-data", path = "crates/rtool-data" }
+rtool_platform = { package = "rtool-platform", path = "crates/rtool-platform" }
+rtool_capture = { package = "rtool-capture", path = "crates/rtool-capture" }
+rtool_discovery = { package = "rtool-discovery", path = "crates/rtool-discovery" }
+rtool_logging = { package = "rtool-logging", path = "crates/rtool-logging" }
+rtool_settings = { package = "rtool-settings", path = "crates/rtool-settings" }
+rtool_app = { package = "rtool-app", path = "crates/rtool-app" }
+rtool_host_tauri = { package = "rtool-host-tauri", path = "crates/rtool-host-tauri" }
+
+[package]
+name = "rtool"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2024"
+
+[lib]
+name = "rtool_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { workspace = true }
+
+[dependencies]
+rtool_host_tauri = { workspace = true }
+tauri = { workspace = true }
+tauri-plugin-opener = { workspace = true }
+tauri-plugin-global-shortcut = { workspace = true }
+tauri-plugin-clipboard = { workspace = true }
+tauri-plugin-dialog = { workspace = true }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"

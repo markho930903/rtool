@@ -1,0 +1,18 @@
+{
+  "page.title": "快捷工具箱",
+  "page.subtitle": "内置数据处理与编码转换工具，支持实时反馈。",
+  "base64.encode": "编码",
+  "base64.decode": "解码",
+  "base64.waitResult": "等待处理结果",
+  "regex.title": "正则测试",
+  "regex.replacementPlaceholder": "替换文本",
+  "regex.matchCount": "匹配数量：{count}",
+  "regex.defaultSource": "rtool 是一个桌面助手，rtool 支持启动器",
+  "timestamp.title": "时间戳转换",
+  "timestamp.now": "当前时间戳：{value}",
+  "timestamp.invalid": "请输入有效时间戳",
+  "timestamp.local": "本地时间：{value}",
+  "timestamp.iso": "ISO 时间：{value}",
+  "timestamp.seconds": "秒级：{value}",
+  "timestamp.milliseconds": "毫秒级：{value}"
+}

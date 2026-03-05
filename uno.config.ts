@@ -1,0 +1,277 @@
+import { icons as lucideIcons } from "@iconify-json/lucide";
+import { icons as notoEmoji } from "@iconify-json/noto";
+import {
+  defineConfig,
+  presetAttributify,
+  presetIcons,
+  presetTagify,
+  presetTypography,
+  presetWind4,
+  transformerAttributifyJsx,
+  transformerCompileClass,
+  transformerDirectives,
+  transformerVariantGroup,
+} from "unocss";
+
+export default defineConfig({
+  safelist: [
+    "i-lucide:chevrons-left-right",
+    "i-lucide:chevrons-up-down",
+    "i-noto:desktop-computer",
+    "i-noto:hammer-and-wrench",
+    "i-noto:outbox-tray",
+    "i-noto:scroll",
+    "i-noto:card-index-dividers",
+    "i-noto:page-facing-up",
+    "i-noto:closed-book",
+    "i-noto:memo",
+    "i-noto:bar-chart",
+    "i-noto:rolled-up-newspaper",
+    "i-noto:framed-picture",
+    "i-noto:film-projector",
+    "i-noto:musical-notes",
+    "i-noto:floppy-disk",
+    "i-noto:file-cabinet",
+    "i-noto:locked-with-key",
+    "i-noto:satellite-antenna",
+    "i-noto:gear",
+    "i-noto:clipboard",
+    "i-noto:camera-with-flash",
+    "i-noto:file-folder",
+    "i-noto:input-symbols",
+    "i-noto:magnifying-glass-tilted-right",
+    "i-noto:mantelpiece-clock",
+  ],
+  presets: [
+    presetWind4(),
+    presetIcons({
+      collections: {
+        lucide: () => lucideIcons,
+        noto: () => notoEmoji,
+      },
+    }),
+    presetTagify(),
+    presetTypography(),
+    presetAttributify(),
+  ],
+  transformers: [
+    transformerDirectives(),
+    transformerVariantGroup(),
+    transformerAttributifyJsx(),
+    transformerCompileClass(),
+  ],
+  theme: {
+    colors: {
+      app: "var(--color-bg-app)",
+      "bg-orb-1": "var(--color-bg-orb-1)",
+      "bg-orb-2": "var(--color-bg-orb-2)",
+      elevated: "var(--color-bg-elevated)",
+      surface: "var(--color-surface-card)",
+      "surface-card": "var(--color-surface-card)",
+      "surface-soft": "var(--color-surface-soft)",
+      "surface-glass": "var(--color-surface-glass)",
+      "surface-glass-strong": "var(--color-surface-glass-strong)",
+      "surface-glass-soft": "var(--color-surface-glass-soft)",
+      "surface-overlay": "var(--color-surface-overlay)",
+      "surface-popover": "var(--color-surface-popover)",
+      "surface-scrim": "var(--color-surface-scrim)",
+      "layout-sidebar": "var(--color-layout-sidebar-bg)",
+      "layout-titlebar": "var(--color-layout-titlebar-bg)",
+      "layout-divider": "var(--color-layout-divider)",
+      "border-muted": "var(--color-border-muted)",
+      "border-strong": "var(--color-border-strong)",
+      "border-glass": "var(--color-border-glass)",
+      "border-glass-strong": "var(--color-border-glass-strong)",
+      "text-primary": "var(--color-text-primary)",
+      "text-secondary": "var(--color-text-secondary)",
+      "text-muted": "var(--color-text-muted)",
+      accent: "var(--color-accent)",
+      "accent-soft": "var(--color-accent-soft)",
+      "accent-contrast": "var(--color-accent-contrast)",
+      danger: "var(--color-danger)",
+      info: "var(--color-info)",
+      "sidebar-item-hover": "var(--color-sidebar-item-hover)",
+      "sidebar-item-active": "var(--color-sidebar-item-active)",
+      "popover-highlight": "var(--color-popover-highlight)",
+      "shimmer-highlight": "var(--color-shimmer-highlight)",
+      specular: "var(--color-specular)",
+    },
+    boxShadow: {
+      surface: "var(--shadow-surface)",
+      overlay: "var(--shadow-overlay)",
+      popover: "var(--shadow-popover)",
+      "glass-card": "var(--shadow-glass-card)",
+      "glass-elevated": "var(--shadow-glass-elevated)",
+      "glass-inset": "var(--shadow-glass-inset)",
+      "inset-soft": "var(--shadow-inset-soft)",
+      "inset-divider": "var(--shadow-inset-divider)",
+      "sidebar-item-active": "var(--shadow-sidebar-item-active)",
+      "sidebar-item-hover": "var(--shadow-sidebar-item-hover)",
+    },
+    borderRadius: {
+      2: "var(--radius-2)",
+      3: "var(--radius-3)",
+      4: "var(--radius-4)",
+      sm: "var(--radius-sm)",
+      md: "var(--radius-md)",
+      window: "var(--radius-window)",
+      lg: "var(--radius-lg)",
+      xl: "var(--radius-xl)",
+      "2xl": "var(--radius-4)",
+      overlay: "var(--radius-overlay)",
+    },
+    fontSize: {
+      "ui-2xs": "var(--font-size-ui-2xs)",
+      "ui-xs": "var(--font-size-ui-xs)",
+      "ui-sm": "var(--font-size-ui-sm)",
+      "ui-md": "var(--font-size-ui-md)",
+      "ui-lg": "var(--font-size-ui-lg)",
+    },
+    lineHeight: {
+      "ui-2xs": "var(--line-height-ui-2xs)",
+      "ui-xs": "var(--line-height-ui-xs)",
+      "ui-sm": "var(--line-height-ui-sm)",
+      "ui-md": "var(--line-height-ui-md)",
+      "ui-lg": "var(--line-height-ui-lg)",
+    },
+    spacing: {
+      "ui-0-5": "var(--space-0-5)",
+      "ui-1": "var(--space-1)",
+      "ui-1-5": "var(--space-1-5)",
+      "ui-2": "var(--space-2)",
+      "ui-2-5": "var(--space-2-5)",
+      "ui-3": "var(--space-3)",
+      "ui-3-5": "var(--space-3-5)",
+      "ui-4": "var(--space-4)",
+    },
+    letterSpacing: {
+      "ui-tight": "var(--letter-spacing-ui-tight)",
+      "ui-wide": "var(--letter-spacing-ui-wide)",
+      "ui-wider": "var(--letter-spacing-ui-wider)",
+    },
+  },
+  preflights: [
+    {
+      getCSS: () => `
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg-app);
+  color: var(--color-text-primary);
+  transition:
+    background-color 180ms ease,
+    color 180ms ease;
+}
+
+html[data-window-label="launcher"],
+html[data-window-label="clipboard_history"],
+html[data-window-label="main"] {
+  background: transparent;
+}
+
+html[data-window-label="launcher"] body,
+html[data-window-label="clipboard_history"] body,
+html[data-window-label="main"] body {
+  background: transparent;
+  overflow: hidden;
+  position: relative;
+}
+
+html[data-window-label="launcher"] #root,
+html[data-window-label="clipboard_history"] #root,
+html[data-window-label="main"] #root {
+  background: var(--window-root-background);
+  border: 0;
+  border-radius: var(--radius-window);
+  overflow: hidden;
+  backdrop-filter: blur(var(--window-root-blur)) saturate(var(--window-root-saturate))
+    brightness(var(--window-root-brightness));
+  -webkit-backdrop-filter: blur(var(--window-root-blur)) saturate(var(--window-root-saturate))
+    brightness(var(--window-root-brightness));
+  position: relative;
+  isolation: isolate;
+}
+
+html[data-window-label="launcher"] #root::after,
+html[data-window-label="clipboard_history"] #root::after,
+html[data-window-label="main"] #root::after {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: var(--window-frame-width) solid var(--window-root-border-color);
+  z-index: 2;
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+::selection {
+  background: var(--color-accent-soft);
+  color: var(--color-text-primary);
+}
+`,
+    },
+  ],
+  shortcuts: {
+    // layer: global reusable ui primitives only
+    // 约束：shortcuts 仅用于跨页面复用的通用样式与设计规范，不承载页面/模块私有布局样式。
+    "ui-page": "min-h-screen bg-app text-text-primary",
+    "ui-card":
+      "relative overflow-hidden rounded-lg border border-border-muted bg-surface shadow-[var(--shadow-surface)] backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]",
+    "ui-btn-primary":
+      "inline-flex items-center gap-1.5 rounded-md border border-transparent bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast shadow-[var(--shadow-surface)] transition-[background-color,border-color,box-shadow,transform] duration-150 hover:shadow-[var(--shadow-overlay)]",
+    "ui-btn-secondary":
+      "inline-flex items-center gap-1.5 rounded-md border border-border-muted bg-surface-soft px-4 py-2 text-sm text-text-primary shadow-[var(--shadow-inset-soft)] transition-[background-color,border-color,box-shadow] duration-150 hover:bg-surface",
+    "ui-section-title": "text-xl font-semibold text-text-primary",
+    "ui-glass-panel":
+      "relative overflow-hidden rounded-lg border border-border-muted bg-surface shadow-[var(--shadow-surface)] backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]",
+    "ui-glass-panel-strong":
+      "relative overflow-hidden rounded-lg border border-border-muted bg-elevated shadow-[var(--shadow-surface)] backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] backdrop-brightness-[var(--glass-brightness)]",
+    "ui-glass-chip":
+      "inline-flex items-center rounded-full border border-border-muted bg-surface-soft px-2 py-0.5 shadow-[var(--shadow-inset-soft)]",
+    "ui-glass-hover":
+      "transition-[background-color,color] duration-150 ease-out hover:bg-surface-soft hover:text-text-primary",
+    "text-ui-2xs": "[font-size:var(--font-size-ui-2xs)]",
+    "text-ui-xs": "[font-size:var(--font-size-ui-xs)]",
+    "text-ui-sm": "[font-size:var(--font-size-ui-sm)]",
+    "text-ui-md": "[font-size:var(--font-size-ui-md)]",
+    "text-ui-lg": "[font-size:var(--font-size-ui-lg)]",
+    "leading-ui-2xs": "[line-height:var(--line-height-ui-2xs)]",
+    "leading-ui-xs": "[line-height:var(--line-height-ui-xs)]",
+    "leading-ui-sm": "[line-height:var(--line-height-ui-sm)]",
+    "leading-ui-md": "[line-height:var(--line-height-ui-md)]",
+    "leading-ui-lg": "[line-height:var(--line-height-ui-lg)]",
+    "ui-text-micro": "text-ui-2xs leading-ui-2xs",
+    "ui-text-caption": "text-ui-xs leading-ui-xs",
+    "ui-text-body-sm": "text-ui-sm leading-ui-sm",
+    "ui-text-body": "text-ui-md leading-ui-md",
+    "ui-badge":
+      "rounded-full border border-border-strong bg-surface-soft px-2 py-0.5 text-ui-2xs leading-ui-2xs tracking-ui-wide",
+
+    // layer: project-wide helper shortcuts
+    "btn-icon": "inline-block h-[1.05em] w-[1.05em] shrink-0 align-[-0.14em]",
+  },
+});

@@ -1,0 +1,24 @@
+[package]
+name = "rtool-app"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rtool_contracts = { workspace = true }
+rtool_platform = { workspace = true }
+rtool_kernel = { workspace = true }
+rtool_data = { workspace = true }
+rtool_capture = { workspace = true }
+rtool_discovery = { workspace = true }
+rtool_logging = { workspace = true }
+rtool_settings = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+libsql = { workspace = true }
+regex = { workspace = true }
+tracing-appender = { workspace = true }
+tracing-subscriber = { workspace = true }
+walkdir = { workspace = true }
+tokio = { workspace = true }

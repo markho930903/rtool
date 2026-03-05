@@ -1,0 +1,44 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["eslint", "typescript", "oxc", "react", "import"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "allow",
+    "style": "allow",
+    "pedantic": "allow",
+    "restriction": "allow",
+    "nursery": "allow"
+  },
+  "rules": {
+    "eslint/sort-imports": "allow",
+    "react/react-in-jsx-scope": "allow",
+    "react/jsx-uses-react": "allow",
+    "import/no-unassigned-import": [
+      "error",
+      {
+        "allow": ["**/*.css"]
+      }
+    ]
+  },
+  "settings": {
+    "react": {
+      "linkComponents": [
+        {
+          "name": "Link",
+          "linkAttribute": "to"
+        },
+        {
+          "name": "NavLink",
+          "linkAttribute": "to"
+        }
+      ],
+      "version": "19.2.4"
+    }
+  },
+  "env": {
+    "builtin": true
+  },
+  "globals": {},
+  "ignorePatterns": ["node_modules/**", "dist/**", "dist-ssr/**", "src-tauri/target/**", "src-tauri/gen/**"]
+}

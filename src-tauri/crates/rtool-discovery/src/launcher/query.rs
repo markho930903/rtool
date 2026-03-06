@@ -5,6 +5,7 @@ use crate::launcher::grouping::with_launcher_group;
 pub struct IndexedSearchResult {
     pub items: Vec<LauncherItemDto>,
     pub ready: bool,
+    pub fallback_to_like: bool,
 }
 
 pub async fn search_indexed_items_async(
@@ -17,6 +18,7 @@ pub async fn search_indexed_items_async(
     let ready = read_index_ready(db_conn).await?;
     let limit = limit.max(1);
     let candidate_limit = (limit * QUERY_OVERSCAN_FACTOR).clamp(limit, MAX_QUERY_CANDIDATE_LIMIT);
+    let mut fallback_to_like = false;
     let rows = if normalized_query.is_empty() {
         query_index_rows_default(db_conn, candidate_limit as i64).await?
     } else {
@@ -25,6 +27,7 @@ pub async fn search_indexed_items_async(
             match query_index_rows_fts(db_conn, fts_query.as_str(), candidate_limit as i64).await {
                 Ok(rows) => rows,
                 Err(error) => {
+                    fallback_to_like = true;
                     tracing::warn!(
                         event = "launcher_index_fts_query_failed",
                         query = normalized_query,
@@ -45,7 +48,11 @@ pub async fn search_indexed_items_async(
         }
     }
 
-    Ok(IndexedSearchResult { items, ready })
+    Ok(IndexedSearchResult {
+        items,
+        ready,
+        fallback_to_like,
+    })
 }
 
 fn map_index_row_to_item(

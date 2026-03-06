@@ -4,6 +4,7 @@ import { useAsyncEffect } from "@/hooks/useAsyncEffect";
 import type { StoredWindowLayout, WindowLayoutBounds } from "@/hooks/window/window-layout.types";
 import { clampStoredWindowLayout, parseStoredWindowLayout } from "@/hooks/window/window-layout.utils";
 import { runRecoverable } from "@/services/recoverable";
+import { addSafeResolveUnlisten } from "@/services/tauri-event";
 
 interface WindowLayoutPersistenceWindow {
   outerSize: () => Promise<{ width: number; height: number }>;
@@ -134,15 +135,15 @@ export function useWindowLayoutPersistence(options: UseWindowLayoutPersistenceOp
 
       await restoreLayout();
 
-      const unlistenMoved = await appWindow.onMoved(() => {
+      const unlistenMovedPromise = appWindow.onMoved(() => {
         schedulePersistLayout();
       });
-      stack.add(unlistenMoved, "onMoved");
+      addSafeResolveUnlisten(stack, unlistenMovedPromise, `window-layout:${scope}:onMoved`, "onMoved");
 
-      const unlistenResized = await appWindow.onResized(() => {
+      const unlistenResizedPromise = appWindow.onResized(() => {
         schedulePersistLayout();
       });
-      stack.add(unlistenResized, "onResized");
+      addSafeResolveUnlisten(stack, unlistenResizedPromise, `window-layout:${scope}:onResized`, "onResized");
 
       if (persistOnInit) {
         void persistLayout();

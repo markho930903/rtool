@@ -1,6 +1,8 @@
 use rtool_contracts::{AppError, AppResult};
 use rtool_platform::launcher::{AppPackageInfo, LauncherHost, LauncherWindow};
+use std::path::Path;
 use tauri::{AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, WebviewWindow};
+use tauri_plugin_opener::OpenerExt;
 
 pub struct TauriLauncherHost {
     app: AppHandle,
@@ -69,6 +71,17 @@ impl LauncherHost for TauriLauncherHost {
         crate::platform::native_ui::window_factory::ensure_webview_window(&self.app, label)
             .ok()
             .map(|window| Box::new(TauriLauncherWindow::new(window)) as Box<dyn LauncherWindow>)
+    }
+
+    fn open_path(&self, path: &Path) -> AppResult<()> {
+        self.app
+            .opener()
+            .open_path(path.to_string_lossy().to_string(), None::<&str>)
+            .map_err(|error| {
+                AppError::new("launcher_path_open_failed", "打开失败")
+                    .with_context("path", path.to_string_lossy().to_string())
+                    .with_context("detail", error.to_string())
+            })
     }
 
     fn app_data_dir(&self) -> AppResult<std::path::PathBuf> {

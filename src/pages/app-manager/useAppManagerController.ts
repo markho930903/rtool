@@ -1,4 +1,3 @@
-import { listen } from "@tauri-apps/api/event";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type {
@@ -13,6 +12,7 @@ import type {
   ManagedAppDetail,
 } from "@/components/app-manager/types";
 import { useAsyncEffect } from "@/hooks/useAsyncEffect";
+import { listenWithCleanup } from "@/services/tauri-event";
 import type { AppDetailPaneModel } from "@/pages/app-manager/AppDetailPane";
 import type { AppListPaneModel } from "@/pages/app-manager/AppListPane";
 import {
@@ -514,15 +514,20 @@ export function useAppManagerController() {
         listRequestSeqRef.current += 1;
       }, "invalidate-list-request-seq");
 
-      const stop = await listen<AppManagerIndexUpdatedPayload>("rtool://app-manager/index-updated", (event) => {
-        if (!event.payload) {
-          return;
-        }
-        setRevision((prev) => Math.max(prev, event.payload.revision));
-        setIndexedAt(event.payload.indexedAt);
-        void loadListFirstPage(keywordRef.current);
-      });
-      stack.add(stop, "index-updated");
+      listenWithCleanup<AppManagerIndexUpdatedPayload>(
+        stack,
+        "rtool://app-manager/index-updated",
+        (event) => {
+          if (!event.payload) {
+            return;
+          }
+          setRevision((prev) => Math.max(prev, event.payload.revision));
+          setIndexedAt(event.payload.indexedAt);
+          void loadListFirstPage(keywordRef.current);
+        },
+        "app-manager:index-updated",
+        "index-updated",
+      );
     },
     [loadListFirstPage],
     {

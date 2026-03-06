@@ -204,6 +204,35 @@ pub struct LauncherSearchSettingsDto {
     pub refresh_interval_secs: u32,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LauncherSearchDiagnosticsDto {
+    pub index_used: bool,
+    pub fallback_to_like: bool,
+    pub query_duration_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LauncherSearchIndexStateDto {
+    pub ready: bool,
+    pub building: bool,
+    pub indexed_items: u64,
+    pub truncated: bool,
+    pub last_build_ms: Option<i64>,
+    pub last_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LauncherSearchResponseDto {
+    pub query: String,
+    pub limit: u16,
+    pub items: Vec<LauncherItemDto>,
+    pub index: LauncherSearchIndexStateDto,
+    pub diagnostics: LauncherSearchDiagnosticsDto,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct LauncherUpdateSearchSettingsInputDto {
@@ -239,6 +268,14 @@ pub struct LauncherRebuildResultDto {
     pub indexed_roots: u32,
     pub truncated: bool,
     pub ready: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LauncherStatusDto {
+    pub runtime: LauncherRuntimeStatusDto,
+    pub index: LauncherIndexStatusDto,
+    pub settings: LauncherSearchSettingsDto,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

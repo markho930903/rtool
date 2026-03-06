@@ -132,6 +132,29 @@ export type LauncherSearchSettingsDto = {
   refreshIntervalSecs: number;
 };
 
+export type LauncherSearchDiagnosticsDto = {
+  indexUsed: boolean;
+  fallbackToLike: boolean;
+  queryDurationMs: number | null;
+};
+
+export type LauncherSearchIndexStateDto = {
+  ready: boolean;
+  building: boolean;
+  indexedItems: number;
+  truncated: boolean;
+  lastBuildMs: number | null;
+  lastError: string | null;
+};
+
+export type LauncherSearchResponseDto = {
+  query: string;
+  limit: number;
+  items: Array<LauncherItemDto>;
+  index: LauncherSearchIndexStateDto;
+  diagnostics: LauncherSearchDiagnosticsDto;
+};
+
 export type LauncherUpdateSearchSettingsInputDto = {
   roots: Array<string> | null;
   excludePatterns: Array<string> | null;
@@ -161,6 +184,12 @@ export type LauncherRebuildResultDto = {
   indexedRoots: number;
   truncated: boolean;
   ready: boolean;
+};
+
+export type LauncherStatusDto = {
+  runtime: LauncherRuntimeStatusDto;
+  index: LauncherIndexStatusDto;
+  settings: LauncherSearchSettingsDto;
 };
 
 export type AppManagerQueryDto = {
@@ -778,7 +807,7 @@ export type LauncherRequestDto =
   | CommandWithPayload<"execute", { action: LauncherActionDto }>
   | CommandNoPayload<"get_search_settings">
   | CommandWithPayload<"update_search_settings", { input: LauncherUpdateSearchSettingsInputDto }>
-  | CommandNoPayload<"get_index_status">
+  | CommandNoPayload<"get_status">
   | CommandNoPayload<"rebuild_index">
   | CommandNoPayload<"reset_search_settings">;
 

@@ -1,40 +1,28 @@
-import { listen } from "@tauri-apps/api/event";
 import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { AppEntityIcon } from "@/components/icons/AppEntityIcon";
 import { BootOverlay, SkeletonComposer, type SkeletonItemSpec, useBootState } from "@/components/loading";
 import type { PaletteItem } from "@/components/palette/types";
 import { Button, Input } from "@/components/ui";
+import { cx } from "@/components/ui/utils";
 import { useAsyncEffect } from "@/hooks/useAsyncEffect";
 import { useWindowFocusAutoHide } from "@/hooks/window/useWindowFocusAutoHide";
 import { useWindowLayoutPersistence } from "@/hooks/window/useWindowLayoutPersistence";
 import { useLocaleStore } from "@/i18n/store";
-import { useLauncherStore } from "@/stores/launcher.store";
+import { listenWithCleanup } from "@/services/tauri-event";
+
+import { renderHighlightedText } from "./launcher/highlight";
+import { useLauncherWindowState } from "./launcher/useLauncherWindowState";
 
 const LAUNCHER_WINDOW_LABEL = "launcher";
 const WINDOW_LAYOUT_KEY = "launcher-window-layout";
 const LAUNCHER_GRID_CARD_MIN_WIDTH = 90;
 const LAUNCHER_GRID_GAP = 4;
 const LAUNCHER_GRID_MAX_COLUMNS = 6;
-
-type LauncherTopTab = "all" | "application" | "file" | "builtin";
-type LauncherSectionKey = "builtin" | "application" | "file" | "other";
-
-interface FlatLauncherItem {
-  item: PaletteItem;
-  absoluteIndex: number;
-  section: LauncherSectionKey;
-  flatIndex: number;
-}
-
-interface LauncherSection {
-  key: LauncherSectionKey;
-  label: string;
-  showHeader: boolean;
-  items: FlatLauncherItem[];
-}
+const LAUNCHER_ITEM_BUTTON_CLASS_NAME =
+  "group flex aspect-square w-full flex-col items-center justify-center gap-0.5 rounded-xl px-0.5 py-0.5 text-center transition-colors duration-[140ms] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent";
 
 const LAUNCHER_LIST_SKELETON_ITEMS: SkeletonItemSpec[] = Array.from({ length: 8 }, (_, index) => ({
   key: `launcher-skeleton-${index}`,
@@ -45,79 +33,6 @@ const LAUNCHER_LIST_SKELETON_ITEMS: SkeletonItemSpec[] = Array.from({ length: 8 
   ],
   shimmerDelayMs: index * 70,
 }));
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-interface HighlightContext {
-  matcher: RegExp | null;
-  tokenSet: Set<string>;
-}
-
-function createHighlightContext(query: string): HighlightContext {
-  const tokens = query
-    .trim()
-    .split(/\s+/)
-    .map((token) => token.trim())
-    .filter(Boolean);
-
-  if (tokens.length === 0) {
-    return {
-      matcher: null,
-      tokenSet: new Set(),
-    };
-  }
-
-  return {
-    matcher: new RegExp(`(${tokens.map(escapeRegExp).join("|")})`, "ig"),
-    tokenSet: new Set(tokens.map((token) => token.toLowerCase())),
-  };
-}
-
-function renderHighlightedText(text: string, context: HighlightContext): ReactNode {
-  if (!context.matcher || context.tokenSet.size === 0) {
-    return text;
-  }
-
-  const parts = text.split(context.matcher);
-
-  return parts.map((part, index) => {
-    const lower = part.toLowerCase();
-    if (context.tokenSet.has(lower)) {
-      return (
-        <mark key={`${lower}-${index}`} className="rounded bg-accent-soft px-[1px] font-semibold text-accent">
-          {part}
-        </mark>
-      );
-    }
-    return <span key={`${lower}-${index}`}>{part}</span>;
-  });
-}
-
-function resolveSectionByCategory(category: string | undefined): LauncherSectionKey {
-  if (category === "builtin") {
-    return "builtin";
-  }
-
-  if (category === "application") {
-    return "application";
-  }
-
-  if (category === "file" || category === "directory") {
-    return "file";
-  }
-
-  return "other";
-}
-
-function nextTopTab(current: LauncherTopTab, step: 1 | -1): LauncherTopTab {
-  const ordered: LauncherTopTab[] = ["all", "application", "file", "builtin"];
-  const currentIndex = ordered.indexOf(current);
-  const safeIndex = currentIndex < 0 ? 0 : currentIndex;
-  const nextIndex = (safeIndex + step + ordered.length) % ordered.length;
-  return ordered[nextIndex];
-}
 
 function LauncherItemIcon({ item }: { item: PaletteItem }) {
   return (
@@ -141,21 +56,34 @@ export default function LauncherWindowPage() {
   const [searchSeed, setSearchSeed] = useState(0);
   const [hasSearchedOnce, setHasSearchedOnce] = useState(false);
   const [alwaysOnTop, setAlwaysOnTop] = useState(false);
-  const [activeTab, setActiveTab] = useState<LauncherTopTab>("all");
-  const [selectedVisibleIndex, setSelectedVisibleIndex] = useState(0);
-  const [gridColumnCount, setGridColumnCount] = useState(1);
   const alwaysOnTopRef = useRef(false);
-
-  const query = useLauncherStore((state) => state.query);
-  const items = useLauncherStore((state) => state.items);
-  const loading = useLauncherStore((state) => state.loading);
-  const launcherError = useLauncherStore((state) => state.error);
-  const reset = useLauncherStore((state) => state.reset);
-  const search = useLauncherStore((state) => state.search);
-  const setStoreSelectedIndex = useLauncherStore((state) => state.setSelectedIndex);
-  const executeSelected = useLauncherStore((state) => state.executeSelected);
-  const setQuery = useLauncherStore((state) => state.setQuery);
   const syncLocaleFromBackend = useLocaleStore((state) => state.syncFromBackend);
+
+  const {
+    query,
+    items,
+    loading,
+    launcherError,
+    reset,
+    search,
+    tabs,
+    activeTab,
+    activeTabLabel,
+    selectedVisibleIndex,
+    setSelectedVisibleIndex,
+    gridColumnCount,
+    setGridColumnCount,
+    sections,
+    flatItems,
+    selectedItem,
+    highlightContext,
+    updateQuery,
+    updateActiveTab,
+    cycleActiveTab,
+    resetViewState,
+    moveGridSelection,
+    executeVisibleSelection,
+  } = useLauncherWindowState({ t });
 
   const searchWithBootMark = useCallback(
     async (limit?: number) => {
@@ -175,102 +103,6 @@ export default function LauncherWindowPage() {
     exitMs: 160,
   });
 
-  const sectionLabelMap = useMemo(
-    () => ({
-      builtin: t("launcher.section.builtin"),
-      application: t("launcher.section.application"),
-      file: t("launcher.section.file"),
-      other: t("launcher.section.other"),
-    }),
-    [t],
-  );
-
-  const tabs = useMemo(
-    () => [
-      { key: "all" as const, label: t("launcher.tab.all") },
-      { key: "application" as const, label: t("launcher.tab.application") },
-      { key: "file" as const, label: t("launcher.tab.file") },
-      { key: "builtin" as const, label: t("launcher.tab.builtin") },
-    ],
-    [t],
-  );
-
-  const { sections, flatItems } = useMemo(() => {
-    const base = items.map((item, absoluteIndex) => ({
-      item,
-      absoluteIndex,
-      section: resolveSectionByCategory(item.category),
-    }));
-
-    const filtered =
-      activeTab === "all"
-        ? base
-        : base.filter((entry) => {
-            if (activeTab === "application") {
-              return entry.section === "application";
-            }
-
-            if (activeTab === "file") {
-              return entry.section === "file";
-            }
-
-            return entry.section === "builtin";
-          });
-
-    const pushWithFlatIndex = (entries: typeof filtered, offset: number) =>
-      entries.map((entry, localIndex) => ({
-        ...entry,
-        flatIndex: offset + localIndex,
-      }));
-
-    if (activeTab !== "all") {
-      const keyed = pushWithFlatIndex(filtered, 0);
-      const sectionKey: LauncherSectionKey =
-        activeTab === "application" ? "application" : activeTab === "file" ? "file" : "builtin";
-
-      return {
-        sections: [
-          {
-            key: sectionKey,
-            label: sectionLabelMap[sectionKey],
-            showHeader: false,
-            items: keyed,
-          },
-        ],
-        flatItems: keyed,
-      };
-    }
-
-    let cursor = 0;
-    const orderedSections: LauncherSectionKey[] = ["builtin", "application", "file", "other"];
-    const builtSections: LauncherSection[] = [];
-
-    for (const key of orderedSections) {
-      const chunk = filtered.filter((entry) => entry.section === key);
-      if (chunk.length === 0) {
-        continue;
-      }
-
-      const keyedChunk = pushWithFlatIndex(chunk, cursor);
-      cursor += keyedChunk.length;
-
-      builtSections.push({
-        key,
-        label: sectionLabelMap[key],
-        showHeader: true,
-        items: keyedChunk,
-      });
-    }
-
-    return {
-      sections: builtSections,
-      flatItems: builtSections.flatMap((section) => section.items),
-    };
-  }, [activeTab, items, sectionLabelMap]);
-
-  const selectedEntry = flatItems[selectedVisibleIndex] ?? null;
-  const selectedItem = selectedEntry?.item ?? null;
-  const highlightContext = useMemo(() => createHighlightContext(query), [query]);
   const enabled = appWindow.label === LAUNCHER_WINDOW_LABEL;
 
   const resolveLayoutBounds = useCallback(async () => {
@@ -297,14 +129,15 @@ export default function LauncherWindowPage() {
   });
 
   const shouldSkipHide = useCallback(() => alwaysOnTopRef.current, []);
+  const handleWindowFocus = useCallback(() => {
+    void syncLocaleFromBackend();
+  }, [syncLocaleFromBackend]);
 
   const { cancelScheduledHide } = useWindowFocusAutoHide({
     appWindow,
     enabled,
     shouldSkipHide,
-    onFocus: () => {
-      void syncLocaleFromBackend();
-    },
+    onFocus: handleWindowFocus,
   });
 
   const syncAlwaysOnTopState = useCallback(() => {
@@ -339,6 +172,7 @@ export default function LauncherWindowPage() {
     if (!enabled) {
       return;
     }
+
     syncAlwaysOnTopState();
   }, [enabled, syncAlwaysOnTopState]);
 
@@ -351,31 +185,8 @@ export default function LauncherWindowPage() {
       return;
     }
 
-    const selectedNode = launcherItemRefs.current.get(selectedItem.id);
-    selectedNode?.scrollIntoView({ block: "nearest" });
+    launcherItemRefs.current.get(selectedItem.id)?.scrollIntoView({ block: "nearest" });
   }, [selectedItem?.id]);
-
-  useEffect(() => {
-    if (!enabled) {
-      return;
-    }
-
-    const current = selectedEntry;
-    if (!current) {
-      return;
-    }
-
-    setStoreSelectedIndex(current.absoluteIndex);
-  }, [enabled, selectedEntry, setStoreSelectedIndex]);
-
-  useEffect(() => {
-    setSelectedVisibleIndex((current) => {
-      if (flatItems.length === 0) {
-        return 0;
-      }
-      return Math.min(current, flatItems.length - 1);
-    });
-  }, [flatItems]);
 
   useEffect(() => {
     if (!enabled) {
@@ -391,7 +202,7 @@ export default function LauncherWindowPage() {
       const width = host.clientWidth;
       const rawColumnCount = Math.floor((width + LAUNCHER_GRID_GAP) / (LAUNCHER_GRID_CARD_MIN_WIDTH + LAUNCHER_GRID_GAP));
       const columnCount = Math.max(1, Math.min(LAUNCHER_GRID_MAX_COLUMNS, rawColumnCount));
-      setGridColumnCount(columnCount);
+      setGridColumnCount((current) => (current === columnCount ? current : columnCount));
     };
 
     updateColumns();
@@ -402,43 +213,11 @@ export default function LauncherWindowPage() {
     return () => {
       observer.disconnect();
     };
-  }, [enabled]);
+  }, [enabled, setGridColumnCount]);
 
-  const executeCurrentSelection = useCallback(() => {
-    const current = flatItems[selectedVisibleIndex];
-    if (!current) {
-      return;
-    }
-
-    setStoreSelectedIndex(current.absoluteIndex);
-    void executeSelected().then((result) => {
-      if (result?.ok) {
-        void appWindow.hide();
-      }
-    });
-  }, [appWindow, executeSelected, selectedVisibleIndex, setStoreSelectedIndex, flatItems]);
-
-  const moveGridSelection = useCallback(
-    (delta: number) => {
-      if (flatItems.length === 0) {
-        return;
-      }
-
-      setSelectedVisibleIndex((current) => {
-        const next = current + delta;
-        if (next < 0) {
-          return 0;
-        }
-
-        if (next >= flatItems.length) {
-          return flatItems.length - 1;
-        }
-
-        return next;
-      });
-    },
-    [flatItems.length],
-  );
+  const hideWindow = useCallback(() => {
+    void appWindow.hide();
+  }, [appWindow]);
 
   useAsyncEffect(
     async ({ stack }) => {
@@ -446,41 +225,42 @@ export default function LauncherWindowPage() {
         return;
       }
 
-      const unlistenOpened = await listen("rtool://launcher/opened", () => {
-        cancelScheduledHide();
-        syncAlwaysOnTopState();
+      listenWithCleanup(
+        stack,
+        "rtool://launcher/opened",
+        () => {
+          cancelScheduledHide();
+          syncAlwaysOnTopState();
+          setOpenCycle((value) => value + 1);
+          setSearchSeed((value) => value + 1);
+          setHasSearchedOnce(false);
+          resetViewState();
+          reset();
 
-        setOpenCycle((value) => value + 1);
-        setSearchSeed((value) => value + 1);
-        setHasSearchedOnce(false);
-        setActiveTab("all");
-        setSelectedVisibleIndex(0);
-        reset();
-
-        window.setTimeout(() => {
-          inputRef.current?.focus();
-        }, 40);
-      });
-      stack.add(unlistenOpened, "opened");
+          window.setTimeout(() => {
+            inputRef.current?.focus();
+          }, 40);
+        },
+        "launcher-window:opened",
+        "opened",
+      );
 
       const onKeyDown = (event: KeyboardEvent) => {
         if (event.key === "Escape") {
           event.preventDefault();
-          void appWindow.hide();
+          hideWindow();
           return;
         }
 
         if ((event.metaKey || event.ctrlKey) && event.key === "ArrowLeft") {
           event.preventDefault();
-          setActiveTab((current) => nextTopTab(current, -1));
-          setSelectedVisibleIndex(0);
+          cycleActiveTab(-1);
           return;
         }
 
         if ((event.metaKey || event.ctrlKey) && event.key === "ArrowRight") {
           event.preventDefault();
-          setActiveTab((current) => nextTopTab(current, 1));
-          setSelectedVisibleIndex(0);
+          cycleActiveTab(1);
           return;
         }
 
@@ -513,7 +293,7 @@ export default function LauncherWindowPage() {
             return;
           }
           event.preventDefault();
-          executeCurrentSelection();
+          void executeVisibleSelection(undefined, hideWindow);
         }
       };
 
@@ -523,13 +303,15 @@ export default function LauncherWindowPage() {
       }, "remove-keydown-listener");
     },
     [
-      appWindow,
       cancelScheduledHide,
+      cycleActiveTab,
       enabled,
-      executeCurrentSelection,
+      executeVisibleSelection,
       gridColumnCount,
+      hideWindow,
       moveGridSelection,
       reset,
+      resetViewState,
       syncAlwaysOnTopState,
     ],
     {
@@ -551,14 +333,15 @@ export default function LauncherWindowPage() {
       void searchWithBootMark(60);
     }, 120);
 
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+    };
   }, [enabled, query, searchSeed, searchWithBootMark]);
 
   if (!enabled) {
     return null;
   }
 
-  const activeTabLabel = tabs.find((tab) => tab.key === activeTab)?.label ?? t("launcher.tab.all");
   const alwaysOnTopLabel = alwaysOnTop ? t("launcher.pinWindowOff") : t("launcher.pinWindowOn");
 
   return (
@@ -577,8 +360,7 @@ export default function LauncherWindowPage() {
               aria-label={t("input.aria")}
               value={query}
               onChange={(event) => {
-                setQuery(event.currentTarget.value);
-                setSelectedVisibleIndex(0);
+                updateQuery(event.currentTarget.value);
               }}
               placeholder={t("input.placeholder")}
               className="text-sm"
@@ -616,8 +398,7 @@ export default function LauncherWindowPage() {
                   role="tab"
                   aria-selected={active}
                   onClick={() => {
-                    setActiveTab(tab.key);
-                    setSelectedVisibleIndex(0);
+                    updateActiveTab(tab.key);
                   }}
                 >
                   {tab.label}
@@ -668,7 +449,9 @@ export default function LauncherWindowPage() {
               {sections.map((section) => (
                 <section key={section.key} className="mb-1 last:mb-0">
                   {section.showHeader ? (
-                    <h3 className="mb-0 px-0.5 text-[11px] font-medium uppercase tracking-wide text-text-muted">{section.label}</h3>
+                    <h3 className="mb-0 px-0.5 text-[11px] font-medium uppercase tracking-wide text-text-muted">
+                      {section.label}
+                    </h3>
                   ) : null}
                   <div
                     className="grid"
@@ -690,26 +473,19 @@ export default function LauncherWindowPage() {
                             }
                             launcherItemRefs.current.delete(entry.item.id);
                           }}
-                          className={
+                          className={cx(
+                            LAUNCHER_ITEM_BUTTON_CLASS_NAME,
                             isSelected
-                              ? "group flex aspect-square w-full flex-col items-center justify-center gap-0.5 rounded-xl px-0.5 py-0.5 text-center transition-colors duration-[140ms] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                              : "group flex aspect-square w-full flex-col items-center justify-center gap-0.5 rounded-xl px-0.5 py-0.5 text-center transition-colors duration-[140ms] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                          }
+                              ? "border border-accent/40 bg-accent-soft shadow-inset-soft"
+                              : "border border-transparent hover:bg-surface-soft/60",
+                          )}
                           onFocus={() => {
                             if (selectedVisibleIndex !== entry.flatIndex) {
                               setSelectedVisibleIndex(entry.flatIndex);
                             }
                           }}
                           onClick={() => {
-                            if (selectedVisibleIndex !== entry.flatIndex) {
-                              setSelectedVisibleIndex(entry.flatIndex);
-                            }
-                            setStoreSelectedIndex(entry.absoluteIndex);
-                            void executeSelected().then((result) => {
-                              if (result?.ok) {
-                                void appWindow.hide();
-                              }
-                            });
+                            void executeVisibleSelection(entry.flatIndex, hideWindow);
                           }}
                           aria-current={isSelected ? "true" : undefined}
                         >

@@ -7,7 +7,7 @@ import type {
   ScreenshotSessionDto,
   ScreenshotWindowOpenedPayload,
 } from "@/contracts";
-import { safeResolveUnlisten, safeUnlisten } from "@/services/tauri-event";
+import { createSafeResolveUnlistenCleanup, safeUnlisten } from "@/services/tauri-event";
 import {
   screenshotCancelSession,
   screenshotCommitSelection,
@@ -517,9 +517,7 @@ export default function ScreenshotOverlayPage() {
       },
     );
 
-    return () => {
-      safeResolveUnlisten(unlistenPromise, "screenshot-overlay:window-opened");
-    };
+    return createSafeResolveUnlistenCleanup(unlistenPromise, "screenshot-overlay:window-opened");
   }, [appWindow, resetSelection]);
 
   useEffect(() => {
@@ -540,9 +538,7 @@ export default function ScreenshotOverlayPage() {
       },
     );
 
-    return () => {
-      safeResolveUnlisten(unlistenPromise, "screenshot-overlay:operation-result");
-    };
+    return createSafeResolveUnlistenCleanup(unlistenPromise, "screenshot-overlay:operation-result");
   }, [appWindow]);
 
   useEffect(() => {

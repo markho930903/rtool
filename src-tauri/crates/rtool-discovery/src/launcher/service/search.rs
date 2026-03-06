@@ -14,7 +14,15 @@ const MAX_RESULT_LIMIT: usize = 120;
 pub struct LauncherSearchDiagnostics {
     pub index_used: bool,
     pub index_failed: bool,
+    pub fallback_to_like: bool,
     pub index_query_duration_ms: Option<u64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LauncherSearchResult {
+    pub items: Vec<LauncherItemDto>,
+    pub diagnostics: LauncherSearchDiagnostics,
+    pub limit: u16,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,10 +53,7 @@ struct QueryPattern<'a> {
 
 impl<'a> QueryPattern<'a> {
     fn new(text: &'a str) -> Self {
-        let tokens = text
-            .split_whitespace()
-            .filter(|token| !token.is_empty())
-            .collect();
+        let tokens = text.split_whitespace().collect();
         Self { text, tokens }
     }
 
@@ -73,32 +78,53 @@ pub async fn search_launcher_async(
     db_conn: &DbConn,
     query: &str,
     limit: Option<u16>,
-) -> (Vec<LauncherItemDto>, LauncherSearchDiagnostics) {
+) -> LauncherSearchResult {
     let normalized = normalize_query(query);
     let query_pattern = QueryPattern::new(&normalized);
     let locale = current_locale(app);
     let locale_kind = LocaleKind::from_resolved(&locale);
-    let result_limit = limit
+    let result_limit = clamp_result_limit(limit);
+    let (items, diagnostics) =
+        build_search_candidates(app, db_conn, &normalized, &locale, result_limit).await;
+    let matched = collect_matched_items(items, &query_pattern, locale_kind, result_limit);
+
+    LauncherSearchResult {
+        items: matched,
+        diagnostics,
+        limit: u16::try_from(result_limit).unwrap_or(u16::MAX),
+    }
+}
+
+fn clamp_result_limit(limit: Option<u16>) -> usize {
+    limit
         .map(usize::from)
         .unwrap_or(DEFAULT_RESULT_LIMIT)
-        .clamp(1, MAX_RESULT_LIMIT);
+        .clamp(1, MAX_RESULT_LIMIT)
+}
 
+async fn build_search_candidates(
+    app: &dyn LauncherHost,
+    db_conn: &DbConn,
+    normalized: &str,
+    locale: &str,
+    result_limit: usize,
+) -> (Vec<LauncherItemDto>, LauncherSearchDiagnostics) {
     let mut diagnostics = LauncherSearchDiagnostics::default();
-    let mut items = builtin_items(&locale);
+    let mut items = builtin_items(locale);
 
     let index_started_at = Instant::now();
     let index_result =
-        search_indexed_items_async(app, db_conn, &normalized, &locale, result_limit).await;
+        search_indexed_items_async(app, db_conn, normalized, locale, result_limit).await;
     diagnostics.index_query_duration_ms = Some(elapsed_ms(index_started_at));
 
     match index_result {
-        Ok(index_result) => {
-            if index_result.ready {
-                diagnostics.index_used = true;
-                items.extend(index_result.items);
-            } else {
-                tracing::info!(event = "launcher_index_not_ready");
-            }
+        Ok(index_result) if index_result.ready => {
+            diagnostics.index_used = true;
+            diagnostics.fallback_to_like = index_result.fallback_to_like;
+            items.extend(index_result.items);
+        }
+        Ok(_) => {
+            tracing::info!(event = "launcher_index_not_ready");
         }
         Err(error) => {
             diagnostics.index_failed = true;
@@ -109,9 +135,18 @@ pub async fn search_launcher_async(
         }
     }
 
+    (items, diagnostics)
+}
+
+fn collect_matched_items(
+    items: Vec<LauncherItemDto>,
+    query: &QueryPattern<'_>,
+    locale_kind: LocaleKind,
+    result_limit: usize,
+) -> Vec<LauncherItemDto> {
     let mut matched: Vec<LauncherItemDto> = items
         .into_iter()
-        .filter_map(|item| score_item(item, &query_pattern, locale_kind))
+        .filter_map(|item| score_item(item, query, locale_kind))
         .collect();
 
     matched.sort_by(|left, right| {
@@ -121,9 +156,8 @@ pub async fn search_launcher_async(
             .then_with(|| category_rank(&left.category).cmp(&category_rank(&right.category)))
             .then_with(|| left.title.cmp(&right.title))
     });
-
     matched.truncate(result_limit);
-    (matched, diagnostics)
+    matched
 }
 
 fn should_hide_item_without_query(item: &LauncherItemDto) -> bool {
@@ -195,22 +229,17 @@ fn build_builtin_route_item(
     icon: &str,
     shortcut: Option<&str>,
 ) -> LauncherItemDto {
-    let payload = resolve_builtin_icon(icon);
-    with_launcher_group(LauncherItemDto {
-        id: id.to_string(),
+    build_builtin_item(
+        locale,
+        id,
         title,
         subtitle,
-        category: "builtin".to_string(),
-        group: String::new(),
-        source: Some(t(locale, "launcher.source.builtin")),
-        shortcut: shortcut.map(ToString::to_string),
-        score: 0,
-        icon_kind: payload.kind,
-        icon_value: payload.value,
-        action: LauncherActionDto::OpenBuiltinRoute {
+        icon,
+        shortcut,
+        LauncherActionDto::OpenBuiltinRoute {
             route: route.to_string(),
         },
-    })
+    )
 }
 
 fn build_builtin_tool_item(
@@ -221,22 +250,17 @@ fn build_builtin_tool_item(
     tool_id: &str,
     icon: &str,
 ) -> LauncherItemDto {
-    let payload = resolve_builtin_icon(icon);
-    with_launcher_group(LauncherItemDto {
-        id: id.to_string(),
+    build_builtin_item(
+        locale,
+        id,
         title,
         subtitle,
-        category: "builtin".to_string(),
-        group: String::new(),
-        source: Some(t(locale, "launcher.source.builtin")),
-        shortcut: None,
-        score: 0,
-        icon_kind: payload.kind,
-        icon_value: payload.value,
-        action: LauncherActionDto::OpenBuiltinTool {
+        icon,
+        None,
+        LauncherActionDto::OpenBuiltinTool {
             tool_id: tool_id.to_string(),
         },
-    })
+    )
 }
 
 fn build_builtin_window_item(
@@ -248,6 +272,28 @@ fn build_builtin_window_item(
     icon: &str,
     shortcut: Option<&str>,
 ) -> LauncherItemDto {
+    build_builtin_item(
+        locale,
+        id,
+        title,
+        subtitle,
+        icon,
+        shortcut,
+        LauncherActionDto::OpenBuiltinWindow {
+            window_label: window_label.to_string(),
+        },
+    )
+}
+
+fn build_builtin_item(
+    locale: &str,
+    id: &str,
+    title: String,
+    subtitle: String,
+    icon: &str,
+    shortcut: Option<&str>,
+    action: LauncherActionDto,
+) -> LauncherItemDto {
     let payload = resolve_builtin_icon(icon);
     with_launcher_group(LauncherItemDto {
         id: id.to_string(),
@@ -256,13 +302,11 @@ fn build_builtin_window_item(
         category: "builtin".to_string(),
         group: String::new(),
         source: Some(t(locale, "launcher.source.builtin")),
-        shortcut: shortcut.map(ToString::to_string),
+        shortcut: shortcut.map(str::to_string),
         score: 0,
         icon_kind: payload.kind,
         icon_value: payload.value,
-        action: LauncherActionDto::OpenBuiltinWindow {
-            window_label: window_label.to_string(),
-        },
+        action,
     })
 }
 
@@ -304,49 +348,42 @@ fn calculate_alias_score(
         return 0;
     }
 
-    let mut best = 0;
-    for alias in alias_terms(item.id.as_str(), locale_kind) {
-        let score = calculate_match_score(alias, query);
-        if score > best {
-            best = score;
-        }
-    }
-    best
+    alias_terms(item.id.as_str(), locale_kind)
+        .iter()
+        .map(|alias| calculate_match_score(alias, query))
+        .max()
+        .unwrap_or_default()
 }
 
 fn alias_terms(id: &str, locale_kind: LocaleKind) -> &'static [&'static str] {
-    match id {
-        "builtin.tools" | "action.open-tools" if locale_kind == LocaleKind::Zh => {
-            &["open tools", "toolbox", "tools", "utilities"]
-        }
-        "builtin.tools" | "action.open-tools" if locale_kind == LocaleKind::En => {
-            &["打开工具箱", "工具箱", "工具", "实用工具"]
-        }
-        "builtin.clipboard" if locale_kind == LocaleKind::Zh => {
-            &["clipboard", "clipboard history", "clip history"]
-        }
-        "builtin.clipboard" if locale_kind == LocaleKind::En => {
-            &["剪贴板", "剪贴板历史", "复制历史"]
-        }
-        "builtin.tool.base64" if locale_kind == LocaleKind::Zh => {
-            &["base64", "encode", "decode", "tool base64"]
-        }
-        "builtin.tool.base64" if locale_kind == LocaleKind::En => {
-            &["base64", "编码", "解码", "工具"]
-        }
-        "builtin.tool.regex" if locale_kind == LocaleKind::Zh => {
-            &["regex", "regular expression", "regexp"]
-        }
-        "builtin.tool.regex" if locale_kind == LocaleKind::En => {
-            &["正则", "正则表达式", "匹配工具"]
-        }
-        "builtin.tool.timestamp" if locale_kind == LocaleKind::Zh => {
-            &["timestamp", "time", "unix time"]
-        }
-        "builtin.tool.timestamp" if locale_kind == LocaleKind::En => {
-            &["时间戳", "时间", "时间转换"]
-        }
-        _ => &[],
+    let (zh_terms, en_terms) = match id {
+        "builtin.tools" | "action.open-tools" => (
+            &["open tools", "toolbox", "tools", "utilities"][..],
+            &["打开工具箱", "工具箱", "工具", "实用工具"][..],
+        ),
+        "builtin.clipboard" => (
+            &["clipboard", "clipboard history", "clip history"][..],
+            &["剪贴板", "剪贴板历史", "复制历史"][..],
+        ),
+        "builtin.tool.base64" => (
+            &["base64", "encode", "decode", "tool base64"][..],
+            &["base64", "编码", "解码", "工具"][..],
+        ),
+        "builtin.tool.regex" => (
+            &["regex", "regular expression", "regexp"][..],
+            &["正则", "正则表达式", "匹配工具"][..],
+        ),
+        "builtin.tool.timestamp" => (
+            &["timestamp", "time", "unix time"][..],
+            &["时间戳", "时间", "时间转换"][..],
+        ),
+        _ => return &[],
+    };
+
+    match locale_kind {
+        LocaleKind::Zh => zh_terms,
+        LocaleKind::En => en_terms,
+        LocaleKind::Other => &[],
     }
 }
 
@@ -453,6 +490,44 @@ mod tests {
             },
         );
         assert!(score_item(item, &QueryPattern::new(""), LocaleKind::Zh).is_none());
+    }
+
+    #[test]
+    fn builtin_items_preserve_shortcuts_and_actions() {
+        let items = builtin_items("zh-CN");
+        assert_eq!(items.len(), 6);
+
+        let clipboard = items
+            .iter()
+            .find(|item| item.id == "builtin.clipboard")
+            .unwrap();
+        assert_eq!(clipboard.shortcut.as_deref(), Some("Alt + V"));
+        assert!(matches!(
+            &clipboard.action,
+            LauncherActionDto::OpenBuiltinWindow { window_label } if window_label == "clipboard_history"
+        ));
+
+        let tools = items
+            .iter()
+            .find(|item| item.id == "builtin.tools")
+            .unwrap();
+        assert!(matches!(
+            &tools.action,
+            LauncherActionDto::OpenBuiltinRoute { route } if route == "/tools"
+        ));
+    }
+
+    #[test]
+    fn alias_terms_switch_by_locale_bucket() {
+        assert_eq!(
+            alias_terms("builtin.tool.regex", LocaleKind::Zh),
+            &["regex", "regular expression", "regexp"]
+        );
+        assert_eq!(
+            alias_terms("builtin.tool.regex", LocaleKind::En),
+            &["正则", "正则表达式", "匹配工具"]
+        );
+        assert!(alias_terms("builtin.tool.regex", LocaleKind::Other).is_empty());
     }
 
     #[test]

@@ -1,9 +1,9 @@
-import { useTranslation } from "react-i18next";
-
-import { LoadingIndicator } from "@/components/loading";
 import { Button } from "@ui/button";
 import { Input } from "@ui/input";
 import { Message } from "@ui/message/Message";
+import { useTranslation } from "react-i18next";
+
+import { LoadingIndicator } from "@/components/loading";
 import type { LauncherSettingsSectionState } from "@/pages/settings/hooks/useSettingsPageState";
 
 interface LauncherSettingsSectionProps {
@@ -118,28 +118,28 @@ export default function LauncherSettingsSection(props: LauncherSettingsSectionPr
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
             <span>
               {t("launcher.status.ready", {
-                value: props.state.status?.ready ? t("launcher.value.yes") : t("launcher.value.no"),
+                value: props.state.status?.index.ready ? t("launcher.value.yes") : t("launcher.value.no"),
               })}
             </span>
             <span>
               {t("launcher.status.building", {
-                value: props.state.status?.building ? t("launcher.value.yes") : t("launcher.value.no"),
+                value: props.state.status?.runtime.building ? t("launcher.value.yes") : t("launcher.value.no"),
               })}
             </span>
-            <span>{t("launcher.status.indexedItems", { value: props.state.status?.indexedItems ?? 0 })}</span>
-            <span>{t("launcher.status.indexedRoots", { value: props.state.status?.indexedRoots ?? 0 })}</span>
+            <span>{t("launcher.status.indexedItems", { value: props.state.status?.index.indexedItems ?? 0 })}</span>
+            <span>{t("launcher.status.indexedRoots", { value: props.state.status?.index.indexedRoots ?? 0 })}</span>
             <span>{t("launcher.status.lastBuild", { value: props.state.launcherLastBuildText })}</span>
             <span>{t("launcher.status.lastDuration", { value: props.state.launcherLastDurationText })}</span>
-            <span>{t("launcher.status.version", { value: props.state.status?.indexVersion ?? "--" })}</span>
+            <span>{t("launcher.status.version", { value: props.state.status?.index.indexVersion ?? "--" })}</span>
             <span>
               {t("launcher.status.truncated", {
-                value: props.state.status?.truncated ? t("launcher.value.yes") : t("launcher.value.no"),
+                value: props.state.status?.index.truncated ? t("launcher.value.yes") : t("launcher.value.no"),
               })}
             </span>
           </div>
-          {props.state.status?.lastError ? (
+          {props.state.status?.index.lastError ? (
             <p className="mt-2 mb-0 text-xs text-danger">
-              {t("launcher.status.lastError", { value: props.state.status.lastError })}
+              {t("launcher.status.lastError", { value: props.state.status.index.lastError })}
             </p>
           ) : null}
           {props.state.launcherTruncatedHintText ? (

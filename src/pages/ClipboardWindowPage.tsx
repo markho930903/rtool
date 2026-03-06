@@ -1,5 +1,4 @@
 import { LogicalSize } from "@tauri-apps/api/dpi";
-import { listen } from "@tauri-apps/api/event";
 import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 
@@ -10,6 +9,7 @@ import type { StoredWindowLayout, WindowLayoutBounds } from "@/hooks/window/wind
 import { useLocaleStore } from "@/i18n/store";
 import { clipboardWindowApplyMode, clipboardWindowSetMode } from "@/services/clipboard.service";
 import { runRecoverable } from "@/services/recoverable";
+import { addSafeResolveUnlisten, listenWithCleanup } from "@/services/tauri-event";
 
 const WINDOW_LAYOUT_KEY = "clipboard-window-layout";
 const CLIPBOARD_WINDOW_LABEL = "clipboard_history";
@@ -254,16 +254,17 @@ export default function ClipboardWindowPage() {
         }
       }, "clear-mode-resize-timer");
 
-      const unlistenFocusChanged = await appWindow.onFocusChanged(({ payload: focused }) => {
+      const unlistenFocusChangedPromise = appWindow.onFocusChanged(({ payload: focused }) => {
         if (!focused) {
           return;
         }
 
         void syncLocaleFromBackend();
       });
-      stack.add(unlistenFocusChanged, "focus-changed");
+      addSafeResolveUnlisten(stack, unlistenFocusChangedPromise, "clipboard-window:focus-changed", "focus-changed");
 
-      const unlistenOpened = await listen<ClipboardWindowOpenedPayload>(
+      listenWithCleanup<ClipboardWindowOpenedPayload>(
+        stack,
         "rtool://clipboard-window/opened",
         ({ payload }) => {
           const compact = payload?.compact === true;
@@ -281,8 +282,9 @@ export default function ClipboardWindowPage() {
             searchInputRef.current?.focus();
           }, 40);
         },
+        "clipboard-window:opened",
+        "opened",
       );
-      stack.add(unlistenOpened, "opened");
 
       const onKeyDown = (event: KeyboardEvent) => {
         if (event.key === "Escape") {

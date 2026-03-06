@@ -1,3 +1,7 @@
+import { listen, type EventCallback, type EventName, type Options } from "@tauri-apps/api/event";
+
+import type { CleanupStack } from "@/services/cleanup-stack";
+
 type MaybePromise<T> = T | Promise<T>;
 type MaybeUnlisten = (() => MaybePromise<void>) | null | undefined;
 
@@ -47,4 +51,35 @@ export function safeResolveUnlisten(
         console.warn(`[tauri-event] resolve unlisten failed${formatScope(scope)}`, error);
       }
     });
+}
+
+export function createSafeResolveUnlistenCleanup(
+  unlistenPromise: Promise<MaybeUnlisten> | null | undefined,
+  scope?: string,
+): () => void {
+  return () => {
+    safeResolveUnlisten(unlistenPromise, scope);
+  };
+}
+
+export function addSafeResolveUnlisten(
+  stack: CleanupStack,
+  unlistenPromise: Promise<MaybeUnlisten> | null | undefined,
+  scope?: string,
+  cleanupScope?: string,
+): void {
+  stack.add(createSafeResolveUnlistenCleanup(unlistenPromise, scope), cleanupScope);
+}
+
+export function listenWithCleanup<T>(
+  stack: CleanupStack,
+  event: EventName,
+  handler: EventCallback<T>,
+  scope?: string,
+  cleanupScope?: string,
+  options?: Options,
+) {
+  const unlistenPromise = listen<T>(event, handler, options);
+  addSafeResolveUnlisten(stack, unlistenPromise, scope, cleanupScope);
+  return unlistenPromise;
 }

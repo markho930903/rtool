@@ -5,7 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type WheelEvent } from "react";
 
 import type { ScreenshotPinWindowOpenedPayload } from "@/contracts";
-import { safeResolveUnlisten } from "@/services/tauri-event";
+import { createSafeResolveUnlistenCleanup } from "@/services/tauri-event";
 
 const CLOSE_SELECTOR = "[data-screenshot-pin-close]";
 const ZOOM_STEP = 0.1;
@@ -111,9 +111,7 @@ export default function ScreenshotPinPage() {
       },
     );
 
-    return () => {
-      safeResolveUnlisten(unlistenPromise, "screenshot-pin:window-opened");
-    };
+    return createSafeResolveUnlistenCleanup(unlistenPromise, "screenshot-pin:window-opened");
   }, [appWindow]);
 
   useEffect(() => {

@@ -1,6 +1,7 @@
 import { useCallback, useRef } from "react";
 
 import { useAsyncEffect } from "@/hooks/useAsyncEffect";
+import { addSafeResolveUnlisten } from "@/services/tauri-event";
 
 interface WindowFocusChangeEvent {
   payload: boolean;
@@ -46,14 +47,14 @@ export function useWindowFocusAutoHide(options: UseWindowFocusAutoHideOptions): 
   }, [appWindow, cancelScheduledHide, delayMs, shouldSkipHide]);
 
   useAsyncEffect(
-    async ({ stack }) => {
+    ({ stack }) => {
       if (!enabled) {
         return;
       }
 
       stack.add(cancelScheduledHide, "cancel-timer");
 
-      const unlistenFocus = await appWindow.onFocusChanged(({ payload: focused }) => {
+      const unlistenFocusPromise = appWindow.onFocusChanged(({ payload: focused }) => {
         if (!focused) {
           scheduleHide();
           return;
@@ -62,7 +63,8 @@ export function useWindowFocusAutoHide(options: UseWindowFocusAutoHideOptions): 
         cancelScheduledHide();
         onFocus?.();
       });
-      stack.add(unlistenFocus, "onFocusChanged");
+
+      addSafeResolveUnlisten(stack, unlistenFocusPromise, "window-focus-auto-hide:onFocusChanged", "onFocusChanged");
     },
     [appWindow, cancelScheduledHide, enabled, onFocus, scheduleHide],
     {

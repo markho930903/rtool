@@ -1,4 +1,3 @@
-import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { HashRouter, useLocation, useNavigate, useRoutes } from "react-router";
@@ -11,6 +10,7 @@ import { useLocaleStore } from "@/i18n/store";
 import { useLayoutStore } from "@/layouts/layout.store";
 import { routes } from "@/routers";
 import { launcherExecute } from "@/services/launcher.service";
+import { listenWithCleanup } from "@/services/tauri-event";
 import { getStartupSettings } from "@/services/startup-settings-cache";
 import { useClipboardStore } from "@/stores/clipboard.store";
 import { useThemeStore } from "@/theme/store";
@@ -34,46 +34,66 @@ function AppEventBridge() {
     async ({ stack }) => {
       const currentWindow = getCurrentWindow();
 
-      const unlistenClipboardSync = await listen<ClipboardSyncPayload>("rtool://clipboard/sync", (event) => {
-        applySync(event.payload ?? {});
-      });
-      stack.add(unlistenClipboardSync, "clipboard-sync");
+      listenWithCleanup<ClipboardSyncPayload>(
+        stack,
+        "rtool://clipboard/sync",
+        (event) => {
+          applySync(event.payload ?? {});
+        },
+        "app-event-bridge:clipboard-sync",
+        "clipboard-sync",
+      );
 
-      const unlistenMainNavigate = await listen<{ route: string }>("rtool://main/navigate", (event) => {
-        if (currentWindow.label !== "main") {
-          return;
-        }
+      listenWithCleanup<{ route: string }>(
+        stack,
+        "rtool://main/navigate",
+        (event) => {
+          if (currentWindow.label !== "main") {
+            return;
+          }
 
-        if (!event.payload?.route) {
-          return;
-        }
+          if (!event.payload?.route) {
+            return;
+          }
 
-        if (event.payload.route === currentRouteRef.current) {
-          return;
-        }
+          if (event.payload.route === currentRouteRef.current) {
+            return;
+          }
 
-        navigate(event.payload.route);
-      });
-      stack.add(unlistenMainNavigate, "main-navigate");
+          navigate(event.payload.route);
+        },
+        "app-event-bridge:main-navigate",
+        "main-navigate",
+      );
 
-      const unlistenSettingsSync = await listen<SettingsDto>("rtool://settings/sync", (event) => {
-        if (event.payload) {
-          hydrateThemeFromSettings(event.payload);
-          hydrateLocaleFromSettings(event.payload);
-          hydrateLayoutFromSettings(event.payload);
-          return;
-        }
-      });
-      stack.add(unlistenSettingsSync, "settings-sync");
+      listenWithCleanup<SettingsDto>(
+        stack,
+        "rtool://settings/sync",
+        (event) => {
+          if (event.payload) {
+            hydrateThemeFromSettings(event.payload);
+            hydrateLocaleFromSettings(event.payload);
+            hydrateLayoutFromSettings(event.payload);
+            return;
+          }
+        },
+        "app-event-bridge:settings-sync",
+        "settings-sync",
+      );
 
-      const unlistenLocaleSync = await listen<LocaleStateDto>("rtool://settings/locale_sync", (event) => {
-        if (event.payload) {
-          hydrateLocaleFromBackendState(event.payload);
-          return;
-        }
-        void syncLocaleFromBackend();
-      });
-      stack.add(unlistenLocaleSync, "locale-sync");
+      listenWithCleanup<LocaleStateDto>(
+        stack,
+        "rtool://settings/locale_sync",
+        (event) => {
+          if (event.payload) {
+            hydrateLocaleFromBackendState(event.payload);
+            return;
+          }
+          void syncLocaleFromBackend();
+        },
+        "app-event-bridge:locale-sync",
+        "locale-sync",
+      );
     },
     [
       applySync,

@@ -203,6 +203,8 @@ pub(crate) fn setup(
         runtime_orchestrator: runtime_orchestrator.clone(),
     });
 
+    crate::platform::native_ui::window_factory::warmup_secondary_windows(app_handle.clone());
+
     if settings.screenshot.shortcut != SHORTCUT_SCREENSHOT_DEFAULT
         && let Err(error) = shortcuts::rebind_screenshot_shortcut(
             &app_handle,

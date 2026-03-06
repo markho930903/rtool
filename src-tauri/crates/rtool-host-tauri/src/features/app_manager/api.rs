@@ -99,9 +99,7 @@ pub(crate) async fn handle_app_manager(
                 "resolve_sizes",
                 "app_manager_resolve_sizes",
                 false,
-                move |service, host| {
-                    service.resolve_sizes(&host, payload.input)
-                },
+                move |service, host| service.resolve_sizes(&host, payload.input),
             )
             .await
         }
@@ -114,9 +112,7 @@ pub(crate) async fn handle_app_manager(
                 "get_detail_core",
                 "app_manager_get_detail_core",
                 false,
-                move |service, host| {
-                    service.get_detail_core(&host, payload.query)
-                },
+                move |service, host| service.get_detail_core(&host, payload.query),
             )
             .await
         }
@@ -129,9 +125,7 @@ pub(crate) async fn handle_app_manager(
                 "get_detail_heavy",
                 "app_manager_get_detail_heavy",
                 false,
-                move |service, host| {
-                    service.get_detail_heavy(&host, payload.input)
-                },
+                move |service, host| service.get_detail_heavy(&host, payload.input),
             )
             .await
         }
@@ -144,9 +138,7 @@ pub(crate) async fn handle_app_manager(
                 "scan_residue",
                 "app_manager_scan_residue",
                 false,
-                move |service, host| {
-                    service.scan_residue(&host, payload.input)
-                },
+                move |service, host| service.scan_residue(&host, payload.input),
             )
             .await
         }
@@ -172,9 +164,7 @@ pub(crate) async fn handle_app_manager(
                 "export_scan_result",
                 "app_manager_export_scan_result",
                 false,
-                move |service, host| {
-                    service.export_scan_result(&host, payload.input)
-                },
+                move |service, host| service.export_scan_result(&host, payload.input),
             )
             .await
         }
@@ -226,9 +216,7 @@ pub(crate) async fn handle_app_manager(
                 "open_uninstall_help",
                 "app_manager_open_uninstall_help",
                 false,
-                move |service, host| {
-                    service.open_uninstall_help(&host, payload.app_id)
-                },
+                move |service, host| service.open_uninstall_help(&host, payload.app_id),
             )
             .await
         }
@@ -241,9 +229,7 @@ pub(crate) async fn handle_app_manager(
                 "open_permission_help",
                 "app_manager_open_permission_help",
                 false,
-                move |service, host| {
-                    service.open_permission_help(&host, payload.app_id)
-                },
+                move |service, host| service.open_permission_help(&host, payload.app_id),
             )
             .await
         }

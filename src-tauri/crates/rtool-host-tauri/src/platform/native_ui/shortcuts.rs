@@ -130,6 +130,17 @@ fn handle_clipboard_window_shortcut(app: &AppHandle, requested_compact: bool) {
             action = "show",
             requested_compact = requested_compact
         );
+        if let Err(error) =
+            apply_clipboard_window_mode(app, requested_compact, "shortcut_show_pre_show")
+        {
+            tracing::warn!(
+                event = "clipboard_window_mode_apply_failed",
+                action = "show_pre_show",
+                requested_compact = requested_compact,
+                error = error.to_string()
+            );
+        }
+        set_clipboard_window_compact_state(app, requested_compact);
         if let Err(error) = window.show() {
             tracing::warn!(
                 event = "window_show_failed",
@@ -144,15 +155,6 @@ fn handle_clipboard_window_shortcut(app: &AppHandle, requested_compact: bool) {
                 error = error.to_string()
             );
         }
-        if let Err(error) = apply_clipboard_window_mode(app, requested_compact, "shortcut_show") {
-            tracing::warn!(
-                event = "clipboard_window_mode_apply_failed",
-                action = "show",
-                requested_compact = requested_compact,
-                error = error.to_string()
-            );
-        }
-        set_clipboard_window_compact_state(app, requested_compact);
         emit_clipboard_window_opened(app, requested_compact);
         return;
     }

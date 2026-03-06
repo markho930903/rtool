@@ -40,7 +40,7 @@ pub(crate) enum LauncherRequest {
     Execute(LauncherExecutePayload),
     GetSearchSettings,
     UpdateSearchSettings(LauncherUpdateSettingsPayload),
-    GetIndexStatus,
+    GetStatus,
     RebuildIndex,
     ResetSearchSettings,
 }
@@ -58,7 +58,7 @@ fn request_kind(request: &LauncherRequest) -> &'static str {
         LauncherRequest::Execute(_) => "execute",
         LauncherRequest::GetSearchSettings => "get_search_settings",
         LauncherRequest::UpdateSearchSettings(_) => "update_search_settings",
-        LauncherRequest::GetIndexStatus => "get_index_status",
+        LauncherRequest::GetStatus => "get_status",
         LauncherRequest::RebuildIndex => "rebuild_index",
         LauncherRequest::ResetSearchSettings => "reset_search_settings",
     }
@@ -70,7 +70,7 @@ fn request_command_name(request: &LauncherRequest) -> &'static str {
         LauncherRequest::Execute(_) => "launcher_execute",
         LauncherRequest::GetSearchSettings => "launcher_get_search_settings",
         LauncherRequest::UpdateSearchSettings(_) => "launcher_update_search_settings",
-        LauncherRequest::GetIndexStatus => "launcher_get_index_status",
+        LauncherRequest::GetStatus => "launcher_get_status",
         LauncherRequest::RebuildIndex => "launcher_rebuild_index",
         LauncherRequest::ResetSearchSettings => "launcher_reset_search_settings",
     }
@@ -211,14 +211,14 @@ pub(crate) async fn handle_launcher(
             )
             .await?,
         ),
-        LauncherRequest::GetIndexStatus => LAUNCHER_COMMAND_CONTEXT.serialize(
+        LauncherRequest::GetStatus => LAUNCHER_COMMAND_CONTEXT.serialize(
             kind,
             run_launcher_async(
                 state,
                 request_id,
                 window_label,
                 command_name,
-                move |launcher_service| async move { launcher_service.get_index_status().await },
+                move |launcher_service| async move { launcher_service.get_status().await },
             )
             .await?,
         ),
@@ -284,10 +284,7 @@ mod tests {
             )),
             "update_search_settings"
         );
-        assert_eq!(
-            request_kind(&LauncherRequest::GetIndexStatus),
-            "get_index_status"
-        );
+        assert_eq!(request_kind(&LauncherRequest::GetStatus), "get_status");
         assert_eq!(
             request_kind(&LauncherRequest::RebuildIndex),
             "rebuild_index"
@@ -328,8 +325,8 @@ mod tests {
             "launcher_update_search_settings"
         );
         assert_eq!(
-            request_command_name(&LauncherRequest::GetIndexStatus),
-            "launcher_get_index_status"
+            request_command_name(&LauncherRequest::GetStatus),
+            "launcher_get_status"
         );
         assert_eq!(
             request_command_name(&LauncherRequest::RebuildIndex),

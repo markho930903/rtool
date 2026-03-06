@@ -1,11 +1,14 @@
 import type {
   ActionResultDto as LauncherActionResult,
-  LauncherRequestDto,
   LauncherActionDto as LauncherAction,
-  LauncherIndexStatusDto as LauncherIndexStatus,
   LauncherItemDto as LauncherItem,
   LauncherRebuildResultDto as LauncherRebuildResult,
+  LauncherRequestDto,
+  LauncherSearchDiagnosticsDto as LauncherSearchDiagnostics,
+  LauncherSearchIndexStateDto as LauncherSearchIndexState,
+  LauncherSearchResponseDto as LauncherSearchResponse,
   LauncherSearchSettingsDto as LauncherSearchSettings,
+  LauncherStatusDto as LauncherStatus,
   LauncherUpdateSearchSettingsInputDto as LauncherUpdateSearchSettingsInput,
 } from "@/contracts";
 import { invokeFeature } from "@/services/invoke";
@@ -17,15 +20,18 @@ function invokeLauncher<T>(request: LauncherRequestDto): Promise<T> {
 export type {
   LauncherAction,
   LauncherActionResult,
-  LauncherIndexStatus,
   LauncherItem,
   LauncherRebuildResult,
+  LauncherSearchDiagnostics,
+  LauncherSearchIndexState,
+  LauncherSearchResponse,
   LauncherSearchSettings,
+  LauncherStatus,
   LauncherUpdateSearchSettingsInput,
 };
 
-export async function launcherSearch(query: string, limit?: number): Promise<LauncherItem[]> {
-  return invokeLauncher<LauncherItem[]>({ kind: "search", payload: { query, limit } });
+export async function launcherSearch(query: string, limit?: number): Promise<LauncherSearchResponse> {
+  return invokeLauncher<LauncherSearchResponse>({ kind: "search", payload: { query, limit } });
 }
 
 export async function launcherExecute(action: LauncherAction): Promise<LauncherActionResult> {
@@ -45,8 +51,8 @@ export async function launcherUpdateSearchSettings(
   });
 }
 
-export async function launcherGetIndexStatus(): Promise<LauncherIndexStatus> {
-  return invokeLauncher<LauncherIndexStatus>({ kind: "get_index_status" });
+export async function launcherGetStatus(): Promise<LauncherStatus> {
+  return invokeLauncher<LauncherStatus>({ kind: "get_status" });
 }
 
 export async function launcherRebuildIndex(): Promise<LauncherRebuildResult> {

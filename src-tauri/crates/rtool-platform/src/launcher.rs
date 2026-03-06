@@ -1,6 +1,6 @@
 use rtool_contracts::AppResult;
 use rtool_contracts::models::ClipboardWindowModeAppliedDto;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct AppPackageInfo {
@@ -18,6 +18,7 @@ pub trait LauncherWindow: Send + Sync {
 pub trait LauncherHost: Send + Sync {
     fn emit(&self, event: &str, payload: serde_json::Value) -> AppResult<()>;
     fn get_webview_window(&self, label: &str) -> Option<Box<dyn LauncherWindow>>;
+    fn open_path(&self, path: &Path) -> AppResult<()>;
     fn app_data_dir(&self) -> AppResult<PathBuf>;
     fn package_info(&self) -> AppPackageInfo;
     fn resolved_locale(&self) -> Option<String>;

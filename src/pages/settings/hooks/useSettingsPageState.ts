@@ -1,27 +1,24 @@
+import { message as globalMessage } from "@ui/message/api";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { SelectOptionInput } from "@/components/ui";
-import { message as globalMessage } from "@ui/message/api";
 import { SUPPORTED_LOCALES } from "@/i18n/constants";
 import { useLocaleStore } from "@/i18n/store";
 import type { LocalePreference } from "@/i18n/types";
 import { useLayoutStore } from "@/layouts/layout.store";
 import type { LayoutPreference } from "@/layouts/layout.types";
-import {
-  launcherGetIndexStatus,
-  launcherResetSearchSettings,
-  launcherGetSearchSettings,
-  launcherRebuildIndex,
-  launcherUpdateSearchSettings,
-  type LauncherIndexStatus,
-  type LauncherSearchSettings,
-} from "@/services/launcher.service";
 import { screenshotGetSettings, screenshotUpdateSettings } from "@/services/screenshot.service";
 import { useLoggingStore } from "@/stores/logging.store";
 import { useSettingsStore } from "@/stores/settings.store";
 import { useThemeStore } from "@/theme/store";
 import type { ThemePreference } from "@/theme/types";
+
+import { parsePositiveInt, type MessageState } from "./settingsShared";
+import {
+  useLauncherSettingsSectionState,
+  type LauncherSettingsSectionState,
+} from "./useLauncherSettingsSectionState";
 
 const MIN_MAX_ITEMS = 100;
 const MAX_MAX_ITEMS = 10_000;
@@ -38,18 +35,6 @@ const MAX_HIGH_FREQ_MAX_PER_KEY = 200;
 const LOG_KEEP_DAYS_PRESETS = ["1", "3", "7", "14", "30", "60", "90"];
 const LOG_WINDOW_MS_PRESETS = ["100", "250", "500", "1000", "2000", "5000", "10000", "30000", "60000"];
 const LOG_MAX_PER_KEY_PRESETS = ["1", "5", "10", "20", "50", "100", "200"];
-const MIN_LAUNCHER_DEPTH = 2;
-const MAX_LAUNCHER_DEPTH = 32;
-const DEFAULT_LAUNCHER_DEPTH = 20;
-const MIN_LAUNCHER_ITEMS_PER_ROOT = 500;
-const MAX_LAUNCHER_ITEMS_PER_ROOT = 1_000_000;
-const DEFAULT_LAUNCHER_ITEMS_PER_ROOT = 200_000;
-const MIN_LAUNCHER_TOTAL_ITEMS = 2_000;
-const MAX_LAUNCHER_TOTAL_ITEMS = 2_000_000;
-const DEFAULT_LAUNCHER_TOTAL_ITEMS = 500_000;
-const MIN_LAUNCHER_REFRESH_INTERVAL = 60;
-const MAX_LAUNCHER_REFRESH_INTERVAL = 86_400;
-const DEFAULT_LAUNCHER_REFRESH_INTERVAL = 600;
 const MIN_SCREENSHOT_MAX_ITEMS = 50;
 const MAX_SCREENSHOT_MAX_ITEMS = 10_000;
 const MIN_SCREENSHOT_MAX_TOTAL_SIZE_MB = 100;
@@ -67,11 +52,6 @@ export interface SettingsNavItem {
   label: string;
   description: string;
   icon: string;
-}
-
-export interface MessageState {
-  text: string;
-  isError: boolean;
 }
 
 export interface SettingsNavState {
@@ -161,58 +141,7 @@ export interface ScreenshotSettingsSectionState {
   onSave: () => Promise<void>;
 }
 
-export interface LauncherSettingsSectionState {
-  loading: boolean;
-  saving: boolean;
-  rebuilding: boolean;
-  resetting: boolean;
-
-  rootsInput: string;
-  excludeInput: string;
-  depthInput: string;
-  itemsPerRootInput: string;
-  totalItemsInput: string;
-  refreshInput: string;
-
-  rootsInvalid: boolean;
-  depthInvalid: boolean;
-  itemsPerRootInvalid: boolean;
-  totalItemsInvalid: boolean;
-  refreshInvalid: boolean;
-
-  limits: {
-    depthMin: number;
-    depthMax: number;
-    itemsPerRootMin: number;
-    itemsPerRootMax: number;
-    totalItemsMin: number;
-    totalItemsMax: number;
-    refreshMin: number;
-    refreshMax: number;
-  };
-
-  invalid: boolean;
-  unchanged: boolean;
-
-  status: LauncherIndexStatus | null;
-  launcherLastBuildText: string;
-  launcherLastDurationText: string;
-  launcherTruncatedHintText: string | null;
-
-  message: MessageState | null;
-
-  onRootsChange: (value: string) => void;
-  onExcludeChange: (value: string) => void;
-  onDepthChange: (value: string) => void;
-  onItemsPerRootChange: (value: string) => void;
-  onTotalItemsChange: (value: string) => void;
-  onRefreshInputChange: (value: string) => void;
-
-  onSave: () => Promise<void>;
-  onRefreshStatus: () => Promise<void>;
-  onRebuildIndex: () => Promise<void>;
-  onResetRecommended: () => Promise<void>;
-}
+export type { LauncherSettingsSectionState } from "./useLauncherSettingsSectionState";
 
 export interface LoggingSettingsSectionState {
   minLevel: string;
@@ -260,34 +189,6 @@ export interface UseSettingsPageStateResult {
   screenshot: ScreenshotSettingsSectionState;
   launcher: LauncherSettingsSectionState;
   logging: LoggingSettingsSectionState;
-}
-
-function parsePositiveInt(value: string): number | null {
-  const trimmed = value.trim();
-  if (!/^\d+$/.test(trimmed)) {
-    return null;
-  }
-
-  const parsed = Number.parseInt(trimmed, 10);
-  if (!Number.isSafeInteger(parsed)) {
-    return null;
-  }
-
-  return parsed;
-}
-
-function parseLineArray(value: string): string[] {
-  return value
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-}
-
-function formatLines(values: string[] | undefined): string {
-  if (!values || values.length === 0) {
-    return "";
-  }
-  return values.join("\n");
 }
 
 function localeDisplayLabel(locale: string, t: (key: string) => string): string {
@@ -386,19 +287,7 @@ export function useSettingsPageState(): UseSettingsPageStateResult {
     maxTotalSizeMb: number;
     pinMaxInstances: number;
   } | null>(null);
-  const [launcherLoading, setLauncherLoading] = useState(false);
-  const [launcherSaving, setLauncherSaving] = useState(false);
-  const [launcherRebuilding, setLauncherRebuilding] = useState(false);
-  const [launcherResetting, setLauncherResetting] = useState(false);
-  const [launcherSettings, setLauncherSettings] = useState<LauncherSearchSettings | null>(null);
-  const [launcherStatus, setLauncherStatus] = useState<LauncherIndexStatus | null>(null);
-  const [launcherRootsInput, setLauncherRootsInput] = useState("");
-  const [launcherExcludeInput, setLauncherExcludeInput] = useState("");
-  const [launcherDepthInput, setLauncherDepthInput] = useState(String(DEFAULT_LAUNCHER_DEPTH));
-  const [launcherItemsPerRootInput, setLauncherItemsPerRootInput] = useState(String(DEFAULT_LAUNCHER_ITEMS_PER_ROOT));
-  const [launcherTotalItemsInput, setLauncherTotalItemsInput] = useState(String(DEFAULT_LAUNCHER_TOTAL_ITEMS));
-  const [launcherRefreshInput, setLauncherRefreshInput] = useState(String(DEFAULT_LAUNCHER_REFRESH_INTERVAL));
-  const [launcherMessage, setLauncherMessage] = useState<MessageState | null>(null);
+  const launcher = useLauncherSettingsSectionState({ active: activeSection === "launcher", t });
 
   const [logMinLevel, setLogMinLevel] = useState("info");
   const [logKeepDaysInput, setLogKeepDaysInput] = useState(String(MIN_KEEP_DAYS));
@@ -474,21 +363,6 @@ export function useSettingsPageState(): UseSettingsPageStateResult {
 
     void loadScreenshot();
 
-    const loadLauncher = async () => {
-      setLauncherLoading(true);
-      try {
-        const [settings, status] = await Promise.all([launcherGetSearchSettings(), launcherGetIndexStatus()]);
-        setLauncherSettings(settings);
-        setLauncherStatus(status);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        setLauncherMessage({ text: message, isError: true });
-      } finally {
-        setLauncherLoading(false);
-      }
-    };
-
-    void loadLauncher();
   }, [fetchClipboardSettings, fetchLoggingConfig]);
 
   useEffect(() => {
@@ -506,30 +380,6 @@ export function useSettingsPageState(): UseSettingsPageStateResult {
       }
     }
   }, [clipboardSettings]);
-
-  useEffect(() => {
-    if (!launcherSettings) {
-      return;
-    }
-    setLauncherRootsInput(formatLines(launcherSettings.roots));
-    setLauncherExcludeInput(formatLines(launcherSettings.excludePatterns));
-    setLauncherDepthInput(String(launcherSettings.maxScanDepth));
-    setLauncherItemsPerRootInput(String(launcherSettings.maxItemsPerRoot));
-    setLauncherTotalItemsInput(String(launcherSettings.maxTotalItems));
-    setLauncherRefreshInput(String(launcherSettings.refreshIntervalSecs));
-  }, [launcherSettings]);
-
-  useEffect(() => {
-    if (activeSection !== "launcher" || !launcherStatus?.building) {
-      return;
-    }
-    const timer = window.setInterval(() => {
-      void launcherGetIndexStatus()
-        .then((status) => setLauncherStatus(status))
-        .catch(() => undefined);
-    }, 3000);
-    return () => window.clearInterval(timer);
-  }, [activeSection, launcherStatus?.building]);
 
   useEffect(() => {
     if (!sizeCleanupEnabled || sizeThresholdMode !== "custom") {
@@ -634,10 +484,7 @@ export function useSettingsPageState(): UseSettingsPageStateResult {
 
   const normalizedScreenshotShortcut = screenshotShortcutInput.trim();
   const screenshotShortcutInvalid = normalizedScreenshotShortcut.length === 0;
-  const parsedScreenshotMaxItems = useMemo(
-    () => parsePositiveInt(screenshotMaxItemsInput),
-    [screenshotMaxItemsInput],
-  );
+  const parsedScreenshotMaxItems = useMemo(() => parsePositiveInt(screenshotMaxItemsInput), [screenshotMaxItemsInput]);
   const parsedScreenshotMaxTotalSize = useMemo(
     () => parsePositiveInt(screenshotMaxTotalSizeInput),
     [screenshotMaxTotalSizeInput],
@@ -669,50 +516,6 @@ export function useSettingsPageState(): UseSettingsPageStateResult {
     screenshotBaseline.maxItems === parsedScreenshotMaxItems &&
     screenshotBaseline.maxTotalSizeMb === parsedScreenshotMaxTotalSize &&
     screenshotBaseline.pinMaxInstances === parsedScreenshotPinMaxInstances;
-
-  const parsedLauncherDepth = useMemo(() => parsePositiveInt(launcherDepthInput), [launcherDepthInput]);
-  const parsedLauncherItemsPerRoot = useMemo(
-    () => parsePositiveInt(launcherItemsPerRootInput),
-    [launcherItemsPerRootInput],
-  );
-  const parsedLauncherTotalItems = useMemo(() => parsePositiveInt(launcherTotalItemsInput), [launcherTotalItemsInput]);
-  const parsedLauncherRefresh = useMemo(() => parsePositiveInt(launcherRefreshInput), [launcherRefreshInput]);
-  const launcherRoots = useMemo(() => parseLineArray(launcherRootsInput), [launcherRootsInput]);
-  const launcherExcludes = useMemo(() => parseLineArray(launcherExcludeInput), [launcherExcludeInput]);
-
-  const launcherDepthInvalid =
-    parsedLauncherDepth === null ||
-    parsedLauncherDepth < MIN_LAUNCHER_DEPTH ||
-    parsedLauncherDepth > MAX_LAUNCHER_DEPTH;
-  const launcherItemsPerRootInvalid =
-    parsedLauncherItemsPerRoot === null ||
-    parsedLauncherItemsPerRoot < MIN_LAUNCHER_ITEMS_PER_ROOT ||
-    parsedLauncherItemsPerRoot > MAX_LAUNCHER_ITEMS_PER_ROOT;
-  const launcherTotalItemsInvalid =
-    parsedLauncherTotalItems === null ||
-    parsedLauncherTotalItems < MIN_LAUNCHER_TOTAL_ITEMS ||
-    parsedLauncherTotalItems > MAX_LAUNCHER_TOTAL_ITEMS;
-  const launcherRefreshInvalid =
-    parsedLauncherRefresh === null ||
-    parsedLauncherRefresh < MIN_LAUNCHER_REFRESH_INTERVAL ||
-    parsedLauncherRefresh > MAX_LAUNCHER_REFRESH_INTERVAL;
-  const launcherRootsInvalid = launcherRoots.length === 0;
-
-  const launcherInvalid =
-    launcherRootsInvalid ||
-    launcherDepthInvalid ||
-    launcherItemsPerRootInvalid ||
-    launcherTotalItemsInvalid ||
-    launcherRefreshInvalid;
-
-  const launcherUnchanged =
-    launcherSettings !== null &&
-    launcherRoots.join("\n") === launcherSettings.roots.join("\n") &&
-    launcherExcludes.join("\n") === launcherSettings.excludePatterns.join("\n") &&
-    parsedLauncherDepth === launcherSettings.maxScanDepth &&
-    parsedLauncherItemsPerRoot === launcherSettings.maxItemsPerRoot &&
-    parsedLauncherTotalItems === launcherSettings.maxTotalItems &&
-    parsedLauncherRefresh === launcherSettings.refreshIntervalSecs;
 
   const localePreferenceOptions = useMemo(() => {
     const sortedValues = [...SUPPORTED_LOCALES].sort((left, right) => left.localeCompare(right));
@@ -753,22 +556,6 @@ export function useSettingsPageState(): UseSettingsPageStateResult {
         ? t("clipboard.sizeInvalid", { min: MIN_MAX_TOTAL_SIZE_MB, max: MAX_MAX_TOTAL_SIZE_MB })
         : t("clipboard.sizeCustomInputHint")
       : t("clipboard.sizePresetHint", { value: selectedPresetMb });
-
-  const launcherLastBuildText =
-    launcherStatus?.lastBuildMs !== undefined &&
-    launcherStatus?.lastBuildMs !== null &&
-    Number.isFinite(launcherStatus.lastBuildMs)
-      ? new Date(launcherStatus.lastBuildMs).toLocaleString()
-      : t("launcher.statusUnknown");
-
-  const launcherLastDurationText =
-    launcherStatus?.lastDurationMs !== undefined &&
-    launcherStatus?.lastDurationMs !== null &&
-    Number.isFinite(launcherStatus.lastDurationMs)
-      ? t("launcher.durationValue", { value: launcherStatus.lastDurationMs })
-      : t("launcher.statusUnknown");
-
-  const launcherTruncatedHintText = launcherStatus?.truncated ? t("launcher.status.truncatedHint") : null;
 
   const handleThemePreferenceChange = (value: string) => {
     const nextPreference: ThemePreference =
@@ -826,82 +613,6 @@ export function useSettingsPageState(): UseSettingsPageStateResult {
       setScreenshotSaveMessage({ text: t("screenshot.saveFailed", { message }), isError: true });
     } finally {
       setScreenshotSaving(false);
-    }
-  };
-
-  const handleRefreshLauncherStatus = async () => {
-    try {
-      const status = await launcherGetIndexStatus();
-      setLauncherStatus(status);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setLauncherMessage({ text: message, isError: true });
-    }
-  };
-
-  const handleSaveLauncher = async () => {
-    if (
-      launcherRootsInvalid ||
-      launcherDepthInvalid ||
-      launcherItemsPerRootInvalid ||
-      launcherTotalItemsInvalid ||
-      launcherRefreshInvalid
-    ) {
-      setLauncherMessage({
-        text: t("launcher.saveFailedInvalid"),
-        isError: true,
-      });
-      return;
-    }
-
-    setLauncherSaving(true);
-    try {
-      const settings = await launcherUpdateSearchSettings({
-        roots: launcherRoots,
-        excludePatterns: launcherExcludes,
-        maxScanDepth: parsedLauncherDepth ?? DEFAULT_LAUNCHER_DEPTH,
-        maxItemsPerRoot: parsedLauncherItemsPerRoot ?? DEFAULT_LAUNCHER_ITEMS_PER_ROOT,
-        maxTotalItems: parsedLauncherTotalItems ?? DEFAULT_LAUNCHER_TOTAL_ITEMS,
-        refreshIntervalSecs: parsedLauncherRefresh ?? DEFAULT_LAUNCHER_REFRESH_INTERVAL,
-      });
-      setLauncherSettings(settings);
-      setLauncherMessage({ text: t("launcher.saved"), isError: false });
-      await handleRefreshLauncherStatus();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setLauncherMessage({ text: t("launcher.saveFailed", { message }), isError: true });
-    } finally {
-      setLauncherSaving(false);
-    }
-  };
-
-  const handleRebuildLauncherIndex = async () => {
-    setLauncherRebuilding(true);
-    try {
-      await launcherRebuildIndex();
-      await handleRefreshLauncherStatus();
-      setLauncherMessage({ text: t("launcher.rebuildSuccess"), isError: false });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setLauncherMessage({ text: t("launcher.rebuildFailed", { message }), isError: true });
-    } finally {
-      setLauncherRebuilding(false);
-    }
-  };
-
-  const handleResetLauncherSettings = async () => {
-    setLauncherResetting(true);
-    try {
-      const settings = await launcherResetSearchSettings();
-      setLauncherSettings(settings);
-      await launcherRebuildIndex();
-      await handleRefreshLauncherStatus();
-      setLauncherMessage({ text: t("launcher.resetSuccess"), isError: false });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setLauncherMessage({ text: t("launcher.resetFailed", { message }), isError: true });
-    } finally {
-      setLauncherResetting(false);
     }
   };
 
@@ -1042,36 +753,6 @@ export function useSettingsPageState(): UseSettingsPageStateResult {
     setScreenshotSaveMessage(null);
   }, []);
 
-  const onRootsChange = useCallback((value: string) => {
-    setLauncherRootsInput(value);
-    setLauncherMessage(null);
-  }, []);
-
-  const onExcludeChange = useCallback((value: string) => {
-    setLauncherExcludeInput(value);
-    setLauncherMessage(null);
-  }, []);
-
-  const onDepthChange = useCallback((value: string) => {
-    setLauncherDepthInput(value);
-    setLauncherMessage(null);
-  }, []);
-
-  const onItemsPerRootChange = useCallback((value: string) => {
-    setLauncherItemsPerRootInput(value);
-    setLauncherMessage(null);
-  }, []);
-
-  const onTotalItemsChange = useCallback((value: string) => {
-    setLauncherTotalItemsInput(value);
-    setLauncherMessage(null);
-  }, []);
-
-  const onRefreshInputChange = useCallback((value: string) => {
-    setLauncherRefreshInput(value);
-    setLauncherMessage(null);
-  }, []);
-
   const onMinLevelChange = useCallback((value: string) => {
     setLogMinLevel(value);
     setLoggingSaveMessage(null);
@@ -1181,50 +862,7 @@ export function useSettingsPageState(): UseSettingsPageStateResult {
       onPinMaxInstancesChange: onScreenshotPinMaxInstancesChange,
       onSave: handleSaveScreenshot,
     },
-    launcher: {
-      loading: launcherLoading,
-      saving: launcherSaving,
-      rebuilding: launcherRebuilding,
-      resetting: launcherResetting,
-      rootsInput: launcherRootsInput,
-      excludeInput: launcherExcludeInput,
-      depthInput: launcherDepthInput,
-      itemsPerRootInput: launcherItemsPerRootInput,
-      totalItemsInput: launcherTotalItemsInput,
-      refreshInput: launcherRefreshInput,
-      rootsInvalid: launcherRootsInvalid,
-      depthInvalid: launcherDepthInvalid,
-      itemsPerRootInvalid: launcherItemsPerRootInvalid,
-      totalItemsInvalid: launcherTotalItemsInvalid,
-      refreshInvalid: launcherRefreshInvalid,
-      limits: {
-        depthMin: MIN_LAUNCHER_DEPTH,
-        depthMax: MAX_LAUNCHER_DEPTH,
-        itemsPerRootMin: MIN_LAUNCHER_ITEMS_PER_ROOT,
-        itemsPerRootMax: MAX_LAUNCHER_ITEMS_PER_ROOT,
-        totalItemsMin: MIN_LAUNCHER_TOTAL_ITEMS,
-        totalItemsMax: MAX_LAUNCHER_TOTAL_ITEMS,
-        refreshMin: MIN_LAUNCHER_REFRESH_INTERVAL,
-        refreshMax: MAX_LAUNCHER_REFRESH_INTERVAL,
-      },
-      invalid: launcherInvalid,
-      unchanged: launcherUnchanged,
-      status: launcherStatus,
-      launcherLastBuildText,
-      launcherLastDurationText,
-      launcherTruncatedHintText,
-      message: launcherMessage,
-      onRootsChange,
-      onExcludeChange,
-      onDepthChange,
-      onItemsPerRootChange,
-      onTotalItemsChange,
-      onRefreshInputChange,
-      onSave: handleSaveLauncher,
-      onRefreshStatus: handleRefreshLauncherStatus,
-      onRebuildIndex: handleRebuildLauncherIndex,
-      onResetRecommended: handleResetLauncherSettings,
-    },
+    launcher,
     logging: {
       minLevel: logMinLevel,
       keepDaysInput: logKeepDaysInput,

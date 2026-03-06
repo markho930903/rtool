@@ -2,7 +2,7 @@ use crate::constants::{
     CLIPBOARD_WINDOW_LABEL, LAUNCHER_OPENED_EVENT, LAUNCHER_WINDOW_LABEL, MAIN_WINDOW_LABEL,
     SCREENSHOT_PIN_WINDOW_LABELS, SCREENSHOT_WINDOW_LABEL,
 };
-use crate::platform::native_ui::window_factory::ensure_webview_window;
+use crate::platform::native_ui::window_factory::{ensure_webview_window, WindowWarmupState};
 use rtool_app::LocaleApplicationService;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 
@@ -66,6 +66,16 @@ pub(crate) fn toggle_launcher_window(app: &AppHandle) {
                 error = error.to_string()
             );
         }
+        return;
+    }
+
+    if let Some(state) = app.try_state::<WindowWarmupState>()
+        && state.request_show_if_not_ready(LAUNCHER_WINDOW_LABEL)
+    {
+        tracing::info!(
+            event = "window_show_waiting_for_ready",
+            window = LAUNCHER_WINDOW_LABEL
+        );
         return;
     }
 

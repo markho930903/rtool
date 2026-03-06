@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 
 import type {
   AppManagerActionResult,
+  AppManagerCleanupDeleteMode,
   AppManagerCleanupItemResult,
   AppManagerCleanupResult,
   AppManagerExportScanResult,
@@ -21,7 +22,6 @@ import { RadioGroup, type RadioOption } from "@ui/radio";
 import { DiskPlaceholder } from "@/pages/app-manager/DiskPlaceholder";
 import { formatBytes, getPathName, toBreadcrumb } from "@/pages/app-manager/format";
 
-type DeleteMode = "trash" | "permanent";
 type ResidueGroup = AppManagerResidueScanResult["groups"][number];
 type ResidueItem = ResidueGroup["items"][number] & { groupLabel: string };
 type CleanupSectionKey = "deleted" | "skipped" | "failed";
@@ -62,7 +62,7 @@ const CLEANUP_SECTION_META: CleanupSectionMeta[] = [
   },
 ];
 
-export interface AppDetailPaneModel {
+export interface AppDetailViewState {
   selectedApp: ManagedApp | null;
   coreDetail: ManagedAppDetail | null;
   heavyDetail: AppManagerResidueScanResult | null;
@@ -70,12 +70,18 @@ export interface AppDetailPaneModel {
   heavyLoading: boolean;
   deepCompleting: boolean;
   detailError: string | null;
+}
+
+export interface AppCleanupViewState {
   selectedResidueIds: string[];
   selectedIncludeMain: boolean;
-  selectedDeleteMode: DeleteMode;
+  selectedDeleteMode: AppManagerCleanupDeleteMode;
   cleanupLoading: boolean;
   cleanupResult: AppManagerCleanupResult | null;
   cleanupError: string | null;
+}
+
+export interface AppDetailOperationsState {
   startupLoading: boolean;
   uninstallLoading: boolean;
   openHelpLoading: boolean;
@@ -86,10 +92,13 @@ export interface AppDetailPaneModel {
   exportError: string | null;
   actionResult: AppManagerActionResult | null;
   actionError: string | null;
+}
+
+export interface AppDetailActions {
   onToggleResidue: (itemId: string, checked: boolean) => void;
   onSelectAllResidues: (itemIds: string[]) => void;
   onToggleIncludeMain: (checked: boolean) => void;
-  onSetDeleteMode: (mode: DeleteMode) => void;
+  onSetDeleteMode: (mode: AppManagerCleanupDeleteMode) => void;
   onCleanupNow: () => void | Promise<void>;
   onRetryFailed: () => void | Promise<void>;
   onRevealPath: (path: string) => void;
@@ -100,6 +109,13 @@ export interface AppDetailPaneModel {
   onUninstall: () => void | Promise<void>;
   onExportScanResult: () => void | Promise<void>;
   onOpenExportDirectory: () => void | Promise<void>;
+}
+
+export interface AppDetailPaneModel {
+  detail: AppDetailViewState;
+  cleanup: AppCleanupViewState;
+  operations: AppDetailOperationsState;
+  actions: AppDetailActions;
 }
 
 interface AppDetailPaneProps {
@@ -275,43 +291,51 @@ function ResidueCard(props: ResidueCardProps): ReactElement {
 function AppDetailPaneImpl(props: AppDetailPaneProps): ReactElement {
   const { t } = useTranslation("app_manager");
   const {
-    selectedApp,
-    coreDetail,
-    heavyDetail,
-    coreLoading,
-    heavyLoading,
-    deepCompleting,
-    detailError,
-    selectedResidueIds,
-    selectedIncludeMain,
-    selectedDeleteMode,
-    cleanupLoading,
-    cleanupResult,
-    cleanupError,
-    startupLoading,
-    uninstallLoading,
-    openHelpLoading,
-    openPermissionHelpLoading,
-    exportLoading,
-    openExportDirLoading,
-    exportResult,
-    exportError,
-    actionResult,
-    actionError,
-    onToggleResidue,
-    onSelectAllResidues,
-    onToggleIncludeMain,
-    onSetDeleteMode,
-    onCleanupNow,
-    onRetryFailed,
-    onRevealPath,
-    onScanAgain,
-    onToggleStartup,
-    onOpenUninstallHelp,
-    onOpenPermissionHelp,
-    onUninstall,
-    onExportScanResult,
-    onOpenExportDirectory,
+    detail: {
+      selectedApp,
+      coreDetail,
+      heavyDetail,
+      coreLoading,
+      heavyLoading,
+      deepCompleting,
+      detailError,
+    },
+    cleanup: {
+      selectedResidueIds,
+      selectedIncludeMain,
+      selectedDeleteMode,
+      cleanupLoading,
+      cleanupResult,
+      cleanupError,
+    },
+    operations: {
+      startupLoading,
+      uninstallLoading,
+      openHelpLoading,
+      openPermissionHelpLoading,
+      exportLoading,
+      openExportDirLoading,
+      exportResult,
+      exportError,
+      actionResult,
+      actionError,
+    },
+    actions: {
+      onToggleResidue,
+      onSelectAllResidues,
+      onToggleIncludeMain,
+      onSetDeleteMode,
+      onCleanupNow,
+      onRetryFailed,
+      onRevealPath,
+      onScanAgain,
+      onToggleStartup,
+      onOpenUninstallHelp,
+      onOpenPermissionHelp,
+      onUninstall,
+      onExportScanResult,
+      onOpenExportDirectory,
+    },
   } = props.model;
 
   if (!selectedApp) {
@@ -516,7 +540,7 @@ function AppDetailPaneImpl(props: AppDetailPaneProps): ReactElement {
                 orientation="horizontal"
                 size="sm"
                 variant="card"
-                onValueChange={(value) => onSetDeleteMode(value as DeleteMode)}
+                onValueChange={(value) => onSetDeleteMode(value as AppManagerCleanupDeleteMode)}
                 className="w-full flex-nowrap items-stretch gap-1"
                 optionClassName="w-fit min-h-8 shrink-0 items-center overflow-visible rounded-md border border-border-glass bg-surface-glass px-2 py-1 text-[11px] text-text-secondary shadow-inset-soft transition-colors duration-150 hover:border-border-glass-strong hover:bg-surface-glass"
               />

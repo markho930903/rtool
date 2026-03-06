@@ -180,6 +180,8 @@ pub(crate) fn setup(
         RuntimeState::new(initial_locale_state, Instant::now(), screenshot_shortcut_id);
     let app_services = ApplicationServices::new(db_conn.clone(), clipboard_service);
 
+    app.manage(crate::platform::native_ui::window_factory::WindowWarmupState::default());
+
     match start_clipboard_watcher(app_handle.clone(), app_services.clipboard.clone()) {
         Ok(()) => runtime_orchestrator.mark_running(RUNTIME_WORKER_CLIPBOARD),
         Err(error) => {

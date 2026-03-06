@@ -3,201 +3,164 @@ import type {
   AppManagerCleanupInput,
   AppManagerCleanupResult,
   AppManagerExportScanResult,
-  AppManagerResolveSizesInput,
-  AppManagerResolveSizesResult,
-  AppManagerResidueScanResult,
-  AppManagerSnapshotMeta,
-  ManagedAppDetail,
   AppManagerPage,
   AppManagerQuery,
   AppManagerResidueScanMode,
+  AppManagerResidueScanResult,
+  AppManagerResolveSizesInput,
+  AppManagerResolveSizesResult,
+  AppManagerSnapshotMeta,
   AppManagerStartupUpdateInput,
   AppManagerUninstallInput,
+  ManagedAppDetail,
 } from "@/components/app-manager/types";
-import type {
-  AppManagerActionResultDto,
-  AppManagerRequestDto,
-  AppManagerCleanupInputDto,
-  AppManagerCleanupResultDto,
-  AppManagerDetailQueryDto,
-  AppManagerExportScanResultDto,
-  AppManagerPageDto,
-  AppManagerQueryDto,
-  AppManagerResolveSizesInputDto,
-  AppManagerResolveSizesResultDto,
-  AppManagerResidueScanResultDto,
-  AppManagerSnapshotMetaDto,
-  AppManagerStartupUpdateInputDto,
-  AppManagerUninstallInputDto,
-  ManagedAppDetailDto,
-} from "@/contracts";
+import type { AppManagerQueryDto, AppManagerRequestDto } from "@/contracts";
 import { invokeFeature } from "@/services/invoke";
 
-export const APP_MANAGER_COMMAND_KIND = {
-  list: "list",
-  listSnapshotMeta: "list_snapshot_meta",
-  resolveSizes: "resolve_sizes",
-  refreshIndex: "refresh_index",
-  getDetail: "get_detail",
-  getDetailCore: "get_detail_core",
-  getDetailHeavy: "get_detail_heavy",
-  scanResidue: "scan_residue",
-  cleanup: "cleanup",
-  exportScanResult: "export_scan_result",
-  setStartup: "set_startup",
-  uninstall: "uninstall",
-  openUninstallHelp: "open_uninstall_help",
-  openPermissionHelp: "open_permission_help",
-  revealPath: "reveal_path",
-} as const;
+type AppManagerRequestKind = AppManagerRequestDto["kind"];
+type AppManagerRequest<K extends AppManagerRequestKind> = Extract<AppManagerRequestDto, { kind: K }>;
 
-type AppManagerCommandKind = (typeof APP_MANAGER_COMMAND_KIND)[keyof typeof APP_MANAGER_COMMAND_KIND];
-
-type AppManagerCommandPayloadMap = {
-  [APP_MANAGER_COMMAND_KIND.list]: { query: AppManagerQueryDto | undefined };
-  [APP_MANAGER_COMMAND_KIND.listSnapshotMeta]: undefined;
-  [APP_MANAGER_COMMAND_KIND.resolveSizes]: { input: AppManagerResolveSizesInputDto };
-  [APP_MANAGER_COMMAND_KIND.refreshIndex]: undefined;
-  [APP_MANAGER_COMMAND_KIND.getDetail]: { query: AppManagerDetailQueryDto };
-  [APP_MANAGER_COMMAND_KIND.getDetailCore]: { query: AppManagerDetailQueryDto };
-  [APP_MANAGER_COMMAND_KIND.getDetailHeavy]: { input: { appId: string; mode: AppManagerResidueScanMode } };
-  [APP_MANAGER_COMMAND_KIND.scanResidue]: { input: { appId: string; mode: AppManagerResidueScanMode } };
-  [APP_MANAGER_COMMAND_KIND.cleanup]: { input: AppManagerCleanupInputDto };
-  [APP_MANAGER_COMMAND_KIND.exportScanResult]: { input: { appId: string } };
-  [APP_MANAGER_COMMAND_KIND.setStartup]: { input: AppManagerStartupUpdateInputDto };
-  [APP_MANAGER_COMMAND_KIND.uninstall]: { input: AppManagerUninstallInputDto };
-  [APP_MANAGER_COMMAND_KIND.openUninstallHelp]: { appId: string };
-  [APP_MANAGER_COMMAND_KIND.openPermissionHelp]: { appId: string };
-  [APP_MANAGER_COMMAND_KIND.revealPath]: { path: string };
-};
-
-type AppManagerCommandResultMap = {
-  [APP_MANAGER_COMMAND_KIND.list]: AppManagerPageDto;
-  [APP_MANAGER_COMMAND_KIND.listSnapshotMeta]: AppManagerSnapshotMetaDto;
-  [APP_MANAGER_COMMAND_KIND.resolveSizes]: AppManagerResolveSizesResultDto;
-  [APP_MANAGER_COMMAND_KIND.refreshIndex]: AppManagerActionResultDto;
-  [APP_MANAGER_COMMAND_KIND.getDetail]: ManagedAppDetailDto;
-  [APP_MANAGER_COMMAND_KIND.getDetailCore]: ManagedAppDetailDto;
-  [APP_MANAGER_COMMAND_KIND.getDetailHeavy]: AppManagerResidueScanResultDto;
-  [APP_MANAGER_COMMAND_KIND.scanResidue]: AppManagerResidueScanResultDto;
-  [APP_MANAGER_COMMAND_KIND.cleanup]: AppManagerCleanupResultDto;
-  [APP_MANAGER_COMMAND_KIND.exportScanResult]: AppManagerExportScanResultDto;
-  [APP_MANAGER_COMMAND_KIND.setStartup]: AppManagerActionResultDto;
-  [APP_MANAGER_COMMAND_KIND.uninstall]: AppManagerActionResultDto;
-  [APP_MANAGER_COMMAND_KIND.openUninstallHelp]: AppManagerActionResultDto;
-  [APP_MANAGER_COMMAND_KIND.openPermissionHelp]: AppManagerActionResultDto;
-  [APP_MANAGER_COMMAND_KIND.revealPath]: void;
-};
-
-function invokeAppManager<K extends AppManagerCommandKind>(
-  kind: K,
-  payload?: AppManagerCommandPayloadMap[K],
-): Promise<AppManagerCommandResultMap[K]> {
-  const request: AppManagerRequestDto =
-    payload === undefined
-      ? ({ kind } as AppManagerRequestDto)
-      : ({
-          kind,
-          payload: payload as Record<string, unknown>,
-        } as AppManagerRequestDto);
-  return invokeFeature<AppManagerCommandResultMap[K]>("app_manager", request);
+function createAppManagerRequest<K extends AppManagerRequestKind>(request: AppManagerRequest<K>): AppManagerRequest<K> {
+  return request;
 }
 
-export async function appManagerList(query?: AppManagerQuery): Promise<AppManagerPage> {
-  const dto = await invokeAppManager(APP_MANAGER_COMMAND_KIND.list, {
-    query: query as AppManagerQueryDto | undefined,
-  });
-  return dto as AppManagerPage;
+function invokeAppManager<TResult, K extends AppManagerRequestKind>(request: AppManagerRequest<K>): Promise<TResult> {
+  return invokeFeature<TResult>("app_manager", request);
 }
 
-export async function appManagerListSnapshotMeta(): Promise<AppManagerSnapshotMeta> {
-  const dto = await invokeAppManager(APP_MANAGER_COMMAND_KIND.listSnapshotMeta);
-  return dto as AppManagerSnapshotMeta;
+function toAppManagerQueryDto(query?: AppManagerQuery): AppManagerQueryDto {
+  return {
+    keyword: query?.keyword?.trim() ? query.keyword.trim() : null,
+    category: query?.category ?? "all",
+    limit: query?.limit ?? null,
+    cursor: query?.cursor ?? null,
+  };
 }
 
-export async function appManagerResolveSizes(
-  input: AppManagerResolveSizesInput,
-): Promise<AppManagerResolveSizesResult> {
-  const dto = await invokeAppManager(APP_MANAGER_COMMAND_KIND.resolveSizes, {
-    input: input as AppManagerResolveSizesInputDto,
-  });
-  return dto as AppManagerResolveSizesResult;
+export function appManagerList(query?: AppManagerQuery): Promise<AppManagerPage> {
+  return invokeAppManager(
+    createAppManagerRequest({
+      kind: "list",
+      payload: {
+        query: toAppManagerQueryDto(query),
+      },
+    }),
+  );
 }
 
-export async function appManagerRefreshIndex(): Promise<AppManagerActionResult> {
-  const dto = await invokeAppManager(APP_MANAGER_COMMAND_KIND.refreshIndex);
-  return dto as AppManagerActionResult;
+export function appManagerListSnapshotMeta(): Promise<AppManagerSnapshotMeta> {
+  return invokeAppManager(createAppManagerRequest({ kind: "list_snapshot_meta" }));
 }
 
-export async function appManagerGetDetail(appId: string): Promise<ManagedAppDetail> {
-  const dto = await invokeAppManager(APP_MANAGER_COMMAND_KIND.getDetail, { query: { appId } });
-  return dto as ManagedAppDetail;
+export function appManagerResolveSizes(input: AppManagerResolveSizesInput): Promise<AppManagerResolveSizesResult> {
+  return invokeAppManager(
+    createAppManagerRequest({
+      kind: "resolve_sizes",
+      payload: { input },
+    }),
+  );
 }
 
-export async function appManagerGetDetailCore(appId: string): Promise<ManagedAppDetail> {
-  const dto = await invokeAppManager(APP_MANAGER_COMMAND_KIND.getDetailCore, { query: { appId } });
-  return dto as ManagedAppDetail;
+export function appManagerRefreshIndex(): Promise<AppManagerActionResult> {
+  return invokeAppManager(createAppManagerRequest({ kind: "refresh_index" }));
 }
 
-export async function appManagerGetDetailHeavy(
+export function appManagerGetDetailCore(appId: string): Promise<ManagedAppDetail> {
+  return invokeAppManager(
+    createAppManagerRequest({
+      kind: "get_detail_core",
+      payload: {
+        query: { appId },
+      },
+    }),
+  );
+}
+
+export function appManagerGetDetailHeavy(
   appId: string,
   mode: AppManagerResidueScanMode = "deep",
 ): Promise<AppManagerResidueScanResult> {
-  const dto = await invokeAppManager(APP_MANAGER_COMMAND_KIND.getDetailHeavy, {
-    input: { appId, mode },
-  });
-  return dto as AppManagerResidueScanResult;
+  return invokeAppManager(
+    createAppManagerRequest({
+      kind: "get_detail_heavy",
+      payload: {
+        input: { appId, mode },
+      },
+    }),
+  );
 }
 
-export async function appManagerScanResidue(appId: string): Promise<AppManagerResidueScanResult> {
-  const dto = await invokeAppManager(APP_MANAGER_COMMAND_KIND.scanResidue, {
-    input: { appId, mode: "deep" },
-  });
-  return dto as AppManagerResidueScanResult;
+export function appManagerCleanup(input: AppManagerCleanupInput): Promise<AppManagerCleanupResult> {
+  return invokeAppManager(
+    createAppManagerRequest({
+      kind: "cleanup",
+      payload: {
+        input: {
+          ...input,
+          skipOnError: input.skipOnError ?? null,
+          confirmedFingerprint: input.confirmedFingerprint ?? null,
+        },
+      },
+    }),
+  );
 }
 
-export async function appManagerCleanup(input: AppManagerCleanupInput): Promise<AppManagerCleanupResult> {
-  const dto = await invokeAppManager(APP_MANAGER_COMMAND_KIND.cleanup, {
-    input: input as AppManagerCleanupInputDto,
-  });
-  return dto as AppManagerCleanupResult;
+export function appManagerExportScanResult(appId: string): Promise<AppManagerExportScanResult> {
+  return invokeAppManager(
+    createAppManagerRequest({
+      kind: "export_scan_result",
+      payload: {
+        input: { appId },
+      },
+    }),
+  );
 }
 
-export async function appManagerExportScanResult(appId: string): Promise<AppManagerExportScanResult> {
-  const dto = await invokeAppManager(APP_MANAGER_COMMAND_KIND.exportScanResult, {
-    input: { appId },
-  });
-  return dto as AppManagerExportScanResult;
+export function appManagerOpenDirectory(path: string): Promise<void> {
+  return appManagerRevealPath(path);
 }
 
-export async function appManagerOpenDirectory(path: string): Promise<void> {
-  await appManagerRevealPath(path);
+export function appManagerSetStartup(input: AppManagerStartupUpdateInput): Promise<AppManagerActionResult> {
+  return invokeAppManager(
+    createAppManagerRequest({
+      kind: "set_startup",
+      payload: { input },
+    }),
+  );
 }
 
-export async function appManagerSetStartup(input: AppManagerStartupUpdateInput): Promise<AppManagerActionResult> {
-  const dto = await invokeAppManager(APP_MANAGER_COMMAND_KIND.setStartup, {
-    input: input as AppManagerStartupUpdateInputDto,
-  });
-  return dto as AppManagerActionResult;
+export function appManagerUninstall(input: AppManagerUninstallInput): Promise<AppManagerActionResult> {
+  return invokeAppManager(
+    createAppManagerRequest({
+      kind: "uninstall",
+      payload: { input },
+    }),
+  );
 }
 
-export async function appManagerUninstall(input: AppManagerUninstallInput): Promise<AppManagerActionResult> {
-  const dto = await invokeAppManager(APP_MANAGER_COMMAND_KIND.uninstall, {
-    input: input as AppManagerUninstallInputDto,
-  });
-  return dto as AppManagerActionResult;
+export function appManagerOpenUninstallHelp(appId: string): Promise<AppManagerActionResult> {
+  return invokeAppManager(
+    createAppManagerRequest({
+      kind: "open_uninstall_help",
+      payload: { appId },
+    }),
+  );
 }
 
-export async function appManagerOpenUninstallHelp(appId: string): Promise<AppManagerActionResult> {
-  const dto = await invokeAppManager(APP_MANAGER_COMMAND_KIND.openUninstallHelp, { appId });
-  return dto as AppManagerActionResult;
+export function appManagerOpenPermissionHelp(appId: string): Promise<AppManagerActionResult> {
+  return invokeAppManager(
+    createAppManagerRequest({
+      kind: "open_permission_help",
+      payload: { appId },
+    }),
+  );
 }
 
-export async function appManagerOpenPermissionHelp(appId: string): Promise<AppManagerActionResult> {
-  const dto = await invokeAppManager(APP_MANAGER_COMMAND_KIND.openPermissionHelp, { appId });
-  return dto as AppManagerActionResult;
-}
-
-export async function appManagerRevealPath(path: string): Promise<void> {
-  await invokeAppManager(APP_MANAGER_COMMAND_KIND.revealPath, { path });
+export function appManagerRevealPath(path: string): Promise<void> {
+  return invokeAppManager(
+    createAppManagerRequest({
+      kind: "reveal_path",
+      payload: { path },
+    }),
+  );
 }

@@ -2,10 +2,10 @@ import { type ReactElement } from "react";
 
 import { AppDetailPane } from "@/pages/app-manager/AppDetailPane";
 import { AppListPane } from "@/pages/app-manager/AppListPane";
-import { useAppManagerController } from "@/pages/app-manager/useAppManagerController";
+import { useAppManagerScreen } from "@/pages/app-manager/useAppManagerScreen";
 
 export default function AppManagerPage(): ReactElement {
-  const controller = useAppManagerController();
+  const controller = useAppManagerScreen();
   const { listPaneModel, detailPaneModel } = controller;
 
   return (

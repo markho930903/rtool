@@ -774,12 +774,10 @@ export type AppFeatureRequestMap = {
 
 export type AppManagerRequestDto =
   | CommandWithPayload<"list", { query?: AppManagerQueryDto }>
-  | CommandWithPayload<"get_detail", { query: AppManagerDetailQueryDto }>
   | CommandNoPayload<"list_snapshot_meta">
   | CommandWithPayload<"resolve_sizes", { input: AppManagerResolveSizesInputDto }>
   | CommandWithPayload<"get_detail_core", { query: AppManagerDetailQueryDto }>
   | CommandWithPayload<"get_detail_heavy", { input: AppManagerResidueScanInputDto }>
-  | CommandWithPayload<"scan_residue", { input: AppManagerResidueScanInputDto }>
   | CommandWithPayload<"cleanup", { input: AppManagerCleanupInputDto }>
   | CommandWithPayload<"export_scan_result", { input: AppManagerExportScanInputDto }>
   | CommandNoPayload<"refresh_index">

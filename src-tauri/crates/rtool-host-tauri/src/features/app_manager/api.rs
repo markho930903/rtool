@@ -64,19 +64,6 @@ pub(crate) async fn handle_app_manager(
             )
             .await
         }
-        AppManagerRequest::GetDetail(payload) => {
-            dispatch_operation(
-                app,
-                state,
-                request_id,
-                window_label,
-                "get_detail",
-                "app_manager_get_detail",
-                false,
-                move |service, host| service.get_detail(&host, payload.query),
-            )
-            .await
-        }
         AppManagerRequest::ListSnapshotMeta => {
             dispatch_operation(
                 app,
@@ -126,19 +113,6 @@ pub(crate) async fn handle_app_manager(
                 "app_manager_get_detail_heavy",
                 false,
                 move |service, host| service.get_detail_heavy(&host, payload.input),
-            )
-            .await
-        }
-        AppManagerRequest::ScanResidue(payload) => {
-            dispatch_operation(
-                app,
-                state,
-                request_id,
-                window_label,
-                "scan_residue",
-                "app_manager_scan_residue",
-                false,
-                move |service, host| service.scan_residue(&host, payload.input),
             )
             .await
         }
@@ -235,7 +209,7 @@ pub(crate) async fn handle_app_manager(
         }
         AppManagerRequest::RevealPath(payload) => {
             run_reveal_path(payload.path, request_id, window_label)?;
-            Ok(Value::Null)
+            APP_MANAGER_COMMAND_CONTEXT.serialize("reveal_path", Value::Null)
         }
     }
 }

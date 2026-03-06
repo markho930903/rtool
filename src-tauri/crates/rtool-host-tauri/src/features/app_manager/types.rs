@@ -70,12 +70,10 @@ pub(crate) struct AppManagerRevealPayload {
 #[serde(tag = "kind", content = "payload", rename_all = "snake_case")]
 pub(crate) enum AppManagerRequest {
     List(AppManagerListPayload),
-    GetDetail(AppManagerDetailPayload),
     ListSnapshotMeta,
     ResolveSizes(AppManagerResolveSizesPayload),
     GetDetailCore(AppManagerDetailPayload),
     GetDetailHeavy(AppManagerResidueInputPayload),
-    ScanResidue(AppManagerResidueInputPayload),
     Cleanup(AppManagerCleanupPayload),
     ExportScanResult(AppManagerExportPayload),
     RefreshIndex,
